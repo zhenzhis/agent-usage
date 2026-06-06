@@ -178,7 +178,7 @@ const I18N = {
 const PRESETS = ["today", "thisWeek", "thisMonth", "thisYear", "last3d", "last7d", "last30d", "custom"];
 const GRANULARITIES = ["1m", "30m", "1h", "6h", "12h", "1d", "1w", "1M"];
 const REFRESH_INTERVALS = [30, 60, 300, 1800, 3600];
-const COLORS = ["#2dd4bf", "#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#fb7185", "#38bdf8", "#f97316", "#84cc16", "#e879f9"];
+const COLORS = ["#f5f5f5", "#d4d4d4", "#a3a3a3", "#737373", "#525252", "#bdbdbd", "#8a8a8a", "#e5e5e5", "#6b6b6b", "#c7c7c7"];
 const SOURCES = [
   ["", "allSources"],
   ["claude", "claudeCode"],
@@ -256,11 +256,11 @@ function getThemeColors() {
     grid: cs.getPropertyValue("--chart-grid").trim() || "#25303b",
     tooltipBg: cs.getPropertyValue("--tooltip-bg").trim() || "rgba(16,20,25,0.96)",
     tooltipBorder: cs.getPropertyValue("--tooltip-border").trim() || "#3a4654",
-    accent: cs.getPropertyValue("--accent").trim() || "#2dd4bf",
-    green: cs.getPropertyValue("--green").trim() || "#22c55e",
-    amber: cs.getPropertyValue("--amber").trim() || "#f59e0b",
-    blue: cs.getPropertyValue("--blue").trim() || "#60a5fa",
-    purple: cs.getPropertyValue("--purple").trim() || "#a78bfa",
+    accent: cs.getPropertyValue("--accent").trim() || "#f5f5f5",
+    green: cs.getPropertyValue("--green").trim() || "#d4d4d4",
+    amber: cs.getPropertyValue("--amber").trim() || "#a3a3a3",
+    blue: cs.getPropertyValue("--blue").trim() || "#f5f5f5",
+    purple: cs.getPropertyValue("--purple").trim() || "#737373",
   };
 }
 
@@ -470,7 +470,7 @@ function renderActivityMatrix(tokensTime) {
       itemWidth: 110,
       itemHeight: 8,
       textStyle: { color: tc.muted, fontSize: 11 },
-      inRange: { color: ["#17202a", tc.blue, tc.accent, tc.green] },
+      inRange: { color: ["#1a1a1a", "#575757", "#a3a3a3", "#f5f5f5"] },
     },
     series: [{
       type: "heatmap",

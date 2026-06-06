@@ -32,13 +32,14 @@
 
 ## ZhenZhi 版优化
 
-- **Docker 默认本机访问** —— compose 发布到 `127.0.0.1:9800`，并从当前源码本地构建镜像，不再默认拉取可变上游镜像。
+- **Docker 默认本机访问** —— compose 发布到 `127.0.0.1:9800`，从当前源码本地构建镜像，并默认只读挂载 Claude/Codex/OpenCode。
 - **HTTP 安全加固** —— 显式 server timeout，并加入 CSP、frame、content-type、referrer、permissions 等安全头。
 - **前端供应链收敛** —— ECharts vendored 到内嵌静态资源中，运行时不加载 CDN 脚本或 Google Fonts。
 - **扫描完整性** —— JSONL collector 在写入和推进 offset 前检查 scanner 错误，避免超长行或 I/O 错误导致静默漏算。
+- **OpenCode 来源费用保留** —— 优先写入 OpenCode 每条 assistant message 自带的 cost，自定义 GLM/DeepSeek 等 provider 不再显示为 `$0`。
 - **价格同步边界** —— litellm pricing fetch 检查 HTTP 状态、设置 User-Agent，并限制响应体大小。
 - **固定自动化依赖** —— release/docker actions 使用 SHA pin，CI 执行 tests、vet 和 `govulncheck@v1.3.0`。
-- **量化风格 UI/UX** —— 深色默认、信息密度高，包含活动矩阵、Token 吞吐、模型分布、费用趋势和可展开会话账本。
+- **黑白灰运营 UI/UX** —— 简洁单色、高信息密度，包含活动矩阵、Token 吞吐、模型分布、费用趋势和可展开会话账本。
 
 ## 快速开始（Docker）
 
@@ -50,7 +51,13 @@ mkdir -p ./data && docker compose up --build -d
 open http://localhost:9800
 ```
 
-默认 `docker-compose.yml` 会从当前源码本地构建镜像，并且只发布到 `127.0.0.1:9800`。除非你已经额外配置反向代理或认证层，否则请保留这个 localhost 绑定。默认仅以只读方式挂载 `~/.claude/projects`，且 `config.docker.yaml` 默认只启用 Claude 采集器，确保新容器启动时不会持续输出未挂载路径错误。如需统计 Codex、OpenClaw、OpenCode、kiro 或 Pi，请在 `docker-compose.yml` 中取消对应只读 volume 的注释，并在 `config.docker.yaml` 或自定义配置中把对应采集器设置为 `enabled: true`。数据持久化在 `./data/` 目录。
+默认 `docker-compose.yml` 会从当前源码本地构建镜像，并且只发布到 `127.0.0.1:9800`。除非你已经额外配置反向代理或认证层，否则请保留这个 localhost 绑定。默认只读挂载 Claude、Codex 和 OpenCode 的会话数据：
+
+- `~/.claude/projects` → `/sessions/claude`
+- `~/.codex/sessions` → `/sessions/codex`
+- `~/.local/share/opencode` → `/sessions/opencode`
+
+这些 bind mount 使用 `create_host_path: false`，缺少宿主机路径时会显式失败，不会被 Docker 静默创建空目录。如需统计 OpenClaw、kiro 或 Pi，请在 `docker-compose.yml` 中取消对应只读 volume 的注释，并在 `config.docker.yaml` 或自定义配置中把对应采集器设置为 `enabled: true`。数据持久化在 `./data/` 目录。
 
 > **注意：** 只启用你实际安装的 agent 的挂载。Docker 会以 root 身份自动创建不存在的宿主机目录，这会干扰 `npx skills add` 等通过目录是否存在来检测已安装 agent 的工具。
 
@@ -167,10 +174,10 @@ Web 仪表板提供：
 - **KPI 条** —— 总 Tokens、总费用、会话数、Prompt 数、调用数、缓存命中率和单次调用指标
 - **活动矩阵** —— 类 GitHub commit heatmap 的 Token 活动分布，按输入/输出/缓存通道拆分
 - **Token 吞吐** —— 输入、输出、缓存读取、缓存写入的堆叠柱状图
-- **费用趋势** —— 按模型堆叠，模型颜色保持稳定
+- **费用趋势** —— 按模型堆叠，使用稳定灰阶序列
 - **模型分布** —— Top 模型费用横向排名
 - **会话账本** —— 可排序、可筛选，展开查看模型明细
-- **深色/浅色主题** —— 深色优先默认，支持手动切换
+- **深色/浅色主题** —— 黑白灰深色优先默认，支持手动切换
 - **国际化** —— 中英文
 - **时区处理** —— 所有时间戳以 UTC 存储；前端根据浏览器时区自动转换日期选择器、图表 X 轴标签和会话时间显示
 

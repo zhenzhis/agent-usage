@@ -26,7 +26,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 RUN addgroup -g 1000 -S agentusage \
     && adduser -u 1000 -S -D -H -G agentusage agentusage \
-    && mkdir -p /data /sessions/claude /sessions/codex /etc/agent-usage \
+    && mkdir -p /data /sessions/claude /sessions/codex /sessions/opencode /etc/agent-usage \
     && chown -R agentusage:agentusage /data /sessions /etc/agent-usage
 
 COPY --from=builder /agent-usage /agent-usage

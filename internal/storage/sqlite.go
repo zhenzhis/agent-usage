@@ -184,6 +184,14 @@ func migrate(db *sql.DB) error {
 				DELETE FROM file_state WHERE path LIKE '%kiro%';
 			`,
 		},
+		{
+			"006_opencode_source_cost_rescan", `
+				DELETE FROM usage_records WHERE source = 'opencode';
+				DELETE FROM prompt_events WHERE source = 'opencode';
+				DELETE FROM sessions WHERE source = 'opencode';
+				DELETE FROM file_state WHERE path LIKE '%opencode%';
+			`,
+		},
 	}
 	for _, m := range migrations {
 		var done string

@@ -818,3 +818,374 @@ td {
     font-size: 28px;
   }
 }
+
+/* Monochrome operations UI */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #050505;
+  --surface: #0d0d0d;
+  --surface-2: #151515;
+  --surface-3: #1d1d1d;
+  --border: #2a2a2a;
+  --border-strong: #555555;
+  --text: #f5f5f5;
+  --muted: #a3a3a3;
+  --muted-2: #737373;
+  --accent: #f5f5f5;
+  --accent-2: #d4d4d4;
+  --green: #d4d4d4;
+  --amber: #a3a3a3;
+  --red: #f5f5f5;
+  --blue: #f5f5f5;
+  --purple: #737373;
+  --shadow: none;
+  --chart-bg: transparent;
+  --chart-text: #f5f5f5;
+  --chart-muted: #a3a3a3;
+  --chart-grid: #2a2a2a;
+  --tooltip-bg: rgba(13, 13, 13, 0.98);
+  --tooltip-border: #555555;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f4f4;
+  --surface: #ffffff;
+  --surface-2: #eeeeee;
+  --surface-3: #e5e5e5;
+  --border: #d4d4d4;
+  --border-strong: #737373;
+  --text: #0a0a0a;
+  --muted: #525252;
+  --muted-2: #737373;
+  --accent: #0a0a0a;
+  --accent-2: #262626;
+  --green: #404040;
+  --amber: #737373;
+  --red: #0a0a0a;
+  --blue: #0a0a0a;
+  --purple: #525252;
+  --shadow: none;
+  --chart-bg: transparent;
+  --chart-text: #0a0a0a;
+  --chart-muted: #525252;
+  --chart-grid: #d4d4d4;
+  --tooltip-bg: rgba(255, 255, 255, 0.98);
+  --tooltip-border: #737373;
+}
+
+body {
+  background: var(--bg);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+::selection {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.app-shell {
+  width: min(100%, 1720px);
+  padding: 18px 22px 40px;
+}
+
+.topbar {
+  position: static;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding: 6px 0 18px;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: none;
+}
+
+.brand {
+  align-items: flex-start;
+}
+
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: #000000;
+}
+
+[data-theme="light"] .brand-mark {
+  background: #ffffff;
+}
+
+.brand-mark::after {
+  left: 7px;
+  right: 7px;
+  bottom: 9px;
+  border-color: var(--text);
+}
+
+.brand h1 {
+  font-size: 18px;
+  font-weight: 680;
+}
+
+.range-caption,
+.panel-meta,
+.kpi-sub {
+  color: var(--muted);
+}
+
+.control-surface {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) repeat(3, minmax(128px, 168px));
+  gap: 10px;
+  align-items: end;
+  justify-content: stretch;
+}
+
+.segmented {
+  width: 100%;
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.segmented button {
+  border-radius: 4px;
+}
+
+.segmented button.active {
+  color: var(--bg);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.field span {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+input,
+select,
+.icon-btn,
+.page-btn,
+.expand-btn {
+  border-radius: 6px;
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+input:hover,
+select:hover,
+.icon-btn:hover,
+.page-btn:hover:not(:disabled),
+.expand-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.action-cluster {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.action-cluster select {
+  width: auto;
+  min-width: 112px;
+}
+
+.icon-btn.primary,
+.icon-btn.active,
+.page-btn.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.loader {
+  height: 1px;
+  background: var(--text);
+}
+
+.kpi-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 10px;
+}
+
+.kpi-card,
+.panel,
+.ledger-panel {
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.kpi-card {
+  min-height: 104px;
+  padding: 14px 16px;
+}
+
+.kpi-card::before {
+  display: none;
+}
+
+.kpi-value {
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 720;
+}
+
+.chart-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.chart-grid .panel:nth-child(1) {
+  grid-column: 1 / -1;
+}
+
+.chart-grid .panel:nth-child(2) {
+  grid-column: span 7;
+}
+
+.chart-grid .panel:nth-child(3) {
+  grid-column: span 5;
+}
+
+.chart-grid .panel:nth-child(4) {
+  grid-column: 1 / -1;
+}
+
+.panel-wide {
+  grid-column: auto;
+}
+
+.panel {
+  padding: 12px 14px;
+}
+
+.panel h2,
+.ledger-header h2 {
+  font-size: 13px;
+  font-weight: 680;
+  text-transform: uppercase;
+}
+
+.chart {
+  height: 290px;
+}
+
+.chart-compact {
+  height: 196px;
+}
+
+.ledger-panel {
+  margin-top: 10px;
+}
+
+th {
+  background: var(--surface);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+th,
+td {
+  padding: 9px 14px;
+}
+
+.session-row:hover,
+.session-row.expanded {
+  background: var(--surface-2);
+}
+
+.badge {
+  border-radius: 6px;
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.source-claude,
+.source-codex,
+.source-openclaw,
+.source-opencode,
+.source-kiro,
+.source-pi {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.cost-cell,
+.sort-mark,
+.expand-btn.open {
+  color: var(--text);
+}
+
+.detail-content {
+  border-left: 2px solid var(--border-strong);
+}
+
+.status-line {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.status-line.error {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+@media (max-width: 1320px) {
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .control-surface {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .segmented,
+  .action-cluster {
+    grid-column: 1 / -1;
+  }
+
+  .chart-grid .panel:nth-child(n) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 12px 10px 32px;
+  }
+
+  .control-surface {
+    grid-template-columns: 1fr;
+  }
+
+  .segmented,
+  .action-cluster {
+    grid-column: auto;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .action-cluster select {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}

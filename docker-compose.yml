@@ -17,15 +17,35 @@ services:
       # - GOPROXY=https://goproxy.cn,direct
     volumes:
       # Persistent database
-      - ./data:/data
+      - type: bind
+        source: ./data
+        target: /data
+        bind:
+          create_host_path: true
       # Host session directories (read-only).
-      # Only uncomment the agents you have installed — Docker will create missing
-      # directories as root, which can cause permission errors for other tools
-      # (e.g. `npx skills add` uses directory existence to detect installed agents).
-      - ~/.claude/projects:/sessions/claude:ro
-      # - ~/.codex/sessions:/sessions/codex:ro
+      # Default tracks Claude, Codex, and OpenCode. Bind mounts use
+      # create_host_path: false so missing paths fail explicitly instead of
+      # being created by Docker.
+      - type: bind
+        source: ~/.claude/projects
+        target: /sessions/claude
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ~/.codex/sessions
+        target: /sessions/codex
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ~/.local/share/opencode
+        target: /sessions/opencode
+        read_only: true
+        bind:
+          create_host_path: false
+      # Only enable the remaining agents if they are installed.
       # - ~/.openclaw/agents:/sessions/openclaw:ro
-      # - ~/.local/share/opencode:/sessions/opencode:ro
       # - ~/.local/share/kiro-cli:/sessions/kiro-cli:ro
       # - ~/.kiro/sessions/cli:/sessions/kiro-sessions:ro
       # - ~/.pi/agent/sessions:/sessions/pi:ro

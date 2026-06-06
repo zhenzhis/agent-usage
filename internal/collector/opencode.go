@@ -33,9 +33,9 @@ type opencodeMessageData struct {
 }
 
 type opencodeTokens struct {
-	Input     int64        `json:"input"`
-	Output    int64        `json:"output"`
-	Reasoning int64        `json:"reasoning"`
+	Input     int64         `json:"input"`
+	Output    int64         `json:"output"`
+	Reasoning int64         `json:"reasoning"`
 	Cache     opencodeCache `json:"cache"`
 }
 
@@ -133,6 +133,7 @@ func (c *OpenCodeCollector) processDB(dbPath string) error {
 			CacheReadInputTokens:     msg.Tokens.Cache.Read,
 			CacheCreationInputTokens: msg.Tokens.Cache.Write,
 			ReasoningOutputTokens:    msg.Tokens.Reasoning,
+			CostUSD:                  msg.Cost,
 		}
 		records = append(records, rec)
 

@@ -32,13 +32,14 @@ Thanks to the original author and contributors of [briqt/agent-usage](https://gi
 
 ## ZhenZhi Edition Optimizations
 
-- **Local-only Docker default** — compose publishes `127.0.0.1:9800` and builds the local checkout instead of pulling a mutable upstream image.
+- **Local-only Docker default** — compose publishes `127.0.0.1:9800`, builds the local checkout, and mounts Claude/Codex/OpenCode read-only by default.
 - **HTTP hardening** — explicit server timeouts plus CSP, frame, content-type, referrer, and permissions headers.
 - **Frontend supply-chain reduction** — ECharts is vendored into the embedded static bundle; no CDN scripts or Google Fonts are loaded at runtime.
 - **Scanner integrity** — JSONL collectors check scanner errors before inserting records or advancing file offsets, preventing silent truncation on oversized or unreadable lines.
+- **OpenCode source cost preservation** — OpenCode-reported per-message costs are stored directly before pricing backfill, so custom providers such as GLM or DeepSeek do not appear as `$0`.
 - **Bounded pricing sync** — litellm pricing fetch checks HTTP status, uses a User-Agent, and caps response size.
 - **Pinned automation** — release/docker actions are pinned by SHA; CI runs tests, vet, and `govulncheck@v1.3.0`.
-- **Quant-style UI/UX** — dark-first, dense, operation-oriented dashboard with activity matrix, token throughput, model allocation, cost trend, and a sortable session ledger.
+- **Monochrome operations UI** — black/white/gray, dense, operation-oriented dashboard with activity matrix, token throughput, model allocation, cost trend, and a sortable session ledger.
 
 ## Quick Start (Docker)
 
@@ -50,7 +51,13 @@ mkdir -p ./data && docker compose up --build -d
 open http://localhost:9800
 ```
 
-The default `docker-compose.yml` builds the local checkout and publishes the dashboard only on `127.0.0.1:9800`. Keep that localhost binding unless you add your own reverse proxy or authentication layer. It only mounts `~/.claude/projects` read-only by default, and `config.docker.yaml` only enables the Claude collector by default so fresh containers start without noisy missing-path errors. To collect Codex, OpenClaw, OpenCode, kiro, or Pi usage, uncomment the matching read-only volume in `docker-compose.yml` and set that collector to `enabled: true` in `config.docker.yaml` or your custom config. Data persists in `./data/`.
+The default `docker-compose.yml` builds the local checkout and publishes the dashboard only on `127.0.0.1:9800`. Keep that localhost binding unless you add your own reverse proxy or authentication layer. It mounts Claude, Codex, and OpenCode session data read-only by default:
+
+- `~/.claude/projects` → `/sessions/claude`
+- `~/.codex/sessions` → `/sessions/codex`
+- `~/.local/share/opencode` → `/sessions/opencode`
+
+These mounts use `create_host_path: false`, so missing host paths fail explicitly instead of being silently created by Docker. To collect OpenClaw, kiro, or Pi usage, uncomment the matching read-only volume in `docker-compose.yml` and set that collector to `enabled: true` in `config.docker.yaml` or your custom config. Data persists in `./data/`.
 
 > **Note:** Only enable mounts for agents you actually use. Docker creates missing host directories as root, which can interfere with tools like `npx skills add` that detect installed agents by directory existence.
 
@@ -167,10 +174,10 @@ The web dashboard provides:
 - **KPI strip** — total tokens, cost, sessions, prompts, calls, cache rate, and per-call metrics
 - **Activity matrix** — commit-heatmap inspired token activity by input/output/cache channel
 - **Token throughput** — stacked token bars for input, output, cache read, and cache write
-- **Cost trend** — stacked cost bars by model with stable model colors
+- **Cost trend** — stacked cost bars by model with stable grayscale series
 - **Model allocation** — horizontal ranking for top model spend
 - **Session ledger** — sortable, filterable table with expandable per-model detail
-- **Dark/Light theme** — dark-first default with manual toggle
+- **Dark/Light theme** — monochrome dark-first default with manual toggle
 - **i18n** — English and Chinese
 - **Timezone handling** — all timestamps are stored in UTC; the frontend automatically converts to your browser's local timezone for date pickers, chart X-axis labels, and session timestamps
 

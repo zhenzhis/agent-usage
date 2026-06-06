@@ -8,7 +8,7 @@ collectors:
     paths: ["/sessions/claude"]
     scan_interval: 60s
   codex:
-    enabled: false
+    enabled: true
     paths: ["/sessions/codex"]
     scan_interval: 60s
   openclaw:
@@ -16,7 +16,7 @@ collectors:
     paths: ["/sessions/openclaw"]
     scan_interval: 60s
   opencode:
-    enabled: false
+    enabled: true
     paths: ["/sessions/opencode/opencode.db"]
     scan_interval: 60s
   kiro:
