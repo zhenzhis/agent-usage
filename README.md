@@ -110,7 +110,7 @@ collectors:
     enabled: true
     paths:
       - "~/.codex/sessions"
-    scan_interval: 60s
+    scan_interval: 30s
   openclaw:
     enabled: true
     paths:
@@ -120,7 +120,7 @@ collectors:
     enabled: true
     paths:
       - "~/.local/share/opencode/opencode.db"
-    scan_interval: 60s
+    scan_interval: 30s
   kiro:
     enabled: true
     paths:

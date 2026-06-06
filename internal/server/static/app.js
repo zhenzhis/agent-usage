@@ -120,6 +120,7 @@ const I18N = {
     ok: "ok",
     unknownModel: "Unknown model",
     rows: "rows",
+    records: "records",
     unitMin: "min",
     unitSec: "sec",
   },
@@ -222,6 +223,7 @@ const I18N = {
     ok: "正常",
     unknownModel: "未知模型",
     rows: "行",
+    records: "条记录",
     unitMin: "分钟",
     unitSec: "秒",
   },
@@ -257,7 +259,7 @@ let state = {
   preset: localStorage.getItem("au-preset") || "today",
   granularity: localStorage.getItem("au-granularity") || "1h",
   autoRefresh: localStorage.getItem("au-autoRefresh") !== "false",
-  refreshInterval: Number(localStorage.getItem("au-refreshInterval") || 300),
+  refreshInterval: Number(localStorage.getItem("au-refreshInterval") || 60),
   customFrom: localStorage.getItem("au-customFrom") || "",
   customTo: localStorage.getItem("au-customTo") || "",
   source: localStorage.getItem("au-source") || "",
@@ -566,7 +568,10 @@ function renderHealth(rows) {
       if (disabled) detail.textContent = t("disabled");
       else if (hasError) detail.textContent = `${t("lastError")}: ${row.last_error}`;
       else if (pathIssues.length) detail.textContent = pathIssues.map((p) => p.exists ? t("unreadablePath") : t("missingPath")).join(", ");
-      else detail.textContent = `${fmt(row.records_inserted || 0)} records · ${fmt(row.duration_ms || 0)} ms`;
+      else {
+        const lastScan = row.last_scan_at ? relTime(row.last_scan_at) : "-";
+        detail.textContent = `${fmt(row.records_inserted || 0)} ${t("records")} · ${fmt(row.prompts_inserted || 0)} ${t("prompts")} · ${lastScan} · ${fmt(row.duration_ms || 0)} ms`;
+      }
       main.append(title, detail);
       const value = document.createElement("div");
       value.className = "ops-value";
