@@ -522,6 +522,179 @@ func migrate(db *sql.DB) error {
 				CREATE INDEX IF NOT EXISTS idx_usage_source_project_branch_time ON usage_records(source, project, git_branch, timestamp);
 			`,
 		},
+		{
+			"010_workload_ledger_foundation", `
+				CREATE TABLE IF NOT EXISTS workloads (
+					workload_id TEXT PRIMARY KEY,
+					goal TEXT DEFAULT '',
+					status TEXT DEFAULT 'active',
+					source TEXT DEFAULT '',
+					project TEXT DEFAULT '',
+					repo TEXT DEFAULT '',
+					git_branch TEXT DEFAULT '',
+					owner TEXT DEFAULT '',
+					team TEXT DEFAULT '',
+					budget_usd REAL DEFAULT 0,
+					outcome TEXT DEFAULT '',
+					confidence REAL DEFAULT 1,
+					created_at DATETIME NOT NULL,
+					updated_at DATETIME NOT NULL,
+					closed_at DATETIME
+				);
+				CREATE INDEX IF NOT EXISTS idx_workloads_updated ON workloads(updated_at);
+				CREATE INDEX IF NOT EXISTS idx_workloads_source_updated ON workloads(source, updated_at);
+				CREATE INDEX IF NOT EXISTS idx_workloads_project_updated ON workloads(project, updated_at);
+				CREATE INDEX IF NOT EXISTS idx_workloads_status_updated ON workloads(status, updated_at);
+
+				CREATE TABLE IF NOT EXISTS workload_sessions (
+					workload_id TEXT NOT NULL,
+					source TEXT NOT NULL,
+					session_id TEXT NOT NULL,
+					confidence REAL DEFAULT 1,
+					created_at DATETIME NOT NULL,
+					PRIMARY KEY(workload_id, source, session_id)
+				);
+				CREATE INDEX IF NOT EXISTS idx_workload_sessions_source_session ON workload_sessions(source, session_id);
+
+				CREATE TABLE IF NOT EXISTS agent_runs (
+					run_id TEXT PRIMARY KEY,
+					workload_id TEXT NOT NULL,
+					parent_run_id TEXT DEFAULT '',
+					source TEXT DEFAULT '',
+					agent_name TEXT DEFAULT '',
+					agent_version TEXT DEFAULT '',
+					command TEXT DEFAULT '',
+					cwd TEXT DEFAULT '',
+					status TEXT DEFAULT 'running',
+					exit_code INTEGER DEFAULT 0,
+					error TEXT DEFAULT '',
+					started_at DATETIME NOT NULL,
+					ended_at DATETIME,
+					duration_ms INTEGER DEFAULT 0,
+					confidence REAL DEFAULT 1
+				);
+				CREATE INDEX IF NOT EXISTS idx_agent_runs_workload ON agent_runs(workload_id, started_at);
+				CREATE INDEX IF NOT EXISTS idx_agent_runs_source_started ON agent_runs(source, started_at);
+
+				CREATE TABLE IF NOT EXISTS model_calls (
+					call_id TEXT PRIMARY KEY,
+					workload_id TEXT NOT NULL,
+					run_id TEXT DEFAULT '',
+					source TEXT NOT NULL,
+					session_id TEXT DEFAULT '',
+					provider TEXT DEFAULT '',
+					model TEXT NOT NULL,
+					model_alias TEXT DEFAULT '',
+					input_tokens INTEGER DEFAULT 0,
+					output_tokens INTEGER DEFAULT 0,
+					cache_read_input_tokens INTEGER DEFAULT 0,
+					cache_creation_input_tokens INTEGER DEFAULT 0,
+					reasoning_output_tokens INTEGER DEFAULT 0,
+					cost_usd REAL DEFAULT 0,
+					latency_ms INTEGER DEFAULT 0,
+					finish_reason TEXT DEFAULT '',
+					pricing_source TEXT DEFAULT '',
+					pricing_confidence TEXT DEFAULT '',
+					timestamp DATETIME NOT NULL,
+					confidence REAL DEFAULT 1
+				);
+				CREATE INDEX IF NOT EXISTS idx_model_calls_workload_time ON model_calls(workload_id, timestamp);
+				CREATE INDEX IF NOT EXISTS idx_model_calls_source_model_time ON model_calls(source, model, timestamp);
+
+				CREATE TABLE IF NOT EXISTS tool_calls (
+					tool_call_id TEXT PRIMARY KEY,
+					workload_id TEXT NOT NULL,
+					run_id TEXT DEFAULT '',
+					source TEXT DEFAULT '',
+					tool_name TEXT DEFAULT '',
+					tool_type TEXT DEFAULT '',
+					status TEXT DEFAULT '',
+					error_class TEXT DEFAULT '',
+					duration_ms INTEGER DEFAULT 0,
+					params_hash TEXT DEFAULT '',
+					timestamp DATETIME NOT NULL,
+					confidence REAL DEFAULT 1
+				);
+				CREATE INDEX IF NOT EXISTS idx_tool_calls_workload_time ON tool_calls(workload_id, timestamp);
+
+				CREATE TABLE IF NOT EXISTS context_refs (
+					context_ref_id TEXT PRIMARY KEY,
+					workload_id TEXT NOT NULL,
+					run_id TEXT DEFAULT '',
+					ref_type TEXT DEFAULT '',
+					ref_hash TEXT DEFAULT '',
+					label TEXT DEFAULT '',
+					repo TEXT DEFAULT '',
+					git_branch TEXT DEFAULT '',
+					commit_sha TEXT DEFAULT '',
+					privacy_label TEXT DEFAULT 'local',
+					created_at DATETIME NOT NULL,
+					confidence REAL DEFAULT 1
+				);
+				CREATE INDEX IF NOT EXISTS idx_context_refs_workload ON context_refs(workload_id);
+
+				CREATE TABLE IF NOT EXISTS artifacts (
+					artifact_id TEXT PRIMARY KEY,
+					workload_id TEXT NOT NULL,
+					run_id TEXT DEFAULT '',
+					artifact_type TEXT DEFAULT '',
+					label TEXT DEFAULT '',
+					path_hash TEXT DEFAULT '',
+					sha256 TEXT DEFAULT '',
+					metadata TEXT DEFAULT '',
+					created_at DATETIME NOT NULL,
+					confidence REAL DEFAULT 1
+				);
+				CREATE INDEX IF NOT EXISTS idx_artifacts_workload ON artifacts(workload_id, created_at);
+
+				CREATE TABLE IF NOT EXISTS evaluations (
+					evaluation_id TEXT PRIMARY KEY,
+					workload_id TEXT NOT NULL,
+					evaluator TEXT DEFAULT 'local',
+					status TEXT DEFAULT '',
+					score REAL DEFAULT 0,
+					signal TEXT DEFAULT '',
+					notes TEXT DEFAULT '',
+					created_at DATETIME NOT NULL
+				);
+				CREATE INDEX IF NOT EXISTS idx_evaluations_workload ON evaluations(workload_id, created_at);
+
+				CREATE TABLE IF NOT EXISTS policy_decisions (
+					decision_id TEXT PRIMARY KEY,
+					workload_id TEXT DEFAULT '',
+					run_id TEXT DEFAULT '',
+					rule_id TEXT DEFAULT '',
+					action TEXT DEFAULT 'allow',
+					reason TEXT DEFAULT '',
+					actor_role TEXT DEFAULT '',
+					created_at DATETIME NOT NULL
+				);
+				CREATE INDEX IF NOT EXISTS idx_policy_decisions_created ON policy_decisions(created_at);
+				CREATE INDEX IF NOT EXISTS idx_policy_decisions_workload ON policy_decisions(workload_id, created_at);
+
+				CREATE TABLE IF NOT EXISTS canonical_events (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					event_id TEXT NOT NULL UNIQUE,
+					source TEXT NOT NULL,
+					event_type TEXT NOT NULL,
+					source_event_id TEXT DEFAULT '',
+					workload_id TEXT DEFAULT '',
+					agent_run_id TEXT DEFAULT '',
+					session_id TEXT DEFAULT '',
+					model TEXT DEFAULT '',
+					project TEXT DEFAULT '',
+					git_branch TEXT DEFAULT '',
+					timestamp DATETIME NOT NULL,
+					payload_hash TEXT DEFAULT '',
+					payload TEXT DEFAULT '',
+					confidence REAL DEFAULT 1,
+					created_at DATETIME NOT NULL
+				);
+				CREATE INDEX IF NOT EXISTS idx_canonical_events_source_time ON canonical_events(source, timestamp);
+				CREATE INDEX IF NOT EXISTS idx_canonical_events_workload_time ON canonical_events(workload_id, timestamp);
+				CREATE INDEX IF NOT EXISTS idx_canonical_events_type_time ON canonical_events(event_type, timestamp);
+			`,
+		},
 	}
 	for _, m := range migrations {
 		var done string

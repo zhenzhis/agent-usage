@@ -7,10 +7,13 @@
 - Official Agent Ledger naming across module path, binary, Docker, release metadata, and documentation.
 - Pricing governance with local override, official OpenAI/Anthropic seed rows, LiteLLM fallback, pricing source health, snapshots, audit events, and per-record pricing confidence.
 - Cost Intelligence, Cache Doctor, Data Quality Center, Model Call Analytics, Quota Status, Watchdog events, evidence bundles, reconciliation imports, audit log, policy status, and expanded export types.
+- Canonical Workload Ledger foundation with `canonical_events`, `workloads`, `agent_runs`, `model_calls`, `tool_calls`, `context_refs`, `artifacts`, `evaluations`, and `policy_decisions`.
+- Legacy session backfill into workload/run/model-call records for immediate compatibility with existing local data.
+- Workload APIs: list/create/close/detail/graph, model registry, policy decisions, and workload CSV/JSON export.
 - Hourly and daily usage aggregate tables with dashboard aggregate fallback.
-- CLI commands: `today`, `top`, `doctor`, `battery`, `export`, `pricing sync`, and `wrapped`.
+- CLI commands: `today`, `top`, `doctor`, `battery`, `workload list/create/show/close`, `run --goal ... -- <command>`, `export`, `pricing sync`, and `wrapped`.
 - Cursor-compatible session pagination via `next_cursor`.
-- Black/white/gray data-dense dashboard panels for pricing, quota, quality, model calls, cache, watchdog, and cost intelligence.
+- Black/white/gray data-dense dashboard panels for workloads, pricing, quota, quality, model calls, cache, watchdog, and cost intelligence.
 
 ### Changed
 

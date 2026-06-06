@@ -104,6 +104,14 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	var payload interface{}
 	switch exportType {
+	case "workloads":
+		page, err := s.db.GetWorkloadsPage(from, to, source, model, project, "", "", 10000, 0)
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		applyWorkloadPagePrivacy(page, privacy)
+		payload = page.Rows
 	case "sessions":
 		page, err := s.db.GetSessionsPage(from, to, source, model, project, 10000, 0)
 		if err != nil {
@@ -221,6 +229,34 @@ func csvFor(exportType string, payload interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
 	switch exportType {
+	case "workloads":
+		data, _ := json.Marshal(payload)
+		var rows []map[string]interface{}
+		if err := json.Unmarshal(data, &rows); err != nil {
+			return nil, err
+		}
+		if err := w.Write([]string{"workload_id", "goal", "status", "source", "project", "repo", "git_branch", "model_calls", "tokens", "cost_usd", "outcome", "confidence", "updated_at"}); err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if err := w.Write([]string{
+				fmt.Sprint(row["workload_id"]),
+				fmt.Sprint(row["goal"]),
+				fmt.Sprint(row["status"]),
+				fmt.Sprint(row["source"]),
+				fmt.Sprint(row["project"]),
+				fmt.Sprint(row["repo"]),
+				fmt.Sprint(row["git_branch"]),
+				fmt.Sprint(row["model_calls"]),
+				fmt.Sprint(row["tokens"]),
+				fmt.Sprint(row["cost_usd"]),
+				fmt.Sprint(row["outcome"]),
+				fmt.Sprint(row["confidence"]),
+				fmt.Sprint(row["updated_at"]),
+			}); err != nil {
+				return nil, err
+			}
+		}
 	case "sessions":
 		data, _ := json.Marshal(payload)
 		var sessions []map[string]interface{}

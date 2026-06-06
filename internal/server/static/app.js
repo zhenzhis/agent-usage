@@ -62,6 +62,13 @@ const I18N = {
     cacheDoctor: "Cache Doctor",
     dataQuality: "Data Quality",
     watchdog: "Watchdog",
+    workloadLedger: "Workload Ledger",
+    goal: "Goal",
+    status: "Status",
+    outcome: "Outcome",
+    runs: "runs",
+    toolCalls: "tool calls",
+    confidence: "confidence",
     sessionLedger: "Session Ledger",
     filterProject: "Project / workspace",
     ledgerSearch: "Search ledger by project, path, or branch...",
@@ -191,6 +198,13 @@ const I18N = {
     cacheDoctor: "Cache Doctor",
     dataQuality: "数据质量",
     watchdog: "Watchdog",
+    workloadLedger: "工作负载账本",
+    goal: "目标",
+    status: "状态",
+    outcome: "结果",
+    runs: "次运行",
+    toolCalls: "工具调用",
+    confidence: "可信度",
     sessionLedger: "会话账本",
     filterProject: "项目 / 工作区",
     ledgerSearch: "按项目、路径或分支搜索账本...",
@@ -325,6 +339,9 @@ let state = {
 let charts = {};
 let autoTimer = null;
 let statusTimer = null;
+let allWorkloads = [];
+let workloadTotal = 0;
+let expandedWorkloads = new Set();
 let allSessions = [];
 let sessionTotal = 0;
 let sessionSort = { key: "last_activity", dir: "desc" };
@@ -1028,11 +1045,17 @@ async function refresh(options = {}) {
       dir: sessionSort.dir,
     };
     if (state.ledgerQuery) sessionParams.q = state.ledgerQuery;
+    const workloadParams = {
+      limit: PAGE_SIZE,
+      offset: 0,
+    };
+    if (state.ledgerQuery) workloadParams.q = state.ledgerQuery;
     const requests = {
       stats: api("stats"),
       costModel: api("cost-by-model", { skipModel: true }),
       costTime: api("cost-over-time"),
       tokensTime: api("tokens-over-time"),
+      workloads: api("workloads", { extra: workloadParams }),
       sessions: api("sessions", { extra: sessionParams }),
       health: api("health/ingestion"),
       budgets: api("budgets/status"),
@@ -1074,6 +1097,11 @@ async function refresh(options = {}) {
     if (data.costIntel) renderCostIntelligence(data.costIntel);
     if (data.cacheDoctor) renderCacheDoctor(data.cacheDoctor);
     if (data.watchdog) renderWatchdog(data.watchdog);
+    if (data.workloads) {
+      allWorkloads = data.workloads.rows || [];
+      workloadTotal = Number(data.workloads.total || allWorkloads.length);
+      renderWorkloadTable();
+    }
     if (data.sessions) {
       allSessions = data.sessions.rows || [];
       sessionTotal = Number(data.sessions.total || allSessions.length);
@@ -1145,6 +1173,130 @@ function syncSortHeaders() {
     button.classList.toggle("active", active);
     mark.textContent = active ? (sessionSort.dir === "asc" ? "▲" : "▼") : "";
   });
+}
+
+function renderWorkloadTable() {
+  const tbody = $("workload-table");
+  if (!tbody) return;
+  const fragment = document.createDocumentFragment();
+  if (allWorkloads.length === 0) {
+    const tr = document.createElement("tr");
+    const td = createCell(t("noData"), "empty-state");
+    td.colSpan = 10;
+    tr.appendChild(td);
+    fragment.appendChild(tr);
+  } else {
+    allWorkloads.forEach((workload) => {
+      const id = workload.workload_id || "";
+      const isExpanded = expandedWorkloads.has(id);
+      const tr = document.createElement("tr");
+      tr.className = `workload-row${isExpanded ? " expanded" : ""}`;
+      const goal = createCell(workload.goal || id || "-", "project-cell");
+      goal.title = id;
+      tr.appendChild(goal);
+      tr.appendChild(createCell(workload.status || "-", "muted-cell"));
+      tr.appendChild(createSourceCell(workload.source || "-"));
+      tr.appendChild(createCell(workload.project || workload.repo || "-", "project-cell"));
+      tr.appendChild(createCell(workload.git_branch || "-", "muted-cell"));
+      tr.appendChild(createCell(fmt(workload.model_calls || 0), "num"));
+      tr.appendChild(createCell(fmt(workload.tokens || 0), "num"));
+      tr.appendChild(createCell(fmtCost(workload.cost_usd || 0), "cost-cell"));
+      tr.appendChild(createCell(workload.outcome || "-", "muted-cell"));
+
+      const expandCell = document.createElement("td");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `expand-btn${isExpanded ? " open" : ""}`;
+      button.dataset.workloadId = id;
+      button.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+      button.setAttribute("aria-label", `${t("workloadLedger")} ${id}`);
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M9 5l7 7-7 7");
+      icon.appendChild(path);
+      button.appendChild(icon);
+      expandCell.appendChild(button);
+      tr.appendChild(expandCell);
+      fragment.appendChild(tr);
+
+      if (isExpanded) {
+        const detail = buildDetailShell();
+        fragment.appendChild(detail.row);
+        fetchAndFillWorkloadDetail(detail.content, id);
+      }
+    });
+  }
+  tbody.replaceChildren(fragment);
+  setText("workload-meta", `${workloadTotal} ${t("rows")}`);
+}
+
+function buildWorkloadDetail(data) {
+  const wrap = document.createElement("div");
+  wrap.className = "workload-detail-grid";
+  const summary = data.summary || {};
+  const facts = [
+    [t("runs"), summary.runs || 0],
+    [t("modelCalls"), summary.model_calls || 0],
+    [t("toolCalls"), summary.tool_calls || 0],
+    [t("tokens"), fmt(summary.tokens || 0)],
+    [t("cost"), fmtCost(summary.cost_usd || 0)],
+    [t("confidence"), `${Math.round(Number(summary.confidence || 0) * 100)}%`],
+  ];
+  facts.forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.className = "detail-metric";
+    const k = document.createElement("span");
+    k.textContent = label;
+    const v = document.createElement("strong");
+    v.textContent = String(value);
+    item.append(k, v);
+    wrap.appendChild(item);
+  });
+  const calls = Array.isArray(data.model_calls) ? data.model_calls.slice(0, 8) : [];
+  if (calls.length > 0) {
+    const table = document.createElement("table");
+    table.className = "detail-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    [t("model"), t("source"), t("calls"), t("tokens"), t("cost")].forEach((label) => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    calls.forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.appendChild(createCell(row.model || t("unknownModel"), "project-cell"));
+      tr.appendChild(createCell(row.source || "-", "muted-cell"));
+      tr.appendChild(createCell(fmt(row.calls || 0), "num"));
+      tr.appendChild(createCell(fmt(row.tokens || 0), "num"));
+      tr.appendChild(createCell(fmtCost(row.cost_usd || 0), "cost-cell"));
+      body.appendChild(tr);
+    });
+    table.appendChild(body);
+    wrap.appendChild(table);
+  }
+  return wrap;
+}
+
+async function fetchAndFillWorkloadDetail(content, workloadID) {
+  if (!workloadID) {
+    content.replaceChildren(createMessage(t("noDetails"), "empty-state"));
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ workload_id: workloadID });
+    if (state.privacy) params.set("privacy", "1");
+    const res = await fetch(`/api/workload-detail?${params.toString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    content.replaceChildren(buildWorkloadDetail(data));
+  } catch (err) {
+    content.replaceChildren(createMessage(`${t("detailFailed")} ${err.message}`, "empty-state"));
+  }
 }
 
 function renderSessionTable() {
@@ -1528,7 +1680,7 @@ $("btn-reset-scan").addEventListener("click", async () => {
 });
 
 $("btn-export").addEventListener("click", () => {
-  downloadApi("export", { extra: { type: "sessions", format: "csv", limit: 10000 } });
+  downloadApi("export", { extra: { type: "workloads", format: "csv", limit: 10000 } });
 });
 
 $("btn-report").addEventListener("click", () => {
@@ -1537,6 +1689,7 @@ $("btn-report").addEventListener("click", () => {
 
 $("btn-privacy").addEventListener("click", () => {
   persist("privacy", !state.privacy);
+  expandedWorkloads.clear();
   expandedSessions.clear();
   buildControls();
   refresh();
@@ -1573,6 +1726,31 @@ $("session-table").addEventListener("click", (e) => {
     const detail = buildDetailShell();
     row.after(detail.row);
     fetchAndFillDetail(detail.content, sid, source);
+  }
+});
+
+$("workload-table").addEventListener("click", (e) => {
+  const button = e.target.closest(".expand-btn");
+  if (!button) return;
+  const workloadID = button.dataset.workloadId || "";
+  const row = button.closest(".workload-row");
+  const next = row ? row.nextElementSibling : null;
+  if (expandedWorkloads.has(workloadID)) {
+    expandedWorkloads.delete(workloadID);
+    button.classList.remove("open");
+    button.setAttribute("aria-expanded", "false");
+    if (row) row.classList.remove("expanded");
+    if (next && next.classList.contains("detail-row")) next.remove();
+    return;
+  }
+  expandedWorkloads.add(workloadID);
+  button.classList.add("open");
+  button.setAttribute("aria-expanded", "true");
+  if (row) {
+    row.classList.add("expanded");
+    const detail = buildDetailShell();
+    row.after(detail.row);
+    fetchAndFillWorkloadDetail(detail.content, workloadID);
   }
 });
 

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,9 +79,6 @@ func main() {
 	if err := recalcCostsMode(db, "zero"); err != nil {
 		log.Printf("recalc costs: %v", err)
 	}
-	if err := db.RebuildUsageAggregates(); err != nil {
-		log.Printf("aggregate rebuild: %v", err)
-	}
 
 	// Collector loop
 	collectors := []collectorEntry{
@@ -111,7 +110,10 @@ func main() {
 					}
 				}
 			}
-			return recalcCostsMode(db, "zero")
+			if err := recalcCostsMode(db, "zero"); err != nil {
+				return err
+			}
+			return nil
 		}
 		ce, ok := collectorBySource[source]
 		if !ok {
@@ -128,7 +130,10 @@ func main() {
 		if err := scanCollector(db, ce, reset); err != nil {
 			return err
 		}
-		return recalcCostsMode(db, "zero")
+		if err := recalcCostsMode(db, "zero"); err != nil {
+			return err
+		}
+		return nil
 	}
 	for _, ce := range collectors {
 		if !ce.cfg.Enabled {
@@ -140,9 +145,6 @@ func main() {
 		}
 		if err := recalcCostsMode(db, "zero"); err != nil {
 			log.Printf("recalc costs: %v", err)
-		}
-		if err := db.RebuildUsageAggregates(); err != nil {
-			log.Printf("aggregate rebuild: %v", err)
 		}
 
 		go func(ce collectorEntry) {
@@ -161,9 +163,6 @@ func main() {
 				if err := recalcCostsMode(db, "zero"); err != nil {
 					log.Printf("recalc costs: %v", err)
 				}
-				if err := db.RebuildUsageAggregates(); err != nil {
-					log.Printf("aggregate rebuild: %v", err)
-				}
 			}
 		}(ce)
 	}
@@ -177,9 +176,6 @@ func main() {
 			}
 			if err := recalcCostsMode(db, "zero"); err != nil {
 				log.Printf("recalc costs: %v", err)
-			}
-			if err := db.RebuildUsageAggregates(); err != nil {
-				log.Printf("aggregate rebuild: %v", err)
 			}
 		}
 	}()
@@ -221,12 +217,19 @@ func recalcCostsMode(db *storage.DB, mode string) error {
 		if err := db.RecalcCostsDetailed(detailed, pricing.CalcCost, mode, false); err != nil {
 			return err
 		}
-		return db.RebuildUsageAggregates()
+		return refreshDerivedLedgers(db)
 	}
 	if err := db.RecalcCostsMode(prices, pricing.CalcCost, mode); err != nil {
 		return err
 	}
-	return db.RebuildUsageAggregates()
+	return refreshDerivedLedgers(db)
+}
+
+func refreshDerivedLedgers(db *storage.DB) error {
+	if err := db.RebuildUsageAggregates(); err != nil {
+		return err
+	}
+	return db.BackfillWorkloadsFromUsage(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Now().UTC().AddDate(10, 0, 0))
 }
 
 func scanCollector(db *storage.DB, ce collectorEntry, reset bool) error {
@@ -378,8 +381,139 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		if len(models) > 0 {
 			fmt.Printf("- Top model: %s ($%.4f)\n", models[0].Model, models[0].Cost)
 		}
+	case "workload":
+		return runWorkloadCLI(args[1:], db)
+	case "run":
+		return runWrappedCLI(args[1:], db)
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func runWorkloadCLI(args []string, db *storage.DB) error {
+	if len(args) == 0 || args[0] == "list" {
+		now := time.Now()
+		page, err := db.GetWorkloadsPage(now.AddDate(0, 0, -30), now.Add(24*time.Hour), "", "", "", "", "", 50, 0)
+		if err != nil {
+			return err
+		}
+		for _, row := range page.Rows {
+			fmt.Printf("%s\t%s\t$%.4f\t%d tokens\t%s\t%s\n", row.WorkloadID, row.Status, row.CostUSD, row.Tokens, row.Source, row.Goal)
+		}
+		return nil
+	}
+	switch args[0] {
+	case "create":
+		goal := cliValue(args[1:], "--goal")
+		budget, _ := parseFloat(cliValue(args[1:], "--budget-usd"))
+		id, err := db.CreateWorkload(goal, cliValue(args[1:], "--source"), cliValue(args[1:], "--project"), cliValue(args[1:], "--repo"),
+			cliValue(args[1:], "--branch"), cliValue(args[1:], "--owner"), cliValue(args[1:], "--team"), budget)
+		if err != nil {
+			return err
+		}
+		fmt.Println(id)
+	case "show":
+		id := firstNonEmptyCLI(cliValue(args[1:], "--id"), cliValue(args[1:], "--workload-id"))
+		detail, err := db.GetWorkloadDetail(id)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(detail)
+	case "close":
+		id := firstNonEmptyCLI(cliValue(args[1:], "--id"), cliValue(args[1:], "--workload-id"))
+		status := firstNonEmptyCLI(cliValue(args[1:], "--status"), "completed")
+		if err := db.CloseWorkload(id, status, cliValue(args[1:], "--outcome")); err != nil {
+			return err
+		}
+		fmt.Printf("%s\t%s\n", id, status)
+	default:
+		return fmt.Errorf("unknown workload command %q", args[0])
+	}
+	return nil
+}
+
+func runWrappedCLI(args []string, db *storage.DB) error {
+	sep := -1
+	for i, arg := range args {
+		if arg == "--" {
+			sep = i
+			break
+		}
+	}
+	if sep < 0 || sep == len(args)-1 {
+		return fmt.Errorf("usage: agent-ledger run --goal <goal> [--agent codex] -- <command>")
+	}
+	meta := args[:sep]
+	commandArgs := args[sep+1:]
+	goal := cliValue(meta, "--goal")
+	if goal == "" {
+		return fmt.Errorf("--goal is required")
+	}
+	budget, _ := parseFloat(cliValue(meta, "--budget-usd"))
+	agent := firstNonEmptyCLI(cliValue(meta, "--agent"), cliValue(meta, "--source"), "local")
+	source := firstNonEmptyCLI(cliValue(meta, "--source"), agent)
+	cwd, _ := os.Getwd()
+	workloadID, err := db.CreateWorkload(goal, source, cliValue(meta, "--project"), cliValue(meta, "--repo"), cliValue(meta, "--branch"), "", "", budget)
+	if err != nil {
+		return err
+	}
+	runID, err := db.StartAgentRun(workloadID, source, agent, strings.Join(commandArgs, " "), cwd)
+	if err != nil {
+		return err
+	}
+	start := time.Now()
+	cmd := exec.Command(commandArgs[0], commandArgs[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	cmd.Dir = cwd
+	err = cmd.Run()
+	duration := time.Since(start).Milliseconds()
+	status := "completed"
+	exitCode := 0
+	errText := ""
+	if err != nil {
+		status = "failed"
+		errText = err.Error()
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = 1
+		}
+	}
+	_ = db.FinishAgentRun(runID, status, exitCode, errText, duration)
+	_ = db.CloseWorkload(workloadID, status, status)
+	fmt.Printf("workload=%s run=%s status=%s exit=%d duration_ms=%d\n", workloadID, runID, status, exitCode, duration)
+	return err
+}
+
+func cliValue(args []string, key string) string {
+	for i := 0; i < len(args); i++ {
+		if args[i] == key && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(args[i], key+"=") {
+			return strings.TrimPrefix(args[i], key+"=")
+		}
+	}
+	return ""
+}
+
+func parseFloat(raw string) (float64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	var v float64
+	_, err := fmt.Sscanf(raw, "%f", &v)
+	return v, err
+}
+
+func firstNonEmptyCLI(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

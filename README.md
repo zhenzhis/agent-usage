@@ -1,6 +1,6 @@
 # Agent Ledger
 
-Private local AI Agent FinOps, quota, pricing, audit, and productivity console for Claude Code, Codex, OpenCode, OpenClaw, kiro, Pi, and related local coding agents.
+Private local AI Agent FinOps, workload ledger, quota, pricing, audit, and productivity console for Claude Code, Codex, OpenCode, OpenClaw, kiro, Pi, and related local coding agents.
 
 [中文文档](README_CN.md)
 
@@ -18,6 +18,7 @@ The project has been renamed from `agent-usage` to `agent-ledger`. Old local dat
 - Calculates token cost with local pricing governance: local overrides, official OpenAI/Anthropic seeds, and LiteLLM fallback.
 - Explains expensive sessions without reading prompt content.
 - Tracks budgets, burn rate, local quota estimates, cache health, model call counts, anomalies, and source health.
+- Promotes raw sessions into a canonical Workload Ledger with goal, run, model-call, tool-call, artifact, evaluation, and policy-decision tables.
 - Provides local audit logs, privacy presets, exports, reports, evidence bundles, and team showback data.
 - Runs as one Go binary with embedded static UI and SQLite.
 
@@ -45,6 +46,9 @@ CLI:
 ./agent-ledger top
 ./agent-ledger doctor
 ./agent-ledger battery
+./agent-ledger workload list
+./agent-ledger workload create --goal "review strategy engine" --source codex --project quant
+./agent-ledger run --goal "debug ingestion" --agent codex -- codex
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ```
@@ -121,12 +125,17 @@ References:
 ## Architecture
 
 ```text
-collectors -> SQLite raw usage -> pricing governance -> cost recalculation
-           -> aggregate tables -> REST API -> embedded dashboard / CLI
+collectors / CLI wrapper -> canonical events -> workload ledger
+                         -> raw usage + pricing governance -> aggregates
+                         -> REST API -> embedded dashboard / CLI
 ```
 
 Core tables:
 
+- `canonical_events`: normalized event stream for future collectors, MCP, A2A, and gateways.
+- `workloads`, `agent_runs`, `model_calls`, `tool_calls`: goal/run/call ledger.
+- `workload_sessions`: compatibility link from old source-scoped sessions to workloads.
+- `artifacts`, `evaluations`, `policy_decisions`, `context_refs`: future-proof AgentOps records.
 - `usage_records`: raw API-call token and cost data.
 - `sessions`: source-scoped session metadata.
 - `prompt_events`: prompt timestamps for time-accurate prompt counts.
@@ -141,7 +150,13 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/stats` | Summary stats |
+| `GET /api/workloads` | Server-side paginated workload ledger |
+| `POST /api/workloads` | Create a local workload |
+| `POST /api/workloads/close` | Close a workload with status/outcome |
+| `GET /api/workload-detail` | Workload runs, model calls, tools, sessions, policies |
+| `GET /api/workload-graph` | Compact workload graph |
 | `GET /api/sessions` | Server-side paginated session ledger |
+| `GET /api/model-registry` | Pricing and model governance registry |
 | `GET /api/pricing/status` | Pricing freshness, source state, unpriced models |
 | `POST /api/pricing/sync` | Sync pricing |
 | `POST /api/pricing/recalculate?mode=zero|all` | Recalculate costs |
@@ -152,7 +167,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/quota/status` | Local quota and burn-rate estimates |
 | `GET /api/anomalies` | Robust-statistics anomaly events |
 | `GET /api/evidence-bundle` | Redacted support/audit bundle |
-| `GET /api/export?type=sessions&format=csv` | CSV/JSON exports |
+| `GET /api/export?type=workloads&format=csv` | CSV/JSON exports |
 | `GET /api/report?format=markdown` | Markdown report |
 
 Manual scan, reset, pricing sync, imports, and recalculation require localhost access unless auth tokens are configured.
@@ -181,6 +196,12 @@ On hosts without Go installed:
 ```bash
 docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . && go test ./..."
 ```
+
+## Roadmap
+
+Implemented foundation: canonical workload schema, legacy session backfill, workload API, workload CSV export, CLI workload commands, and CLI run wrapper.
+
+Planned integrations: MCP server tools, A2A task telemetry, OpenTelemetry GenAI mapping, optional provider/API gateway, Postgres team mode, signed offline bundle import, OIDC/SSO, and enterprise policy approval flows.
 
 ## License
 

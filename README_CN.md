@@ -1,6 +1,6 @@
 # Agent Ledger
 
-Agent Ledger 是本地优先的 AI Agent FinOps、额度、价格、审计与生产力洞察控制台，支持 Claude Code、Codex、OpenCode、OpenClaw、kiro、Pi 等本地 coding agent。
+Agent Ledger 是本地优先的 AI Agent FinOps、工作负载账本、额度、价格、审计与生产力洞察控制台，支持 Claude Code、Codex、OpenCode、OpenClaw、kiro、Pi 等本地 coding agent。
 
 [English README](README.md)
 
@@ -18,6 +18,7 @@ Agent Ledger 是 ZhenZhi 基于 [briqt/agent-usage](https://github.com/briqt/age
 - 使用本地 override、OpenAI/Anthropic 官方 seed、LiteLLM fallback 进行价格治理。
 - 不读取 prompt 内容，只基于 token、cache、模型、时间和会话元数据解释昂贵 session。
 - 提供预算、burn rate、本地 quota 估算、cache doctor、模型调用次数、异常检测、采集健康。
+- 将底层 session 自动提升为 canonical Workload Ledger，记录 goal、run、model call、tool call、artifact、evaluation 与 policy decision。
 - 支持本地审计日志、隐私 preset、导出、Markdown 报告、证据包、团队 showback。
 - 单 Go 二进制，内嵌静态 UI，SQLite 存储。
 
@@ -45,6 +46,9 @@ CLI：
 ./agent-ledger top
 ./agent-ledger doctor
 ./agent-ledger battery
+./agent-ledger workload list
+./agent-ledger workload create --goal "review strategy engine" --source codex --project quant
+./agent-ledger run --goal "debug ingestion" --agent codex -- codex
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ```
@@ -121,12 +125,17 @@ cost = input_tokens * input_price
 ## 架构
 
 ```text
-collectors -> SQLite raw usage -> pricing governance -> cost recalculation
-           -> aggregate tables -> REST API -> embedded dashboard / CLI
+collectors / CLI wrapper -> canonical events -> workload ledger
+                         -> raw usage + pricing governance -> aggregates
+                         -> REST API -> embedded dashboard / CLI
 ```
 
 核心表：
 
+- `canonical_events`：面向未来 collector、MCP、A2A、gateway 的规范事件流。
+- `workloads`、`agent_runs`、`model_calls`、`tool_calls`：goal/run/call 级账本。
+- `workload_sessions`：旧 session 与 workload 的兼容映射。
+- `artifacts`、`evaluations`、`policy_decisions`、`context_refs`：AgentOps 扩展记录。
 - `usage_records`：API 调用级 token 与费用。
 - `sessions`：source-scoped 会话元数据。
 - `prompt_events`：按时间统计 prompt。
@@ -141,7 +150,13 @@ collectors -> SQLite raw usage -> pricing governance -> cost recalculation
 | Endpoint | 用途 |
 |---|---|
 | `GET /api/stats` | 总览 |
+| `GET /api/workloads` | 服务端分页工作负载账本 |
+| `POST /api/workloads` | 创建本地 workload |
+| `POST /api/workloads/close` | 关闭 workload 并记录结果 |
+| `GET /api/workload-detail` | workload 的 run、model call、tool、session、policy 明细 |
+| `GET /api/workload-graph` | workload 图谱 |
 | `GET /api/sessions` | 服务端分页会话账本 |
+| `GET /api/model-registry` | 模型与价格治理注册表 |
 | `GET /api/pricing/status` | 价格源、新鲜度、未计价模型 |
 | `POST /api/pricing/sync` | 同步价格 |
 | `POST /api/pricing/recalculate?mode=zero|all` | 重算费用 |
@@ -152,7 +167,7 @@ collectors -> SQLite raw usage -> pricing governance -> cost recalculation
 | `GET /api/quota/status` | 本地 quota 和 burn-rate 估算 |
 | `GET /api/anomalies` | 异常检测事件 |
 | `GET /api/evidence-bundle` | 脱敏证据包 |
-| `GET /api/export?type=sessions&format=csv` | CSV/JSON 导出 |
+| `GET /api/export?type=workloads&format=csv` | CSV/JSON 导出 |
 | `GET /api/report?format=markdown` | Markdown 报告 |
 
 手动扫描、清理重扫、价格同步、导入和费用重算默认只允许本机访问；暴露到网络前必须配置 auth token 或反向代理访问控制。
@@ -181,6 +196,12 @@ docker compose up -d --build
 ```bash
 docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . && go test ./..."
 ```
+
+## Roadmap
+
+已落地基础：canonical workload schema、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload 命令和 CLI run wrapper。
+
+后续路线：MCP server tools、A2A task telemetry、OpenTelemetry GenAI mapping、可选 provider/API gateway、Postgres 团队模式、signed offline bundle import、OIDC/SSO、企业策略审批流。
 
 ## License
 
