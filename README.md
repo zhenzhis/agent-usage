@@ -50,7 +50,7 @@ mkdir -p ./data && docker compose up --build -d
 open http://localhost:9800
 ```
 
-The default `docker-compose.yml` builds the local checkout and publishes the dashboard only on `127.0.0.1:9800`. Keep that localhost binding unless you add your own reverse proxy or authentication layer. It only mounts `~/.claude/projects` read-only by default; uncomment additional volume mounts in `docker-compose.yml` for each agent you have installed (Codex, OpenClaw, OpenCode, kiro, Pi). Data persists in `./data/`.
+The default `docker-compose.yml` builds the local checkout and publishes the dashboard only on `127.0.0.1:9800`. Keep that localhost binding unless you add your own reverse proxy or authentication layer. It only mounts `~/.claude/projects` read-only by default, and `config.docker.yaml` only enables the Claude collector by default so fresh containers start without noisy missing-path errors. To collect Codex, OpenClaw, OpenCode, kiro, or Pi usage, uncomment the matching read-only volume in `docker-compose.yml` and set that collector to `enabled: true` in `config.docker.yaml` or your custom config. Data persists in `./data/`.
 
 > **Note:** Only enable mounts for agents you actually use. Docker creates missing host directories as root, which can interfere with tools like `npx skills add` that detect installed agents by directory existence.
 

@@ -50,7 +50,7 @@ mkdir -p ./data && docker compose up --build -d
 open http://localhost:9800
 ```
 
-默认 `docker-compose.yml` 会从当前源码本地构建镜像，并且只发布到 `127.0.0.1:9800`。除非你已经额外配置反向代理或认证层，否则请保留这个 localhost 绑定。默认仅以只读方式挂载 `~/.claude/projects`；如需统计其他 agent（Codex、OpenClaw、OpenCode、kiro、Pi），请在 `docker-compose.yml` 中取消对应 volume 的注释。数据持久化在 `./data/` 目录。
+默认 `docker-compose.yml` 会从当前源码本地构建镜像，并且只发布到 `127.0.0.1:9800`。除非你已经额外配置反向代理或认证层，否则请保留这个 localhost 绑定。默认仅以只读方式挂载 `~/.claude/projects`，且 `config.docker.yaml` 默认只启用 Claude 采集器，确保新容器启动时不会持续输出未挂载路径错误。如需统计 Codex、OpenClaw、OpenCode、kiro 或 Pi，请在 `docker-compose.yml` 中取消对应只读 volume 的注释，并在 `config.docker.yaml` 或自定义配置中把对应采集器设置为 `enabled: true`。数据持久化在 `./data/` 目录。
 
 > **注意：** 只启用你实际安装的 agent 的挂载。Docker 会以 root 身份自动创建不存在的宿主机目录，这会干扰 `npx skills add` 等通过目录是否存在来检测已安装 agent 的工具。
 

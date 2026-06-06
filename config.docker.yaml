@@ -8,22 +8,26 @@ collectors:
     paths: ["/sessions/claude"]
     scan_interval: 60s
   codex:
-    enabled: true
+    enabled: false
     paths: ["/sessions/codex"]
     scan_interval: 60s
   openclaw:
-    enabled: true
+    enabled: false
     paths: ["/sessions/openclaw"]
     scan_interval: 60s
   opencode:
-    enabled: true
+    enabled: false
     paths: ["/sessions/opencode/opencode.db"]
     scan_interval: 60s
   kiro:
-    enabled: true
+    enabled: false
     paths:
       - "/sessions/kiro-cli/data.sqlite3"
       - "/sessions/kiro-sessions"
+    scan_interval: 60s
+  pi:
+    enabled: false
+    paths: ["/sessions/pi"]
     scan_interval: 60s
 
 storage:
