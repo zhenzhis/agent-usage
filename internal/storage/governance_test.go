@@ -69,3 +69,49 @@ func TestRebuildUsageAggregates(t *testing.T) {
 		t.Fatalf("unexpected model calls: %+v", rows)
 	}
 }
+
+func TestDashboardStatsUseRawForNonUTCDayAlignedRange(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.InsertUsage(&UsageRecord{
+		Source:       "codex",
+		SessionID:    "previous-day",
+		Model:        "gpt-5",
+		InputTokens:  10,
+		OutputTokens: 5,
+		CostUSD:      1,
+		Timestamp:    time.Date(2026, 6, 5, 21, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertUsage(&UsageRecord{
+		Source:       "codex",
+		SessionID:    "local-day",
+		Model:        "gpt-5",
+		InputTokens:  100,
+		OutputTokens: 50,
+		CostUSD:      2,
+		Timestamp:    time.Date(2026, 6, 6, 10, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RebuildUsageAggregates(); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := db.GetDashboardStatsFiltered(
+		time.Date(2026, 6, 5, 22, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 6, 22, 0, 0, 0, time.UTC),
+		"", "", "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalTokens != 150 || stats.TotalCost != 2 || stats.TotalCalls != 1 {
+		t.Fatalf("expected raw local-day stats, got %+v", stats)
+	}
+}

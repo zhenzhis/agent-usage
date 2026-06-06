@@ -150,7 +150,7 @@ func (d *DB) GetDashboardStatsFiltered(from, to time.Time, source, model, projec
 	args := append([]interface{}{from, to}, fa...)
 	var cacheRead, totalInput int64
 	usedAggregate := false
-	if to.Sub(from) >= 24*time.Hour {
+	if to.Sub(from) >= 24*time.Hour && isUTCDayAligned(from) && isUTCDayAligned(to) {
 		aggFilter, aggArgs := buildUsageFilter(source, model, project)
 		aggArgs = append([]interface{}{from.Format("2006-01-02"), to.Format("2006-01-02")}, aggArgs...)
 		var rowsSeen int
@@ -183,6 +183,11 @@ func (d *DB) GetDashboardStatsFiltered(from, to time.Time, source, model, projec
 	pf, pa := buildUsageFilter(source, "", project)
 	d.db.QueryRow(`SELECT COUNT(*) FROM prompt_events WHERE timestamp >= ? AND timestamp < ?`+pf, append([]interface{}{from, to}, pa...)...).Scan(&s.TotalPrompts)
 	return s, nil
+}
+
+func isUTCDayAligned(t time.Time) bool {
+	t = t.UTC()
+	return t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0
 }
 
 // GetCostByModel returns total cost grouped by model within the given time range.

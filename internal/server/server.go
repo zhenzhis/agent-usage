@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -266,6 +267,13 @@ func (s *Server) requireLocalOrAuth(w http.ResponseWriter, r *http.Request) bool
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	if v != nil {
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Slice && rv.IsNil() {
+			w.Write([]byte("[]\n"))
+			return
+		}
+	}
 	json.NewEncoder(w).Encode(v)
 }
 
