@@ -25,7 +25,8 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	}
 	if manifest.Contract != "agent-ledger.discovery" || manifest.WellKnownURI != "/.well-known/agent-ledger.json" ||
 		manifest.CanonicalSchemaURI != "/api/event-schema" || manifest.EventExamplesURI != "/api/event-examples" ||
-		manifest.AdapterConformanceURI != "/api/integrations/conformance" || manifest.RuntimeStatusURI != "/api/runtime/status" {
+		manifest.AdapterConformanceURI != "/api/integrations/conformance" || manifest.RuntimeStatusURI != "/api/runtime/status" ||
+		manifest.CanonicalSchemaHash == "" {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
 	if !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {

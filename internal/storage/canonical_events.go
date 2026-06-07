@@ -81,11 +81,10 @@ func CanonicalEventSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"version":            CanonicalEventSchemaVersion,
 		"supported_versions": []string{CanonicalEventSchemaVersion},
+		"schema_hash":        CanonicalEventSchemaFingerprint(),
 		"privacy": map[string]interface{}{
-			"payload_policy": "metadata-only",
-			"rejected_payload_keys": []string{
-				"prompt", "prompts", "messages", "content", "input_text", "output_text", "completion", "transcript",
-			},
+			"payload_policy":        "metadata-only",
+			"rejected_payload_keys": canonicalRejectedPayloadKeys(),
 		},
 		"envelope_fields": map[string]string{
 			"event_id":        "Optional stable idempotency key. Deterministic hash is generated when omitted.",
@@ -111,6 +110,25 @@ func CanonicalEventSchema() map[string]interface{} {
 		"event_types":  CanonicalEventTypes(),
 		"examples_uri": "/api/event-examples",
 	}
+}
+
+// CanonicalEventSchemaFingerprint returns a stable hash for the event contract
+// content that adapter CI can pin without fetching source code.
+func CanonicalEventSchemaFingerprint() string {
+	raw, err := json.Marshal(map[string]interface{}{
+		"version":               CanonicalEventSchemaVersion,
+		"supported_versions":    []string{CanonicalEventSchemaVersion},
+		"rejected_payload_keys": canonicalRejectedPayloadKeys(),
+		"event_types":           CanonicalEventTypes(),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return hashPayload(string(raw))
+}
+
+func canonicalRejectedPayloadKeys() []string {
+	return []string{"prompt", "prompts", "messages", "content", "input_text", "output_text", "completion", "transcript"}
 }
 
 // CanonicalEventTypes lists event types that are projected into the workload ledger.

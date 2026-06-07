@@ -1,5 +1,7 @@
 package integrations
 
+import "github.com/zhenzhis/agent-ledger/internal/storage"
+
 // DiscoveryProtocol is a compact protocol entry for automatic local discovery.
 type DiscoveryProtocol struct {
 	ID                  string   `json:"id"`
@@ -37,6 +39,7 @@ type DiscoveryManifest struct {
 	CapabilityCatalogURI  string              `json:"capability_catalog_uri"`
 	RuntimeStatusURI      string              `json:"runtime_status_uri"`
 	CanonicalSchemaURI    string              `json:"canonical_schema_uri"`
+	CanonicalSchemaHash   string              `json:"canonical_schema_hash"`
 	EventExamplesURI      string              `json:"event_examples_uri"`
 	AdapterConformanceURI string              `json:"adapter_conformance_uri"`
 	MCPCommand            string              `json:"mcp_command"`
@@ -89,6 +92,7 @@ func Discovery(opts Options) DiscoveryManifest {
 		CapabilityCatalogURI:  "/api/integrations",
 		RuntimeStatusURI:      "/api/runtime/status",
 		CanonicalSchemaURI:    "/api/event-schema",
+		CanonicalSchemaHash:   storage.CanonicalEventSchemaFingerprint(),
 		EventExamplesURI:      "/api/event-examples",
 		AdapterConformanceURI: "/api/integrations/conformance",
 		MCPCommand:            "agent-ledger mcp",

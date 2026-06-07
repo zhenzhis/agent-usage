@@ -268,6 +268,9 @@ func TestCanonicalEventSchemaListsCoreTypes(t *testing.T) {
 	if !ok || len(versions) != 1 || versions[0] != "v1" {
 		t.Fatalf("supported_versions=%#v", schema["supported_versions"])
 	}
+	if schema["schema_hash"] != CanonicalEventSchemaFingerprint() || !strings.HasPrefix(CanonicalEventSchemaFingerprint(), "sha256:") {
+		t.Fatalf("schema hash=%#v", schema["schema_hash"])
+	}
 	types, ok := schema["event_types"].([]CanonicalEventTypeInfo)
 	if !ok || len(types) == 0 {
 		t.Fatalf("missing event types: %#v", schema["event_types"])

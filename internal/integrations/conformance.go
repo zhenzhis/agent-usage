@@ -26,6 +26,8 @@ type AdapterConformanceResult struct {
 type AdapterConformanceReport struct {
 	Contract        string                     `json:"contract"`
 	Version         string                     `json:"version"`
+	SchemaVersion   string                     `json:"schema_version"`
+	SchemaHash      string                     `json:"schema_hash"`
 	InputKind       string                     `json:"input_kind"`
 	Status          string                     `json:"status"`
 	OK              bool                       `json:"ok"`
@@ -57,6 +59,8 @@ func RunAdapterConformanceWithOptions(opts AdapterConformanceOptions, raw []byte
 	report := AdapterConformanceReport{
 		Contract:      "agent-ledger.adapter-conformance",
 		Version:       "v1",
+		SchemaVersion: storage.CanonicalEventSchemaVersion,
+		SchemaHash:    storage.CanonicalEventSchemaFingerprint(),
 		InputKind:     normalized,
 		Status:        "fail",
 		PrivacyPolicy: "metadata-only canonical payloads; prompt/content/message keys are rejected",

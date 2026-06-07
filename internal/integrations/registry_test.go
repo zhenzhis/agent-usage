@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
@@ -101,6 +102,9 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 		manifest.RuntimeStatusURI != "/api/runtime/status" || manifest.CanonicalSchemaURI != "/api/event-schema" ||
 		manifest.EventExamplesURI != "/api/event-examples" || manifest.AdapterConformanceURI != "/api/integrations/conformance" {
 		t.Fatalf("discovery missing entrypoints: %#v", manifest)
+	}
+	if manifest.CanonicalSchemaHash == "" || !strings.HasPrefix(manifest.CanonicalSchemaHash, "sha256:") {
+		t.Fatalf("discovery missing schema hash: %#v", manifest)
 	}
 	if !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("discovery missing agent protocols: %#v", manifest.Protocols)

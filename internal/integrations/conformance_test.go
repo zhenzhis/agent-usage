@@ -17,6 +17,9 @@ func TestRunAdapterConformanceAutoDetectsProviderUsage(t *testing.T) {
 	if !report.OK || report.Status != "pass" || report.InputKind != "provider" || report.DecodedEvents != 2 || report.FailedEvents != 0 {
 		t.Fatalf("unexpected report: %#v", report)
 	}
+	if report.SchemaVersion != "v1" || report.SchemaHash == "" {
+		t.Fatalf("missing schema identity: %#v", report)
+	}
 	for _, result := range report.Results {
 		if result.EventID == "" || result.PayloadHash == "" || result.EventType == "" {
 			t.Fatalf("result missing validation identity: %#v", result)
