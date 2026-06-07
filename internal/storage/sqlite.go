@@ -820,5 +820,11 @@ func migrate(db *sql.DB) error {
 		db.Exec(`INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 			"migration_"+m.id, "done")
 	}
+	db.Exec("ALTER TABLE canonical_events ADD COLUMN schema_version TEXT DEFAULT 'v1'")
+	db.Exec("ALTER TABLE canonical_events ADD COLUMN source_version TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE canonical_events ADD COLUMN parser_version TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE canonical_events ADD COLUMN raw_ref TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE canonical_events ADD COLUMN match_type TEXT DEFAULT ''")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_canonical_events_schema_type_time ON canonical_events(schema_version, event_type, timestamp)")
 	return nil
 }

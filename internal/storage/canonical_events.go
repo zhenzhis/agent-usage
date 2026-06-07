@@ -17,7 +17,12 @@ type CanonicalEvent struct {
 	EventID       string          `json:"event_id"`
 	Source        string          `json:"source"`
 	EventType     string          `json:"event_type"`
+	SchemaVersion string          `json:"schema_version,omitempty"`
+	SourceVersion string          `json:"source_version,omitempty"`
+	ParserVersion string          `json:"parser_version,omitempty"`
 	SourceEventID string          `json:"source_event_id"`
+	RawRef        string          `json:"raw_ref,omitempty"`
+	MatchType     string          `json:"match_type,omitempty"`
 	WorkloadID    string          `json:"workload_id"`
 	AgentRunID    string          `json:"agent_run_id"`
 	SessionID     string          `json:"session_id"`
@@ -62,7 +67,12 @@ func CanonicalEventSchema() map[string]interface{} {
 			"event_id":        "Optional stable idempotency key. Deterministic hash is generated when omitted.",
 			"source":          "Required source name such as codex, claude, opencode, gateway, or local.",
 			"event_type":      "Required canonical event type.",
+			"schema_version":  "Optional canonical envelope version. Defaults to v1.",
+			"source_version":  "Optional upstream agent, CLI, provider, or protocol version.",
+			"parser_version":  "Optional source adapter/parser version that produced this event.",
 			"source_event_id": "Optional native upstream event id.",
+			"raw_ref":         "Optional privacy-safe native reference such as file hash, row id, trace id, or byte offset. Do not send raw prompt/content.",
+			"match_type":      "Optional provenance match label such as exact, estimated, reconstructed, source_reported, or fuzzy.",
 			"workload_id":     "Optional Agent Ledger workload id. Required for most child events unless payload.goal is provided.",
 			"agent_run_id":    "Optional Agent Ledger run id.",
 			"session_id":      "Optional source-scoped local session id.",
@@ -241,6 +251,9 @@ func (d *DB) IngestCanonicalEvent(event CanonicalEvent) (*CanonicalEventResult, 
 	if event.EventType == "" {
 		return nil, fmt.Errorf("event_type is required")
 	}
+	if err := normalizeCanonicalEventProvenance(&event); err != nil {
+		return nil, err
+	}
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now().UTC()
 	}
@@ -268,9 +281,9 @@ func (d *DB) IngestCanonicalEvent(event CanonicalEvent) (*CanonicalEventResult, 
 	defer tx.Rollback()
 
 	now := time.Now().UTC()
-	res, err := tx.Exec(`INSERT INTO canonical_events(event_id,source,event_type,source_event_id,workload_id,agent_run_id,session_id,model,project,git_branch,timestamp,payload_hash,payload,confidence,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO NOTHING`,
-		event.EventID, event.Source, event.EventType, event.SourceEventID, event.WorkloadID, event.AgentRunID, event.SessionID, event.Model,
+	res, err := tx.Exec(`INSERT INTO canonical_events(event_id,source,event_type,schema_version,source_version,parser_version,source_event_id,raw_ref,match_type,workload_id,agent_run_id,session_id,model,project,git_branch,timestamp,payload_hash,payload,confidence,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO NOTHING`,
+		event.EventID, event.Source, event.EventType, event.SchemaVersion, event.SourceVersion, event.ParserVersion, event.SourceEventID, event.RawRef, event.MatchType, event.WorkloadID, event.AgentRunID, event.SessionID, event.Model,
 		event.Project, normalizeBranch(event.GitBranch), event.Timestamp, event.PayloadHash, payloadJSON, event.Confidence, now)
 	if err != nil {
 		return nil, err
@@ -617,6 +630,48 @@ func containsPromptContentKey(v interface{}) bool {
 		}
 	}
 	return false
+}
+
+func normalizeCanonicalEventProvenance(event *CanonicalEvent) error {
+	event.SchemaVersion = strings.TrimSpace(event.SchemaVersion)
+	if event.SchemaVersion == "" {
+		event.SchemaVersion = "v1"
+	}
+	event.SourceVersion = strings.TrimSpace(event.SourceVersion)
+	event.ParserVersion = strings.TrimSpace(event.ParserVersion)
+	event.RawRef = strings.TrimSpace(event.RawRef)
+	event.MatchType = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(event.MatchType, "-", "_")))
+	if err := validateProvenanceField("schema_version", event.SchemaVersion, 64); err != nil {
+		return err
+	}
+	if err := validateProvenanceField("source_version", event.SourceVersion, 128); err != nil {
+		return err
+	}
+	if err := validateProvenanceField("parser_version", event.ParserVersion, 128); err != nil {
+		return err
+	}
+	if err := validateProvenanceField("raw_ref", event.RawRef, 512); err != nil {
+		return err
+	}
+	if err := validateProvenanceField("match_type", event.MatchType, 64); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateProvenanceField(name, value string, maxLen int) error {
+	if value == "" {
+		return nil
+	}
+	if len(value) > maxLen {
+		return fmt.Errorf("%s is too long: max %d bytes", name, maxLen)
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("%s contains control characters", name)
+		}
+	}
+	return nil
 }
 
 func normalizeCanonicalEventType(raw string) string {

@@ -225,7 +225,7 @@ func (d *DB) GetCanonicalEvents(from, to time.Time, source, model, project strin
 	filter, args := buildCanonicalEventFilter(source, model, project)
 	queryArgs := append([]interface{}{from, to}, args...)
 	queryArgs = append(queryArgs, limit)
-	rows, err := d.db.Query(`SELECT event_id,source,event_type,source_event_id,workload_id,agent_run_id,session_id,model,project,git_branch,timestamp,payload_hash,payload,confidence
+	rows, err := d.db.Query(`SELECT event_id,source,event_type,schema_version,source_version,parser_version,source_event_id,raw_ref,match_type,workload_id,agent_run_id,session_id,model,project,git_branch,timestamp,payload_hash,payload,confidence
 		FROM canonical_events WHERE timestamp >= ? AND timestamp < ?`+filter+` ORDER BY timestamp,id LIMIT ?`, queryArgs...)
 	if err != nil {
 		return nil, err
@@ -235,7 +235,7 @@ func (d *DB) GetCanonicalEvents(from, to time.Time, source, model, project strin
 	for rows.Next() {
 		var event CanonicalEvent
 		var timestampRaw, payloadRaw string
-		if err := rows.Scan(&event.EventID, &event.Source, &event.EventType, &event.SourceEventID, &event.WorkloadID, &event.AgentRunID,
+		if err := rows.Scan(&event.EventID, &event.Source, &event.EventType, &event.SchemaVersion, &event.SourceVersion, &event.ParserVersion, &event.SourceEventID, &event.RawRef, &event.MatchType, &event.WorkloadID, &event.AgentRunID,
 			&event.SessionID, &event.Model, &event.Project, &event.GitBranch, &timestampRaw, &event.PayloadHash, &payloadRaw, &event.Confidence); err != nil {
 			return nil, err
 		}

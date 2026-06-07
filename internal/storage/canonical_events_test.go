@@ -358,6 +358,65 @@ func TestAgentRunHeartbeatRejectsPromptMetrics(t *testing.T) {
 	}
 }
 
+func TestCanonicalEventProvenancePersistsAndExports(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	schema := CanonicalEventSchema()
+	envelope, ok := schema["envelope_fields"].(map[string]string)
+	if !ok {
+		t.Fatalf("schema envelope has unexpected shape: %#v", schema["envelope_fields"])
+	}
+	for _, field := range []string{"schema_version", "source_version", "parser_version", "raw_ref", "match_type"} {
+		if envelope[field] == "" {
+			t.Fatalf("schema missing provenance field %q", field)
+		}
+	}
+
+	ts := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	_, err = db.IngestCanonicalEvent(CanonicalEvent{
+		EventID:       "evt-provenance",
+		Source:        "codex",
+		EventType:     "workload.started",
+		SchemaVersion: "v1",
+		SourceVersion: "codex-cli 1.2.3",
+		ParserVersion: "agent-ledger-codex-adapter@v2",
+		SourceEventID: "native-turn-42",
+		RawRef:        "sha256:source-file#byte=1024",
+		MatchType:     "source-reported",
+		Timestamp:     ts,
+		Payload: rawJSON(t, map[string]interface{}{
+			"goal":    "track provenance",
+			"project": "agent-ledger",
+		}),
+	})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	var schemaVersion, sourceVersion, parserVersion, rawRef, matchType string
+	if err := db.db.QueryRow(`SELECT schema_version,source_version,parser_version,raw_ref,match_type FROM canonical_events WHERE event_id=?`, "evt-provenance").
+		Scan(&schemaVersion, &sourceVersion, &parserVersion, &rawRef, &matchType); err != nil {
+		t.Fatalf("query provenance: %v", err)
+	}
+	if schemaVersion != "v1" || sourceVersion != "codex-cli 1.2.3" || parserVersion != "agent-ledger-codex-adapter@v2" || rawRef != "sha256:source-file#byte=1024" || matchType != "source_reported" {
+		t.Fatalf("unexpected provenance: schema=%q source=%q parser=%q raw_ref=%q match=%q", schemaVersion, sourceVersion, parserVersion, rawRef, matchType)
+	}
+
+	events, err := db.GetCanonicalEvents(ts.Add(-time.Minute), ts.Add(time.Minute), "codex", "", "", 10)
+	if err != nil {
+		t.Fatalf("export canonical events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events=%#v", events)
+	}
+	exported := events[0]
+	if exported.SchemaVersion != "v1" || exported.SourceVersion != "codex-cli 1.2.3" || exported.ParserVersion != "agent-ledger-codex-adapter@v2" || exported.RawRef != "sha256:source-file#byte=1024" || exported.MatchType != "source_reported" {
+		t.Fatalf("export lost provenance: %#v", exported)
+	}
+}
+
 func rawJSON(t *testing.T, value map[string]interface{}) json.RawMessage {
 	t.Helper()
 	raw, err := json.Marshal(value)

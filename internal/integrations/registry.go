@@ -114,7 +114,7 @@ func Registry(opts Options) Catalog {
 			EventTypes: eventTypes,
 			Endpoints:  []string{"GET /api/event-schema", "POST /api/events"},
 			DataClasses: []string{
-				"workload metadata", "model call usage", "tool call metadata", "context references", "artifact hashes", "evaluation signals", "policy decisions",
+				"workload metadata", "adapter provenance", "model call usage", "tool call metadata", "context references", "artifact hashes", "evaluation signals", "policy decisions",
 			},
 		},
 		{
@@ -126,7 +126,7 @@ func Registry(opts Options) Catalog {
 			Status:     "implemented",
 			Maturity:   "stable-v1",
 			Enabled:    true,
-			Privacy:    "metadata-only payloads; stdin and file inputs are size limited",
+			Privacy:    "metadata-only payloads; stdin and file inputs are size limited; provenance fields should use hashes, row ids, or offsets instead of raw prompt content",
 			EventTypes: eventTypes,
 			Commands:   []string{"agent-ledger event schema", "agent-ledger event ingest --file event.json"},
 		},
