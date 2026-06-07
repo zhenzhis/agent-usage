@@ -59,6 +59,7 @@ CLI:
 ./agent-ledger event ingest --file event.json
 ./agent-ledger discovery
 ./agent-ledger integrations
+./agent-ledger notify webhook --dry-run --severity warning
 ./agent-ledger otel convert --file spans.json
 ./agent-ledger otel ingest --file spans.json
 ./agent-ledger a2a convert --file task.json
@@ -116,6 +117,12 @@ privacy:
   hide_project_names: false
   screenshot_mode: false
 
+webhooks:
+  enabled: false
+  url: ""
+  timeout: 10s
+  max_events: 20
+
 integrations:
   otlp_receiver:
     enabled: false
@@ -135,6 +142,8 @@ gateway:
 Use `pricing.overrides` for enterprise contracts, relay pricing, regional multipliers, or provider-specific discounts.
 
 The optional gateway is a local OpenAI-compatible Chat Completions proxy. It is disabled by default, supports JSON responses and SSE streaming, reads the upstream API key from the configured environment variable, and records token usage plus audit metadata without storing request messages or response content. For streaming calls, `include_stream_usage: true` asks compatible upstreams for a final usage chunk when the client did not explicitly set `stream_options.include_usage`; set it to `false` for relays that reject that option.
+
+Webhook notifications are disabled by default. When explicitly enabled, `POST /api/notifications/webhook` and `agent-ledger notify webhook` send only bounded workload-event summaries with redacted goal, project, repo, branch, team, event id, and workload id. Use `--dry-run` or `dry_run=1` to inspect the outgoing payload without sending.
 
 Gateway requests can attach ledger context through query parameters or request `metadata`: `agent_ledger.project`, `agent_ledger.goal`, `agent_ledger.workload_id`, `agent_ledger.agent_run_id`, `agent_ledger.session_id`, and `agent_ledger.git_branch`. This lets wrappers, MCP tools, and async agents bind live model calls to an existing workload/run without exposing prompt content.
 
@@ -216,6 +225,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/workload-timeline` | Chronological workload audit timeline |
 | `GET /api/workload-state` | Derived terminal-state snapshot for one async agent workload |
 | `GET /api/workload-events` | Derived local workload state feed for monitors, routers, and notification adapters |
+| `POST /api/notifications/webhook` | Explicitly send a redacted workload-event summary to the configured webhook |
 | `GET /api/integrations` | Privacy-safe integration capability catalog |
 | `GET /api/event-schema` | Canonical event schema and supported event types |
 | `POST /api/events` | Ingest metadata-only canonical events |
@@ -372,7 +382,7 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed, explicit workload evaluation signals, privacy-safe discovery manifest, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional JSON/SSE local OpenAI-compatible gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed, explicit workload evaluation signals, disabled-by-default redacted webhook notifications, privacy-safe discovery manifest, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional JSON/SSE local OpenAI-compatible gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
 
 Planned integrations: OTLP protobuf/gRPC conformance, provider-native gateway adapters, Postgres team mode, OIDC/SSO, richer MCP subscriptions, and multi-actor approval notifications.
 

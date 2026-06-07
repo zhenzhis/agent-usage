@@ -86,6 +86,8 @@ policies:
 webhooks:
   enabled: false
   url: ""
+  timeout: 10s
+  max_events: 20
 
 teams:
   machine_name: ""

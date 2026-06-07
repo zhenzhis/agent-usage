@@ -163,8 +163,10 @@ type PolicyRule struct {
 
 // WebhookConfig is disabled by default and only sends redacted summaries.
 type WebhookConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	URL     string `yaml:"url"`
+	Enabled   bool          `yaml:"enabled"`
+	URL       string        `yaml:"url"`
+	Timeout   time.Duration `yaml:"timeout"`
+	MaxEvents int           `yaml:"max_events"`
 }
 
 // TeamsConfig maps projects, paths, or authors to showback groups.
@@ -257,7 +259,7 @@ func DefaultConfig() *Config {
 		Watchdog: WatchdogConfig{Enabled: true, TokenSpikeMultiplier: 4, MinCalls: 8, NightStartHour: 22, NightEndHour: 6},
 		RBAC:     RBACConfig{Enabled: false},
 		Policies: PolicyConfig{Enabled: false},
-		Webhooks: WebhookConfig{Enabled: false},
+		Webhooks: WebhookConfig{Enabled: false, Timeout: 10 * time.Second, MaxEvents: 20},
 		Teams:    TeamsConfig{Groups: map[string]string{}},
 		Integrations: IntegrationsConfig{
 			OTLPReceiver: OTLPReceiverConfig{Enabled: false, MaxBodyBytes: 4 << 20, MaxSpans: 1000},
@@ -357,6 +359,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Watchdog.MinCalls <= 0 {
 		cfg.Watchdog.MinCalls = 8
+	}
+	if cfg.Webhooks.Timeout <= 0 {
+		cfg.Webhooks.Timeout = 10 * time.Second
+	}
+	if cfg.Webhooks.MaxEvents <= 0 || cfg.Webhooks.MaxEvents > 100 {
+		cfg.Webhooks.MaxEvents = 20
 	}
 	return cfg, nil
 }

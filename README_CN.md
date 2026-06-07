@@ -59,6 +59,7 @@ CLI：
 ./agent-ledger event ingest --file event.json
 ./agent-ledger discovery
 ./agent-ledger integrations
+./agent-ledger notify webhook --dry-run --severity warning
 ./agent-ledger otel convert --file spans.json
 ./agent-ledger otel ingest --file spans.json
 ./agent-ledger a2a convert --file task.json
@@ -116,6 +117,12 @@ privacy:
   hide_project_names: false
   screenshot_mode: false
 
+webhooks:
+  enabled: false
+  url: ""
+  timeout: 10s
+  max_events: 20
+
 integrations:
   otlp_receiver:
     enabled: false
@@ -135,6 +142,8 @@ gateway:
 企业合同价、三方中转价、地区倍率和内部折扣请通过 `pricing.overrides` 配置。
 
 可选 gateway 是本地 OpenAI-compatible Chat Completions 代理。它默认关闭，支持 JSON 响应和 SSE streaming，只从配置的环境变量读取上游 API key，并只记录 token usage 与审计元数据，不保存 request messages 或 response content。对 streaming 请求，`include_stream_usage: true` 会在客户端没有显式设置 `stream_options.include_usage` 时请求兼容上游返回最终 usage chunk；如果三方中转拒绝该选项，可设为 `false`。
+
+Webhook 通知默认关闭。显式开启后，`POST /api/notifications/webhook` 与 `agent-ledger notify webhook` 只发送有上限的 workload-event 脱敏摘要；goal、project、repo、branch、team、event id、workload id 都会被隐藏或 hash。可用 `--dry-run` 或 `dry_run=1` 检查即将发送的 payload，不进行外发。
 
 Gateway 请求可以通过 query 参数或 request `metadata` 附加账本上下文：`agent_ledger.project`、`agent_ledger.goal`、`agent_ledger.workload_id`、`agent_ledger.agent_run_id`、`agent_ledger.session_id`、`agent_ledger.git_branch`。这样 wrapper、MCP 工具和异步 agent 可以把实时模型调用绑定到已有 workload/run，而无需暴露 prompt 内容。
 
@@ -216,6 +225,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/workload-timeline` | 按时间排序的 workload 审计时间线 |
 | `GET /api/workload-state` | 单个异步 agent workload 的 terminal-state 派生快照 |
 | `GET /api/workload-events` | 面向 monitor、router、通知适配器的本地 workload 状态事件 feed |
+| `POST /api/notifications/webhook` | 显式发送脱敏 workload-event 摘要到配置的 webhook |
 | `GET /api/integrations` | 隐私安全的集成能力目录 |
 | `GET /api/event-schema` | Canonical event schema 与支持的事件类型 |
 | `POST /api/events` | 写入 metadata-only canonical events |
@@ -372,7 +382,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed、显式 workload evaluation 信号、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed、显式 workload evaluation 信号、默认关闭的脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
 
 后续路线：OTLP protobuf/gRPC conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、多操作者审批通知。
 

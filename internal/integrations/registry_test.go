@@ -32,12 +32,15 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "gateway.provider_live_proxy", "experimental", false)
 	assertCapability(t, catalog, "finops.provider_reconciliation", "implemented", true)
 	assertCapability(t, catalog, "governance.policy_evaluator", "implemented", true)
+	assertCapability(t, catalog, "notification.redacted_webhook", "implemented", false)
 
 	cfg.Integrations.OTLPReceiver.Enabled = true
 	cfg.Gateway.Enabled = true
+	cfg.Webhooks.Enabled = true
 	enabledCatalog := Registry(OptionsFromConfig(cfg))
 	assertCapability(t, enabledCatalog, "protocol.otlp_receiver", "experimental", true)
 	assertCapability(t, enabledCatalog, "gateway.provider_live_proxy", "experimental", true)
+	assertCapability(t, enabledCatalog, "notification.redacted_webhook", "implemented", true)
 }
 
 func TestCollectorCapabilitiesDoNotExposeRawPaths(t *testing.T) {

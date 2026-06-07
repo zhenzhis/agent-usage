@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -17,6 +18,7 @@ import (
 	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	"github.com/zhenzhis/agent-ledger/internal/mcp"
+	"github.com/zhenzhis/agent-ledger/internal/notifications"
 	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
 	"github.com/zhenzhis/agent-ledger/internal/pricing"
 	"github.com/zhenzhis/agent-ledger/internal/reconciliation"
@@ -417,6 +419,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runChargebackCLI(args[1:], cfg, db)
 	case "fleet":
 		return runFleetCLI(args[1:], db)
+	case "notify":
+		return runNotifyCLI(args[1:], cfg, db)
 	case "discovery":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Discovery(integrations.OptionsFromConfig(cfg)))
 	case "integrations":
@@ -435,6 +439,54 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func runNotifyCLI(args []string, cfg *config.Config, db *storage.DB) error {
+	if len(args) == 0 {
+		return fmt.Errorf("notify command required: webhook")
+	}
+	switch args[0] {
+	case "webhook":
+		now := time.Now()
+		from, to, err := cliDateRange(args[1:], now)
+		if err != nil {
+			return err
+		}
+		maxAge := 10 * time.Minute
+		if raw := cliValue(args[1:], "--max-age"); raw != "" {
+			parsed, err := time.ParseDuration(raw)
+			if err != nil {
+				return err
+			}
+			if parsed <= 0 {
+				return fmt.Errorf("--max-age must be positive")
+			}
+			maxAge = parsed
+		}
+		limit := cliInt(args[1:], "--limit", cfg.Webhooks.MaxEvents)
+		feed, err := db.GetWorkloadEventFeed(from, to,
+			cliValue(args[1:], "--source"),
+			cliValue(args[1:], "--model"),
+			cliValue(args[1:], "--project"),
+			cliValue(args[1:], "--phase"),
+			cliValue(args[1:], "--severity"),
+			limit,
+			maxAge)
+		if err != nil {
+			return err
+		}
+		dryRun := cliBool(args[1:], "--dry-run")
+		if dryRun {
+			return json.NewEncoder(os.Stdout).Encode(notifications.BuildWebhookPayload(feed, cfg.Webhooks.MaxEvents))
+		}
+		result, err := notifications.SendWebhook(context.Background(), cfg.Webhooks, feed, false)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	default:
+		return fmt.Errorf("unknown notify command %q", args[0])
+	}
 }
 
 func runChargebackCLI(args []string, cfg *config.Config, db *storage.DB) error {
