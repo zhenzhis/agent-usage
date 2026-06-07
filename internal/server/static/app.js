@@ -133,6 +133,7 @@ const I18N = {
     kiro: "kiro",
     pi: "Pi",
     calls: "calls",
+    sourcesLabel: "sources",
     cache: "cache",
     perCall: "per call",
     tokensPerCall: "tokens/call",
@@ -162,6 +163,7 @@ const I18N = {
     unknownModel: "Unknown model",
     rows: "rows",
     records: "records",
+    issuesLabel: "issues",
     unitMin: "min",
     unitSec: "sec",
     noIssues: "No issues detected",
@@ -170,6 +172,9 @@ const I18N = {
     noChargeback: "No showback rows",
     providerBill: "provider bill",
     localLedger: "local ledger",
+    ledgerProjection: "Ledger Projection",
+    projectionCalls: "model calls",
+    projectionIssues: "projection issues",
     unpriced: "unpriced",
     stale: "stale",
     localEstimate: "local estimate",
@@ -278,6 +283,7 @@ const I18N = {
     kiro: "kiro",
     pi: "Pi",
     calls: "次调用",
+    sourcesLabel: "来源",
     cache: "缓存",
     perCall: "每次调用",
     tokensPerCall: "tokens/调用",
@@ -307,6 +313,7 @@ const I18N = {
     unknownModel: "未知模型",
     rows: "行",
     records: "条记录",
+    issuesLabel: "问题",
     unitMin: "分钟",
     unitSec: "秒",
     noIssues: "未发现问题",
@@ -315,6 +322,9 @@ const I18N = {
     noChargeback: "暂无团队归因数据",
     providerBill: "provider 账单",
     localLedger: "本地账本",
+    ledgerProjection: "账本投影",
+    projectionCalls: "模型调用",
+    projectionIssues: "投影问题",
     unpriced: "未计价",
     stale: "过期",
     localEstimate: "本地估算",
@@ -697,8 +707,8 @@ function renderHealth(rows) {
       fragment.appendChild(item);
     });
     setText("s-health", problemCount ? String(problemCount) : t("ok").toUpperCase());
-    setText("s-health-sub", `${health.length} sources`);
-    setText("health-meta", `${problemCount} issues`);
+    setText("s-health-sub", `${health.length} ${t("sourcesLabel")}`);
+    setText("health-meta", `${problemCount} ${t("issuesLabel")}`);
   }
   list.replaceChildren(fragment);
 }
@@ -764,7 +774,7 @@ function renderPricing(payload) {
   }
   setText("s-pricing", stale ? `${stale} ${t("stale")}` : "OK");
   setText("s-pricing-sub", unpriced ? `${fmt(unpriced)} ${t("unpriced")}` : payload ? payload.mode : "-");
-  setText("pricing-meta", `${sources.length} sources`);
+  setText("pricing-meta", `${sources.length} ${t("sourcesLabel")}`);
   list.replaceChildren(fragment);
 }
 
@@ -773,21 +783,34 @@ function renderQuality(payload) {
   if (!list) return;
   const fragment = document.createDocumentFragment();
   const rows = (payload && payload.source_quality) || [];
-  if (rows.length === 0) {
+  const projection = payload && payload.projection;
+  const projectionIssues = projection
+    ? Number(projection.missing_usage_projection || 0) + Number(projection.cost_mismatch_records || 0) + Number(projection.duplicate_session_owners || 0)
+    : 0;
+  const hasProjectionSignal = Boolean(projection && (Number(projection.model_calls || 0) > 0 || projectionIssues > 0));
+  if (rows.length === 0 && !hasProjectionSignal) {
     fragment.appendChild(createMessage(t("noData"), "ops-empty"));
     setText("s-quality", "-");
     setText("s-quality-sub", "-");
   } else {
     let min = 1;
+    if (hasProjectionSignal) {
+      const projectionConfidence = Number(projection.confidence || 0);
+      min = Math.min(min, projectionConfidence);
+      const severity = projectionIssues > 0 || projectionConfidence < 0.8 ? "warning" : "ok";
+      const detail = `${projection.message || "-"} · ${fmt(projection.model_calls || 0)} ${t("projectionCalls")}`;
+      addOpsRow(fragment, t("ledgerProjection"), detail, `${(projectionConfidence * 100).toFixed(0)}%`, severity);
+    }
     rows.forEach((row) => {
       min = Math.min(min, Number(row.confidence || 0));
       const sev = row.confidence < 0.7 ? "warning" : "ok";
-      addOpsRow(fragment, row.source, row.message || `${row.records || 0} records`, `${(Number(row.confidence || 0) * 100).toFixed(0)}%`, sev);
+      addOpsRow(fragment, row.source, row.message || `${row.records || 0} ${t("records")}`, `${(Number(row.confidence || 0) * 100).toFixed(0)}%`, sev);
     });
     setText("s-quality", `${(min * 100).toFixed(0)}%`);
-    setText("s-quality-sub", `${rows.length} sources`);
+    setText("s-quality-sub", projectionIssues ? `${rows.length} ${t("sourcesLabel")} · ${projectionIssues} ${t("projectionIssues")}` : `${rows.length} ${t("sourcesLabel")}`);
   }
-  setText("quality-meta", `${((payload && payload.unpriced_models) || []).length} ${t("unpriced")}`);
+  const projectionMeta = hasProjectionSignal ? ` · ${fmt(projection.model_calls || 0)} ${t("projectionCalls")}` : "";
+  setText("quality-meta", `${((payload && payload.unpriced_models) || []).length} ${t("unpriced")}${projectionMeta}`);
   list.replaceChildren(fragment);
 }
 
