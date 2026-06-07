@@ -195,7 +195,7 @@ type GatewayConfig struct {
 	Timeout                  time.Duration `yaml:"timeout"`
 }
 
-// OTLPReceiverConfig controls the local OTLP HTTP/JSON traces receiver.
+// OTLPReceiverConfig controls the local OTLP HTTP JSON/protobuf traces receiver.
 type OTLPReceiverConfig struct {
 	Enabled      bool  `yaml:"enabled"`
 	MaxBodyBytes int64 `yaml:"max_body_bytes"`

@@ -43,10 +43,6 @@ func (s *Server) handleOTLPTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentType := strings.ToLower(r.Header.Get("Content-Type"))
-	if strings.Contains(contentType, "application/x-protobuf") || strings.Contains(contentType, "application/protobuf") {
-		http.Error(w, "OTLP protobuf is not supported by this local receiver; send OTLP HTTP/JSON", http.StatusUnsupportedMediaType)
-		return
-	}
 	maxBody := s.options.Integrations.OTLPReceiver.MaxBodyBytes
 	if maxBody <= 0 {
 		maxBody = 4 << 20
@@ -60,7 +56,13 @@ func (s *Server) handleOTLPTraces(w http.ResponseWriter, r *http.Request) {
 	if maxSpans <= 0 {
 		maxSpans = 1000
 	}
-	result, err := s.ingestOTelSpans(raw.Bytes(), maxSpans, false, "otlp.receiver.ingest", r)
+	var result map[string]interface{}
+	var err error
+	if isOTLPProtobufContentType(contentType) {
+		result, err = s.ingestOTelProtoSpans(raw.Bytes(), maxSpans, "otlp.receiver.ingest", r)
+	} else {
+		result, err = s.ingestOTelSpans(raw.Bytes(), maxSpans, false, "otlp.receiver.ingest", r)
+	}
 	if err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "exceeds receiver limit") {
@@ -79,6 +81,18 @@ func (s *Server) ingestOTelSpans(raw []byte, maxSpans int, requireGenAI bool, au
 	if err != nil {
 		return nil, err
 	}
+	return s.ingestOTelSpanRows(spans, maxSpans, requireGenAI, auditAction, r)
+}
+
+func (s *Server) ingestOTelProtoSpans(raw []byte, maxSpans int, auditAction string, r *http.Request) (map[string]interface{}, error) {
+	spans, err := integrations.DecodeOTelProtoTraceSpans(raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.ingestOTelSpanRows(spans, maxSpans, false, auditAction, r)
+}
+
+func (s *Server) ingestOTelSpanRows(spans []integrations.OTelSpan, maxSpans int, requireGenAI bool, auditAction string, r *http.Request) (map[string]interface{}, error) {
 	if maxSpans > 0 && len(spans) > maxSpans {
 		return nil, fmt.Errorf("OTLP span batch has %d spans and exceeds receiver limit %d", len(spans), maxSpans)
 	}
@@ -103,4 +117,8 @@ func (s *Server) ingestOTelSpans(raw []byte, maxSpans int, requireGenAI bool, au
 		out["warning"] = "no GenAI spans found; batch accepted without ledger events"
 	}
 	return out, nil
+}
+
+func isOTLPProtobufContentType(contentType string) bool {
+	return strings.Contains(contentType, "application/x-protobuf") || strings.Contains(contentType, "application/protobuf")
 }

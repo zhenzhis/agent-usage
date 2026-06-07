@@ -94,13 +94,13 @@ func AdapterContractSpec() AdapterContract {
 			},
 			{
 				Kind:            "otel",
-				Description:     "OpenTelemetry GenAI JSON spans or local OTLP HTTP JSON traces.",
+				Description:     "OpenTelemetry GenAI JSON spans or local OTLP HTTP JSON/protobuf traces.",
 				ConformanceKind: "otel",
 				ConvertCommand:  "agent-ledger otel convert --file spans.json",
 				IngestCommand:   "agent-ledger otel ingest --file spans.json",
 				Endpoint:        "POST /api/otel/genai or POST /api/otlp/v1/traces",
 				RequiredSignals: []string{"trace/span id", "provider/model attributes", "usage token attributes", "start/end time"},
-				PrivacyNotes:    []string{"message and prompt attributes are intentionally ignored", "span ids are acceptable raw_ref values"},
+				PrivacyNotes:    []string{"message and prompt attributes are intentionally ignored", "span ids are acceptable raw_ref values", "OTLP protobuf is decoded into the same metadata-only span model as OTLP JSON"},
 			},
 			{
 				Kind:            "a2a",

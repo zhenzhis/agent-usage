@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,11 @@ import (
 	"testing"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestOTLPReceiverDisabledByDefault(t *testing.T) {
@@ -66,18 +72,35 @@ func TestOTLPReceiverRejectsOversizedSpanBatch(t *testing.T) {
 	}
 }
 
-func TestOTLPReceiverRejectsProtobuf(t *testing.T) {
+func TestOTLPReceiverIngestsProtobufSpans(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{Integrations: config.IntegrationsConfig{
 		OTLPReceiver: config.OTLPReceiverConfig{Enabled: true, MaxBodyBytes: 1 << 20, MaxSpans: 10},
 	}})
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/v1/traces", strings.NewReader("not-json"))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/v1/traces", bytes.NewReader(otlpProtoPayload(t)))
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	rr := httptest.NewRecorder()
 	srv.handleOTLPTraces(rr, req)
-	if rr.Code != http.StatusUnsupportedMediaType {
-		t.Fatalf("expected 415, got %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if int(body["spans"].(float64)) != 1 || int(body["events"].(float64)) != 2 {
+		t.Fatalf("unexpected protobuf receiver body: %#v", body)
+	}
+	events, err := db.GetAuditLog(10)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	for _, event := range events {
+		if event.Action == "otlp.receiver.ingest" && event.Target == "2" {
+			return
+		}
+	}
+	t.Fatalf("missing otlp protobuf audit event: %+v", events)
 }
 
 func otlpPayload(spanIDs ...string) string {
@@ -105,4 +128,52 @@ func otlpPayload(spanIDs ...string) string {
 			"scopeSpans":[{"scope":{"name":"agent-ledger-test"},"spans":[` + strings.Join(spans, ",") + `]}]
 		}]
 	}`
+}
+
+func otlpProtoPayload(t *testing.T) []byte {
+	t.Helper()
+	req := &collectortracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{{
+			Resource: &resourcepb.Resource{Attributes: []*commonpb.KeyValue{
+				otelKVString("service.namespace", "quant"),
+			}},
+			ScopeSpans: []*tracepb.ScopeSpans{{
+				Scope: &commonpb.InstrumentationScope{Name: "agent-ledger-test"},
+				Spans: []*tracepb.Span{{
+					TraceId:           []byte{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, 0x01},
+					SpanId:            []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
+					Name:              "genai.chat",
+					StartTimeUnixNano: 1780836000000000000,
+					EndTimeUnixNano:   1780836001000000000,
+					Attributes: []*commonpb.KeyValue{
+						otelKVString("gen_ai.request.model", "gpt-5.5"),
+						otelKVString("gen_ai.provider.name", "openai"),
+						otelKVInt("gen_ai.usage.input_tokens", 10),
+						otelKVInt("gen_ai.usage.output_tokens", 5),
+						otelKVString("agent_ledger.goal", "receiver protobuf smoke"),
+						otelKVString("agent_ledger.source", "otlp-protobuf-test"),
+					},
+				}},
+			}},
+		}},
+	}
+	raw, err := proto.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal OTLP protobuf: %v", err)
+	}
+	return raw
+}
+
+func otelKVString(key, value string) *commonpb.KeyValue {
+	return &commonpb.KeyValue{
+		Key:   key,
+		Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: value}},
+	}
+}
+
+func otelKVInt(key string, value int64) *commonpb.KeyValue {
+	return &commonpb.KeyValue{
+		Key:   key,
+		Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_IntValue{IntValue: value}},
+	}
 }
