@@ -71,6 +71,68 @@ func TestRebuildUsageAggregates(t *testing.T) {
 	}
 }
 
+func TestDataQualityIncludesCanonicalEventProvenance(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ts := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	if _, err := db.IngestCanonicalEvent(CanonicalEvent{
+		EventID:       "evt-provenance-complete",
+		Source:        "codex",
+		EventType:     "workload.started",
+		SchemaVersion: "v1",
+		SourceVersion: "codex-cli 1.2.3",
+		ParserVersion: "agent-ledger-codex-adapter@v2",
+		RawRef:        "sha256:source#row=1",
+		MatchType:     "exact",
+		Timestamp:     ts,
+		Payload:       rawJSON(t, map[string]interface{}{"goal": "complete provenance"}),
+	}); err != nil {
+		t.Fatalf("complete event: %v", err)
+	}
+	if _, err := db.IngestCanonicalEvent(CanonicalEvent{
+		EventID:   "evt-provenance-incomplete",
+		Source:    "opencode",
+		EventType: "workload.started",
+		Timestamp: ts.Add(time.Minute),
+		Payload:   rawJSON(t, map[string]interface{}{"goal": "missing provenance"}),
+	}); err != nil {
+		t.Fatalf("incomplete event: %v", err)
+	}
+	quality, err := db.GetDataQuality(time.Hour)
+	if err != nil {
+		t.Fatalf("GetDataQuality: %v", err)
+	}
+	if quality.Provenance == nil || quality.Provenance.Events != 2 {
+		t.Fatalf("provenance missing: %#v", quality.Provenance)
+	}
+	if quality.Provenance.MissingParserVersion != 1 || quality.Provenance.MissingRawRef != 1 || quality.Provenance.MatchTypeMix["unknown"] != 1 || quality.Provenance.MatchTypeMix["exact"] != 1 {
+		t.Fatalf("unexpected provenance quality: %#v", quality.Provenance)
+	}
+	if quality.Provenance.Confidence >= 1 {
+		t.Fatalf("expected confidence penalty for incomplete provenance: %#v", quality.Provenance)
+	}
+
+	report, err := db.GetDoctorReport(ts.Add(-time.Hour), ts.Add(time.Hour), time.Hour, "", "", "")
+	if err != nil {
+		t.Fatalf("GetDoctorReport: %v", err)
+	}
+	found := false
+	for _, check := range report.Checks {
+		if check.Name == "provenance.incomplete" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("doctor provenance warning missing: %+v", report.Checks)
+	}
+	if !strings.Contains(FormatDoctorMarkdown(report), "Provenance") {
+		t.Fatalf("doctor markdown omitted provenance")
+	}
+}
+
 func TestDetectWatchdogEventsUsesObservedTimeAndUpserts(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

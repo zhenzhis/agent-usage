@@ -194,6 +194,7 @@ const I18N = {
     providerBill: "provider bill",
     localLedger: "local ledger",
     ledgerProjection: "Ledger Projection",
+    adapterProvenance: "Adapter Provenance",
     policyAudit: "Policy Audit",
     checked: "checked",
     matches: "matches",
@@ -385,6 +386,7 @@ const I18N = {
     providerBill: "provider 账单",
     localLedger: "本地账本",
     ledgerProjection: "账本投影",
+    adapterProvenance: "适配器溯源",
     policyAudit: "策略审计",
     checked: "已检查",
     matches: "匹配",
@@ -894,17 +896,23 @@ function renderQuality(payload, policyAudit) {
   const fragment = document.createDocumentFragment();
   const rows = (payload && payload.source_quality) || [];
   const projection = payload && payload.projection;
+  const provenance = payload && payload.provenance;
   const projectionIssues = projection
     ? Number(projection.missing_usage_projection || 0) + Number(projection.cost_mismatch_records || 0) + Number(projection.duplicate_session_owners || 0)
     : 0;
   const hasProjectionSignal = Boolean(projection && (Number(projection.model_calls || 0) > 0 || projectionIssues > 0));
+  const provenanceEvents = Number((provenance && provenance.events) || 0);
+  const provenanceIssues = provenance
+    ? Number(provenance.missing_source_version || 0) + Number(provenance.missing_parser_version || 0) + Number(provenance.missing_raw_ref || 0) + Number(provenance.missing_match_type || 0)
+    : 0;
+  const hasProvenanceSignal = Boolean(provenance && provenanceEvents > 0);
   const auditChecked = Number((policyAudit && policyAudit.checked) || 0);
   const auditMatches = Number((policyAudit && policyAudit.matches) || 0);
   const auditBlocks = Number((policyAudit && policyAudit.blocks) || 0);
   const auditApprovals = Number((policyAudit && policyAudit.approvals) || 0);
   const auditWarnings = Number((policyAudit && policyAudit.warnings) || 0);
   const hasAuditSignal = Boolean(policyAudit && (auditChecked > 0 || auditMatches > 0));
-  if (rows.length === 0 && !hasProjectionSignal && !hasAuditSignal) {
+  if (rows.length === 0 && !hasProjectionSignal && !hasProvenanceSignal && !hasAuditSignal) {
     fragment.appendChild(createMessage(t("noData"), "ops-empty"));
     setText("s-quality", "-");
     setText("s-quality-sub", "-");
@@ -916,6 +924,13 @@ function renderQuality(payload, policyAudit) {
       const severity = projectionIssues > 0 || projectionConfidence < 0.8 ? "warning" : "ok";
       const detail = `${projection.message || "-"} · ${fmt(projection.model_calls || 0)} ${t("projectionCalls")}`;
       addOpsRow(fragment, t("ledgerProjection"), detail, `${(projectionConfidence * 100).toFixed(0)}%`, severity);
+    }
+    if (hasProvenanceSignal) {
+      const provenanceConfidence = Number(provenance.confidence || 0);
+      min = Math.min(min, provenanceConfidence);
+      const severity = provenanceIssues > 0 || provenanceConfidence < 0.85 ? "warning" : "ok";
+      const detail = `${provenance.message || "-"} · ${fmt(provenanceEvents)} ${t("records")}`;
+      addOpsRow(fragment, t("adapterProvenance"), detail, `${(provenanceConfidence * 100).toFixed(0)}%`, severity);
     }
     if (hasAuditSignal) {
       const severity = auditBlocks > 0 ? "critical" : auditApprovals > 0 || auditWarnings > 0 ? "warning" : "ok";
@@ -934,8 +949,9 @@ function renderQuality(payload, policyAudit) {
     setText("s-quality-sub", qualityIssues ? `${rows.length} ${t("sourcesLabel")} · ${qualityIssues} ${t("issuesLabel")}` : `${rows.length} ${t("sourcesLabel")}`);
   }
   const projectionMeta = hasProjectionSignal ? ` · ${fmt(projection.model_calls || 0)} ${t("projectionCalls")}` : "";
+  const provenanceMeta = hasProvenanceSignal ? ` · ${fmt(provenanceEvents)} ${t("records")}` : "";
   const policyMeta = hasAuditSignal ? ` · ${fmt(auditMatches)} ${t("matches")}` : "";
-  setText("quality-meta", `${((payload && payload.unpriced_models) || []).length} ${t("unpriced")}${projectionMeta}${policyMeta}`);
+  setText("quality-meta", `${((payload && payload.unpriced_models) || []).length} ${t("unpriced")}${projectionMeta}${provenanceMeta}${policyMeta}`);
   list.replaceChildren(fragment);
 }
 

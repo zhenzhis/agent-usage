@@ -72,6 +72,7 @@ func (d *DB) GetDoctorReport(from, to time.Time, staleAfter time.Duration, sourc
 	report.Checks = append(report.Checks, usageDoctorChecks(*stats, source, model, project)...)
 	report.Checks = append(report.Checks, ingestionDoctorChecks(health, source)...)
 	report.Checks = append(report.Checks, pricingDoctorChecks(pricingSources, quality)...)
+	report.Checks = append(report.Checks, provenanceDoctorChecks(quality)...)
 	report.Checks = append(report.Checks, projectionDoctorChecks(projection)...)
 	report.Checks = append(report.Checks, workloadStateDoctorChecks(workloadStates)...)
 	report.Summary = doctorSummary(report.Checks)
@@ -84,6 +85,30 @@ func (d *DB) GetDoctorReport(from, to time.Time, staleAfter time.Duration, sourc
 		report.Summary = "ok"
 	}
 	return report, nil
+}
+
+func provenanceDoctorChecks(quality *DataQualityReport) []DoctorCheck {
+	if quality == nil || quality.Provenance == nil {
+		return []DoctorCheck{{
+			Name: "provenance.unavailable", Status: "warning", Severity: "warning",
+			Message: "canonical event provenance quality could not be calculated",
+			Action:  "run doctor again and inspect database access errors if this persists",
+		}}
+	}
+	provenance := quality.Provenance
+	if provenance.Events == 0 {
+		return nil
+	}
+	if provenance.Confidence >= 0.85 {
+		return nil
+	}
+	return []DoctorCheck{{
+		Name:     "provenance.incomplete",
+		Status:   "warning",
+		Severity: "warning",
+		Message:  provenance.Message,
+		Action:   "update source adapters to set schema_version, source_version, parser_version, raw_ref, and match_type without storing prompt content",
+	}}
 }
 
 func workloadStateDoctorChecks(states []WorkloadState) []DoctorCheck {
@@ -268,6 +293,9 @@ func FormatDoctorMarkdown(report *DoctorReport) string {
 	}
 	if report.Projection != nil {
 		b.WriteString(fmt.Sprintf("- Projection: `%s` (`%.2f` confidence)\n\n", sanitizeMarkdownCell(report.Projection.Message), report.Projection.Confidence))
+	}
+	if report.Quality != nil && report.Quality.Provenance != nil {
+		b.WriteString(fmt.Sprintf("- Provenance: `%s` (`%.2f` confidence)\n\n", sanitizeMarkdownCell(report.Quality.Provenance.Message), report.Quality.Provenance.Confidence))
 	}
 	if len(report.WorkloadStates) > 0 {
 		b.WriteString("## Workload States\n\n| Workload | Phase | Readiness | Progress | Next Action |\n|---|---|---:|---:|---|\n")

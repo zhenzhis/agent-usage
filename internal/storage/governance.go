@@ -37,8 +37,24 @@ type DataQualityReport struct {
 	SourceQuality  []QualitySource       `json:"source_quality"`
 	UnpricedModels []UnpricedModel       `json:"unpriced_models"`
 	ConfidenceMix  map[string]int        `json:"confidence_mix"`
+	Provenance     *ProvenanceQuality    `json:"provenance"`
 	Projection     *ProjectionQuality    `json:"projection"`
 	Issues         []InsightEvent        `json:"issues"`
+}
+
+// ProvenanceQuality explains whether canonical events are traceable back to
+// source adapters without storing raw prompt or response content.
+type ProvenanceQuality struct {
+	Events               int            `json:"events"`
+	MissingSchemaVersion int            `json:"missing_schema_version"`
+	MissingSourceVersion int            `json:"missing_source_version"`
+	MissingParserVersion int            `json:"missing_parser_version"`
+	MissingRawRef        int            `json:"missing_raw_ref"`
+	MissingMatchType     int            `json:"missing_match_type"`
+	SchemaVersionMix     map[string]int `json:"schema_version_mix"`
+	MatchTypeMix         map[string]int `json:"match_type_mix"`
+	Confidence           float64        `json:"confidence"`
+	Message              string         `json:"message"`
 }
 
 // ProjectionQuality explains whether canonical model calls and usage records stay aligned.
@@ -368,6 +384,11 @@ func (d *DB) GetDataQuality(staleAfter time.Duration) (*DataQualityReport, error
 		return nil, err
 	}
 	report.PricingSources = sources
+	provenance, err := d.GetProvenanceQuality()
+	if err != nil {
+		return nil, err
+	}
+	report.Provenance = provenance
 	projection, err := d.GetProjectionQuality(time.Time{}, time.Now().UTC().AddDate(10, 0, 0), "", "", "")
 	if err != nil {
 		return nil, err
@@ -444,6 +465,46 @@ func (d *DB) GetDataQuality(staleAfter time.Duration) (*DataQualityReport, error
 	}
 	report.Issues = issues
 	return report, nil
+}
+
+// GetProvenanceQuality summarizes canonical event adapter traceability.
+func (d *DB) GetProvenanceQuality() (*ProvenanceQuality, error) {
+	q := &ProvenanceQuality{SchemaVersionMix: map[string]int{}, MatchTypeMix: map[string]int{}}
+	if err := d.db.QueryRow(`SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN COALESCE(schema_version,'')='' THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN COALESCE(source_version,'')='' THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN COALESCE(parser_version,'')='' THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN COALESCE(raw_ref,'')='' THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN COALESCE(match_type,'')='' THEN 1 ELSE 0 END),0)
+		FROM canonical_events`).Scan(&q.Events, &q.MissingSchemaVersion, &q.MissingSourceVersion, &q.MissingParserVersion, &q.MissingRawRef, &q.MissingMatchType); err != nil {
+		return nil, err
+	}
+	if err := fillStringCountMap(d.db, q.SchemaVersionMix, `SELECT COALESCE(NULLIF(schema_version,''),'unknown'), COUNT(*) FROM canonical_events GROUP BY 1`); err != nil {
+		return nil, err
+	}
+	if err := fillStringCountMap(d.db, q.MatchTypeMix, `SELECT COALESCE(NULLIF(match_type,''),'unknown'), COUNT(*) FROM canonical_events GROUP BY 1`); err != nil {
+		return nil, err
+	}
+	q.Confidence = provenanceConfidence(q)
+	q.Message = provenanceMessage(q)
+	return q, nil
+}
+
+func fillStringCountMap(db *sql.DB, out map[string]int, query string) error {
+	rows, err := db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key string
+		var count int
+		if err := rows.Scan(&key, &count); err != nil {
+			return err
+		}
+		out[key] = count
+	}
+	return rows.Err()
 }
 
 // GetProjectionQuality checks canonical model-call projection consistency for one scope.
@@ -656,6 +717,55 @@ func projectionScopeWhere(from, to time.Time, source, model, project string) (st
 		args = append(args, project)
 	}
 	return strings.Join(where, " AND "), args
+}
+
+func provenanceConfidence(q *ProvenanceQuality) float64 {
+	if q == nil {
+		return 0
+	}
+	if q.Events == 0 {
+		return 1
+	}
+	events := float64(q.Events)
+	score := 1.0
+	score -= float64(q.MissingParserVersion) / events * 0.30
+	score -= float64(q.MissingMatchType) / events * 0.25
+	score -= float64(q.MissingRawRef) / events * 0.20
+	score -= float64(q.MissingSourceVersion) / events * 0.15
+	score -= float64(q.MissingSchemaVersion) / events * 0.10
+	if score < 0 {
+		score = 0
+	}
+	return math.Round(score*100) / 100
+}
+
+func provenanceMessage(q *ProvenanceQuality) string {
+	if q == nil {
+		return "canonical event provenance unavailable"
+	}
+	if q.Events == 0 {
+		return "no canonical events recorded yet"
+	}
+	var parts []string
+	if q.MissingParserVersion > 0 {
+		parts = append(parts, fmt.Sprintf("%d events lack parser_version", q.MissingParserVersion))
+	}
+	if q.MissingMatchType > 0 {
+		parts = append(parts, fmt.Sprintf("%d events lack match_type", q.MissingMatchType))
+	}
+	if q.MissingRawRef > 0 {
+		parts = append(parts, fmt.Sprintf("%d events lack raw_ref", q.MissingRawRef))
+	}
+	if q.MissingSourceVersion > 0 {
+		parts = append(parts, fmt.Sprintf("%d events lack source_version", q.MissingSourceVersion))
+	}
+	if q.MissingSchemaVersion > 0 {
+		parts = append(parts, fmt.Sprintf("%d events lack schema_version", q.MissingSchemaVersion))
+	}
+	if len(parts) == 0 {
+		return "canonical event provenance is complete"
+	}
+	return strings.Join(parts, "; ")
 }
 
 func projectionConfidence(q *ProjectionQuality) float64 {
