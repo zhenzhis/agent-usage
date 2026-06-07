@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
+	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
 func (s *Server) handlePolicyEvaluate(w http.ResponseWriter, r *http.Request) {
@@ -76,9 +77,100 @@ func (s *Server) evaluateOperationPolicy(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "blocked by policy", http.StatusForbidden)
 		return false
 	case "require_approval":
-		http.Error(w, "operation requires approval by policy", http.StatusForbidden)
+		approvalID := r.URL.Query().Get("approval_id")
+		if approvalID == "" {
+			approvalID = r.Header.Get("X-Agent-Ledger-Approval")
+		}
+		allowed, err := s.db.ApprovalAllows(approvalID, action, target)
+		if err != nil {
+			serverError(w, err)
+			return false
+		}
+		if allowed {
+			_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.approval.used", approvalID, map[string]string{"action": action, "target": target})
+			return true
+		}
+		requestID, err := s.createPolicyApprovalRequest(r, result, action, source, model, project, target)
+		if err != nil {
+			serverError(w, err)
+			return false
+		}
+		http.Error(w, fmt.Sprintf("operation requires approval by policy; approval_request_id=%s", requestID), http.StatusForbidden)
 		return false
 	default:
 		return true
+	}
+}
+
+func (s *Server) createPolicyApprovalRequest(r *http.Request, result ledgerpolicy.Result, action, source, model, project, target string) (string, error) {
+	reason := result.Action
+	if len(result.Decisions) > 0 {
+		reason = result.Decisions[0].Message
+		if reason == "" {
+			reason = result.Decisions[0].Rule
+		}
+	}
+	raw, _ := json.Marshal(map[string]interface{}{
+		"effective_action": result.Action,
+		"decisions":        result.Decisions,
+	})
+	requestID, err := s.db.CreateApprovalRequest(storage.ApprovalRequest{
+		Source:         source,
+		Model:          model,
+		Project:        project,
+		Action:         action,
+		Target:         target,
+		ActorRole:      s.roleFor(r),
+		Status:         "pending",
+		Reason:         reason,
+		RequestPayload: string(raw),
+	})
+	if err != nil {
+		return "", err
+	}
+	_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.approval.requested", requestID, map[string]string{"action": action, "target": target, "source": source, "model": model, "project": project})
+	return requestID, nil
+}
+
+func (s *Server) handlePolicyApprovals(w http.ResponseWriter, r *http.Request) {
+	if !s.requireLocalOrAuth(w, r) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if !s.requireRole(w, r, "operator") {
+			return
+		}
+		status := r.URL.Query().Get("status")
+		if status == "" {
+			status = "pending"
+		}
+		rows, err := s.db.ListApprovalRequests(status, parseLimit(r, 200))
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		writeJSON(w, map[string]interface{}{"rows": rows, "status": status})
+	case http.MethodPost:
+		if !s.requireRole(w, r, "admin") {
+			return
+		}
+		var payload struct {
+			RequestID string `json:"request_id"`
+			Status    string `json:"status"`
+			Note      string `json:"note"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload); err != nil {
+			badRequest(w, err)
+			return
+		}
+		if err := s.db.ResolveApprovalRequest(payload.RequestID, payload.Status, s.roleFor(r), payload.Note); err != nil {
+			badRequest(w, err)
+			return
+		}
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.approval."+payload.Status, payload.RequestID, map[string]string{"note": payload.Note})
+		writeJSON(w, map[string]interface{}{"ok": true, "request_id": payload.RequestID, "status": payload.Status})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }

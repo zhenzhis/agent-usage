@@ -832,8 +832,33 @@ func runOTelCLI(args []string, db *storage.DB) error {
 }
 
 func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
-	if len(args) == 0 || args[0] != "evaluate" {
-		return fmt.Errorf("usage: agent-ledger policy evaluate [--source s] [--model m] [--project p] [--action a] [--workload-id id] [--run-id id] [--role role] [--record]")
+	if len(args) == 0 {
+		return fmt.Errorf("usage: agent-ledger policy evaluate|approvals|resolve")
+	}
+	switch args[0] {
+	case "approvals":
+		status := cliValue(args[1:], "--status")
+		if status == "" {
+			status = "pending"
+		}
+		rows, err := db.ListApprovalRequests(status, cliInt(args[1:], "--limit", 200))
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"status": status, "rows": rows})
+	case "resolve":
+		requestID := firstNonEmptyCLI(cliValue(args[1:], "--id"), cliValue(args[1:], "--request-id"), cliValue(args[1:], "--request_id"))
+		status := cliValue(args[1:], "--status")
+		if status == "" {
+			status = "approved"
+		}
+		if err := db.ResolveApprovalRequest(requestID, status, "cli", cliValue(args[1:], "--note")); err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"ok": true, "request_id": requestID, "status": status})
+	case "evaluate":
+	default:
+		return fmt.Errorf("usage: agent-ledger policy evaluate [--source s] [--model m] [--project p] [--action a] [--workload-id id] [--run-id id] [--role role] [--record]; agent-ledger policy approvals [--status pending|approved|rejected|all]; agent-ledger policy resolve --id id --status approved|rejected [--note text]")
 	}
 	req := ledgerpolicy.Request{
 		WorkloadID: firstNonEmptyCLI(cliValue(args[1:], "--workload-id"), cliValue(args[1:], "--workload_id")),
@@ -1131,6 +1156,18 @@ func parseFloat(raw string) (float64, error) {
 	var v float64
 	_, err := fmt.Sscanf(raw, "%f", &v)
 	return v, err
+}
+
+func cliInt(args []string, key string, fallback int) int {
+	raw := cliValue(args, key)
+	if raw == "" {
+		return fallback
+	}
+	var v int
+	if _, err := fmt.Sscanf(raw, "%d", &v); err != nil || v <= 0 {
+		return fallback
+	}
+	return v
 }
 
 func firstNonEmptyCLI(values ...string) string {

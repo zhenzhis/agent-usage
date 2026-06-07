@@ -70,6 +70,51 @@ func TestRebuildUsageAggregates(t *testing.T) {
 	}
 }
 
+func TestApprovalRequestLifecycle(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	id, err := db.CreateApprovalRequest(ApprovalRequest{
+		Action: "export", Target: "sessions", Source: "codex", Model: "gpt-5", Project: "quant", ActorRole: "operator", Reason: "requires review",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.ListApprovalRequests("pending", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].RequestID != id || rows[0].Status != "pending" {
+		t.Fatalf("unexpected pending approvals: %+v", rows)
+	}
+	allowed, err := db.ApprovalAllows(id, "export", "sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("pending approval should not allow operation")
+	}
+	if err := db.ResolveApprovalRequest(id, "approved", "admin", "ok"); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err = db.ApprovalAllows(id, "export", "sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowed {
+		t.Fatal("approved request should allow matching operation")
+	}
+	wrongTarget, err := db.ApprovalAllows(id, "export", "audit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wrongTarget {
+		t.Fatal("approved request should not allow a different target")
+	}
+}
+
 func TestDashboardStatsUseRawForNonUTCDayAlignedRange(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

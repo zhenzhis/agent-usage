@@ -68,6 +68,8 @@ CLI:
 ./agent-ledger bundle export --privacy --signed --out usage-bundle.json
 ./agent-ledger bundle import --file usage-bundle.json --verify
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
+./agent-ledger policy approvals
+./agent-ledger policy resolve --id apr_... --status approved
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -199,6 +201,8 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/fleet-attribution` | Sub-agent, parent run, and parallel-run cost attribution |
 | `GET /api/wrapped?period=monthly&format=markdown` | Monthly/weekly/yearly Agent Wrapped summary without prompt analysis |
 | `POST /api/policy/evaluate` | Evaluate local advisory policy rules and optionally record decisions |
+| `GET /api/policy/approvals?status=pending` | List local pending, approved, rejected, or all policy approval requests |
+| `POST /api/policy/approvals` | Approve or reject a local policy approval request |
 | `GET /api/sessions` | Server-side paginated session ledger |
 | `GET /api/session-replay?source=codex&session_id=...` | Chronological per-call token/cost replay for one session |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | Local SVG repo cost/tokens/cache badge |
@@ -221,6 +225,8 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/report?format=markdown` | Markdown report |
 
 Manual scan, reset, pricing sync, imports, and recalculation require localhost access unless auth tokens are configured.
+
+When a policy returns `require_approval`, Agent Ledger records a local pending approval request and returns its id. Admins can approve or reject it through `POST /api/policy/approvals` or `agent-ledger policy resolve`; the original operation can then be retried with `approval_id=<id>` or `X-Agent-Ledger-Approval: <id>`.
 
 ## MCP Tool Surface
 
@@ -291,6 +297,7 @@ If costs differ from a provider invoice:
 - Pricing sync is the expected outbound request.
 - Manual operations are localhost-only by default.
 - Optional RBAC supports `viewer`, `operator`, and `admin` tokens.
+- Policy approval requests are local metadata records. They authorize only matching action/target retries and do not include prompt content.
 - Privacy presets can hide paths, project names, branches, machine names, and session IDs.
 - Webhooks are disabled by default and should only send redacted summaries.
 - Offline bundles are local JSON exports. Set `AGENT_LEDGER_BUNDLE_KEY` and pass `signed=1` / `--signed` to add an HMAC-SHA256 signature; use `verify=1` / `--verify` on import to require signature verification.
@@ -316,9 +323,9 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, CLI workload/event/policy/router/replay/badge/preflight commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, CLI workload/event/policy/router/replay/badge/preflight commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
 
-Planned integrations: OTLP protobuf/gRPC conformance, live provider/API gateway mode, Postgres team mode, OIDC/SSO, richer MCP subscriptions, and enterprise policy approval flows.
+Planned integrations: OTLP protobuf/gRPC conformance, live provider/API gateway mode, Postgres team mode, OIDC/SSO, richer MCP subscriptions, and multi-actor approval notifications.
 
 ## License
 

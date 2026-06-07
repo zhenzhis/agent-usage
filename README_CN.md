@@ -68,6 +68,8 @@ CLI：
 ./agent-ledger bundle export --privacy --signed --out usage-bundle.json
 ./agent-ledger bundle import --file usage-bundle.json --verify
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
+./agent-ledger policy approvals
+./agent-ledger policy resolve --id apr_... --status approved
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -199,6 +201,8 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/fleet-attribution` | sub-agent、parent run 与并行 run 成本归因 |
 | `GET /api/wrapped?period=monthly&format=markdown` | 月度/周度/年度 Agent Wrapped 摘要，不分析 prompt 内容 |
 | `POST /api/policy/evaluate` | 评估本地 advisory policy，并可选择写入 policy decision |
+| `GET /api/policy/approvals?status=pending` | 查看本地 pending、approved、rejected 或全部策略审批请求 |
+| `POST /api/policy/approvals` | 批准或拒绝本地策略审批请求 |
 | `GET /api/sessions` | 服务端分页会话账本 |
 | `GET /api/session-replay?source=codex&session_id=...` | 单个 session 的调用级 token/cost 时间回放 |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | 本地 SVG repo 成本、token 或 cache badge |
@@ -221,6 +225,8 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/report?format=markdown` | Markdown 报告 |
 
 手动扫描、清理重扫、价格同步、导入和费用重算默认只允许本机访问；暴露到网络前必须配置 auth token 或反向代理访问控制。
+
+当策略返回 `require_approval` 时，Agent Ledger 会写入本地 pending 审批请求并返回 id。Admin 可通过 `POST /api/policy/approvals` 或 `agent-ledger policy resolve` 批准/拒绝；原操作之后可带 `approval_id=<id>` 或 `X-Agent-Ledger-Approval: <id>` 重试。
 
 ## MCP 工具接口
 
@@ -291,6 +297,7 @@ agent-ledger doctor --format markdown
 - pricing sync 是默认唯一出站请求。
 - 副作用操作默认 localhost-only。
 - 可选 RBAC：`viewer`、`operator`、`admin`。
+- 策略审批请求只保存本地 metadata。批准后只授权相同 action/target 的重试，不包含 prompt 内容。
 - 隐私 preset 可隐藏路径、项目、分支、机器名和 session id。
 - Webhook 默认关闭，只应发送脱敏摘要。
 - Offline bundle 是本地 JSON 导出。设置 `AGENT_LEDGER_BUNDLE_KEY` 并使用 `signed=1` / `--signed` 可加入 HMAC-SHA256 签名；导入时使用 `verify=1` / `--verify` 可强制验证签名。
@@ -316,9 +323,9 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy/router/replay/badge/preflight 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
 
-后续路线：OTLP protobuf/gRPC conformance、live provider/API gateway mode、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、企业策略审批流。
+后续路线：OTLP protobuf/gRPC conformance、live provider/API gateway mode、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、多操作者审批通知。
 
 ## License
 

@@ -20,6 +20,7 @@ Agent Ledger runs locally and reads local agent usage files. The default deploym
 - MCP resources and prompts expose metadata-only local context and templates; they must not be extended to include raw prompts, transcripts, secrets, or file contents.
 - The OTLP HTTP/JSON receiver is disabled by default, rejects OTLP protobuf/gRPC, and still requires localhost access or configured auth.
 - Local policy evaluation is advisory unless your wrapper or gateway enforces it. Policy decisions record rule metadata, role, workload ID, and action, but must not record prompt text, secrets, or raw tool output.
+- Policy approval requests are local metadata records and authorize only matching action/target retries through an explicit approval id.
 - Webhooks are disabled by default.
 - Usage data, prompts, local paths, and session IDs are not uploaded by default.
 
