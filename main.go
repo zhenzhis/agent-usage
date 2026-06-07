@@ -1142,6 +1142,8 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"rows": rows, "max_age": maxAge.String(), "stale_only": staleOnly})
 	case "context", "record-context":
 		return runWorkloadContextCLI(args[1:], db)
+	case "tool", "record-tool":
+		return runWorkloadToolCLI(args[1:], db)
 	default:
 		return fmt.Errorf("unknown workload command %q", args[0])
 	}
@@ -1181,6 +1183,51 @@ func runWorkloadContextCLI(args []string, db *storage.DB) error {
 		Source:        firstNonEmptyCLI(cliValue(args, "--source"), "local"),
 		EventType:     "context.ref",
 		SourceEventID: firstNonEmptyCLI(cliValue(args, "--context-ref-id"), cliValue(args, "--source-event-id")),
+		WorkloadID:    workloadID,
+		AgentRunID:    firstNonEmptyCLI(cliValue(args, "--run-id"), cliValue(args, "--agent-run-id")),
+		Project:       cliValue(args, "--project"),
+		GitBranch:     firstNonEmptyCLI(cliValue(args, "--branch"), cliValue(args, "--git-branch")),
+		Timestamp:     ts,
+		Payload:       rawPayload,
+		Confidence:    1,
+	})
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(result)
+}
+
+func runWorkloadToolCLI(args []string, db *storage.DB) error {
+	workloadID := firstNonEmptyCLI(cliValue(args, "--workload-id"), cliValue(args, "--id"))
+	if workloadID == "" {
+		return fmt.Errorf("--workload-id is required")
+	}
+	toolName := firstNonEmptyCLI(cliValue(args, "--tool-name"), cliValue(args, "--name"))
+	if toolName == "" {
+		return fmt.Errorf("--tool-name is required")
+	}
+	ts := time.Now().UTC()
+	if raw := cliValue(args, "--timestamp"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return fmt.Errorf("invalid --timestamp: %w", err)
+		}
+		ts = parsed
+	}
+	payload := map[string]interface{}{
+		"tool_name":   toolName,
+		"tool_type":   firstNonEmptyCLI(cliValue(args, "--tool-type"), cliValue(args, "--type")),
+		"status":      firstNonEmptyCLI(cliValue(args, "--status"), "ok"),
+		"error_class": cliValue(args, "--error-class"),
+		"duration_ms": cliInt(args, "--duration-ms", 0),
+		"params_hash": firstNonEmptyCLI(cliValue(args, "--params-hash"), cliValue(args, "--hash")),
+	}
+	rawPayload, _ := json.Marshal(payload)
+	result, err := db.IngestCanonicalEvent(storage.CanonicalEvent{
+		EventID:       cliValue(args, "--event-id"),
+		Source:        firstNonEmptyCLI(cliValue(args, "--source"), "local"),
+		EventType:     "tool.call",
+		SourceEventID: firstNonEmptyCLI(cliValue(args, "--tool-call-id"), cliValue(args, "--source-event-id")),
 		WorkloadID:    workloadID,
 		AgentRunID:    firstNonEmptyCLI(cliValue(args, "--run-id"), cliValue(args, "--agent-run-id")),
 		Project:       cliValue(args, "--project"),

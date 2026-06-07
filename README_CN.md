@@ -253,7 +253,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 ## MCP 工具接口
 
-`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、在已有 workload 下启动 run、写入 run heartbeat、查询 run liveness、记录 context ref 和 hash 后的 artifact、查询本地策略建议、查询预算状态、解释成本、查找相似 workload。Resources 提供 metadata-only 的 schema、integration、budget、workload、policy 上下文；prompts 提供可复用的 workload、成本复盘、证据包模板。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
+`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、在已有 workload 下启动 run、写入 run heartbeat、查询 run liveness、记录 tool-call 元数据、context ref 和 hash 后的 artifact、查询本地策略建议、查询预算状态、解释成本、查找相似 workload。Resources 提供 metadata-only 的 schema、integration、budget、workload、policy 上下文；prompts 提供可复用的 workload、成本复盘、证据包模板。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
 
 当前工具：
 
@@ -263,6 +263,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `ledger.close_workload`
 - `ledger.heartbeat_run`
 - `ledger.run_liveness`
+- `ledger.record_tool_call`
 - `ledger.record_context`
 - `ledger.record_artifact`
 - `ledger.record_event`

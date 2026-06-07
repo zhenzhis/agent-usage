@@ -253,7 +253,7 @@ When a policy returns `require_approval`, Agent Ledger records a local pending a
 
 ## MCP Tool Surface
 
-`agent-ledger mcp` starts a local stdio JSON-RPC tool server for agent frameworks and wrappers. The implementation is intentionally local and privacy-preserving: tools can create or close workloads, start runs on existing workloads, append run heartbeats, check run liveness, record context refs and hashed artifacts, ask for advisory policy decisions, query local budget state, explain cost, and find similar workloads. Resources expose metadata-only schema, integration, budget, workload, and policy context; prompts provide reusable workload/cost-review/evidence templates. It does not read prompt content and does not send data to a remote MCP host by itself. MCP, REST, and CLI policy evaluation share the same local evaluator so advisory decisions are consistent across integrations.
+`agent-ledger mcp` starts a local stdio JSON-RPC tool server for agent frameworks and wrappers. The implementation is intentionally local and privacy-preserving: tools can create or close workloads, start runs on existing workloads, append run heartbeats, check run liveness, record tool-call metadata, context refs, and hashed artifacts, ask for advisory policy decisions, query local budget state, explain cost, and find similar workloads. Resources expose metadata-only schema, integration, budget, workload, and policy context; prompts provide reusable workload/cost-review/evidence templates. It does not read prompt content and does not send data to a remote MCP host by itself. MCP, REST, and CLI policy evaluation share the same local evaluator so advisory decisions are consistent across integrations.
 
 Current tools:
 
@@ -263,6 +263,7 @@ Current tools:
 - `ledger.close_workload`
 - `ledger.heartbeat_run`
 - `ledger.run_liveness`
+- `ledger.record_tool_call`
 - `ledger.record_context`
 - `ledger.record_artifact`
 - `ledger.record_event`

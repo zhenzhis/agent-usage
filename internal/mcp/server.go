@@ -193,6 +193,20 @@ func tools() []map[string]interface{} {
 			"stale_only": map[string]interface{}{"type": "boolean"},
 			"limit":      integerSchema(),
 		}),
+		tool("ledger.record_tool_call", "Record metadata-only tool execution such as shell, file, browser, MCP, or custom agent actions.", map[string]interface{}{
+			"workload_id":  requiredStringSchema(),
+			"run_id":       stringSchema(),
+			"source":       stringSchema(),
+			"tool_call_id": stringSchema(),
+			"tool_name":    requiredStringSchema(),
+			"tool_type":    stringSchema(),
+			"status":       stringSchema(),
+			"error_class":  stringSchema(),
+			"duration_ms":  integerSchema(),
+			"params_hash":  stringSchema(),
+			"event_id":     stringSchema(),
+			"timestamp":    stringSchema(),
+		}),
 		tool("ledger.record_artifact", "Record a privacy-safe artifact reference by hash or label.", map[string]interface{}{
 			"workload_id":   requiredStringSchema(),
 			"run_id":        stringSchema(),
@@ -350,6 +364,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolHeartbeatRun(args)
 	case "ledger.run_liveness":
 		return s.toolRunLiveness(args)
+	case "ledger.record_tool_call":
+		return s.toolRecordToolCall(args)
 	case "ledger.record_artifact":
 		return s.toolRecordArtifact(args)
 	case "ledger.record_context":
@@ -652,6 +668,59 @@ func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{"artifact_id": id, "workload_id": in.WorkloadID}, nil
+}
+
+func (s *Server) toolRecordToolCall(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		WorkloadID string `json:"workload_id"`
+		RunID      string `json:"run_id"`
+		Source     string `json:"source"`
+		ToolCallID string `json:"tool_call_id"`
+		ToolName   string `json:"tool_name"`
+		ToolType   string `json:"tool_type"`
+		Status     string `json:"status"`
+		ErrorClass string `json:"error_class"`
+		DurationMS int64  `json:"duration_ms"`
+		ParamsHash string `json:"params_hash"`
+		EventID    string `json:"event_id"`
+		Timestamp  string `json:"timestamp"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	if in.WorkloadID == "" {
+		return nil, fmt.Errorf("workload_id is required")
+	}
+	if in.ToolName == "" {
+		return nil, fmt.Errorf("tool_name is required")
+	}
+	ts := time.Now().UTC()
+	if in.Timestamp != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, in.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		ts = parsed
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"tool_name":   in.ToolName,
+		"tool_type":   in.ToolType,
+		"status":      firstNonEmpty(in.Status, "ok"),
+		"error_class": in.ErrorClass,
+		"duration_ms": in.DurationMS,
+		"params_hash": in.ParamsHash,
+	})
+	return s.db.IngestCanonicalEvent(storage.CanonicalEvent{
+		EventID:       in.EventID,
+		Source:        firstNonEmpty(in.Source, "mcp"),
+		EventType:     "tool.call",
+		SourceEventID: in.ToolCallID,
+		WorkloadID:    in.WorkloadID,
+		AgentRunID:    in.RunID,
+		Timestamp:     ts,
+		Payload:       payload,
+		Confidence:    1,
+	})
 }
 
 func (s *Server) toolRecordContext(args json.RawMessage) (interface{}, error) {
