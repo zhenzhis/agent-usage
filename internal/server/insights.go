@@ -657,7 +657,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
-	from, to, _, err := s.parseTimeRange(r)
+	from, to, tzOffset, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
 		return
@@ -665,6 +665,7 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 	source := r.URL.Query().Get("source")
 	model := r.URL.Query().Get("model")
 	project := r.URL.Query().Get("project")
+	granularity := r.URL.Query().Get("granularity")
 	if !s.evaluateOperationPolicy(w, r, "export", source, model, project, "evidence-bundle") {
 		return
 	}
@@ -674,7 +675,16 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	health, _ := s.db.GetIngestionHealth()
+	pricingSources, _ := s.db.GetPricingSources(s.options.Pricing.StaleAfter)
+	pricingRules, _ := s.db.GetPricingRuleSummary()
 	pricingRows, _ := s.db.GetPricingAudit(500)
+	dashboard, _ := s.db.GetDashboardBundleFiltered(from, to, granularity, source, model, project, tzOffset)
+	_ = s.db.DetectAnomaliesFiltered(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour)
+	if s.options.Watchdog.Enabled {
+		_ = s.db.DetectWatchdogEvents(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.MinCalls, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour)
+	}
+	anomalies, _ := s.db.GetInsightEventsFiltered(storage.InsightEventFilter{Kind: "anomaly", Source: source, Model: model, Project: project, From: from, To: to, Limit: 50})
+	watchdog, _ := s.db.GetInsightEventsFiltered(storage.InsightEventFilter{Kind: "watchdog", Source: source, Model: model, Project: project, From: from, To: to, Limit: 50})
 	insights, _ := s.db.GetCostIntelligence(from, to, source, model, project, 20)
 	workloadStates, _ := s.db.GetWorkloadStates(from, to, source, model, project, 20, 10*time.Minute)
 	privacy := s.privacyFor(r)
@@ -682,8 +692,29 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 	privacy.HashSessionIDs = true
 	privacy.HideProjectNames = true
 	privacy.ScreenshotMode = true
+	applyIngestionHealthPrivacy(health, privacy)
+	applyCostInsightPrivacy(insights, privacy)
+	applyInsightEventPrivacy(anomalies, privacy)
+	applyInsightEventPrivacy(watchdog, privacy)
 	for i := range workloadStates {
 		applyWorkloadStatePrivacy(&workloadStates[i], privacy)
+	}
+	var dashboardEvidence interface{}
+	if dashboard != nil {
+		if privacy.HideProjectNames && dashboard.Project != "" {
+			dashboard.Project = "<redacted>"
+		}
+		dashboardEvidence = map[string]interface{}{
+			"generated_at": dashboard.GeneratedAt,
+			"from":         dashboard.From,
+			"to":           dashboard.To,
+			"granularity":  dashboard.Granularity,
+			"source":       dashboard.Source,
+			"model":        dashboard.Model,
+			"project":      dashboard.Project,
+			"stats":        dashboard.Stats,
+			"consistency":  dashboard.Consistency,
+		}
 	}
 	bundle := map[string]interface{}{
 		"product":           "Agent Ledger",
@@ -692,7 +723,12 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 		"privacy":           "redacted",
 		"quality":           quality,
 		"ingestion_health":  health,
+		"pricing_sources":   pricingSources,
+		"pricing_rules":     pricingRules,
 		"pricing_audit":     pricingRows,
+		"dashboard":         dashboardEvidence,
+		"anomaly_events":    anomalies,
+		"watchdog_events":   watchdog,
 		"cost_intelligence": insights,
 		"workload_states":   workloadStates,
 	}

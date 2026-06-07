@@ -583,6 +583,9 @@ func applyWorkloadStatePrivacy(state *storage.WorkloadState, privacy config.Priv
 	if state == nil {
 		return
 	}
+	if privacy.HashSessionIDs || privacy.ScreenshotMode {
+		state.WorkloadID = hashValue(state.WorkloadID)
+	}
 	if privacy.ScreenshotMode {
 		state.Goal = "<redacted>"
 	}

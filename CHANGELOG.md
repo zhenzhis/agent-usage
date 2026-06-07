@@ -29,6 +29,7 @@
 - Agent Wrapped through `GET /api/wrapped` and `agent-ledger wrapped`, producing monthly/weekly/yearly Markdown or JSON summaries from metadata-only usage signals.
 - One-click Doctor through `GET /api/doctor` and `agent-ledger doctor`, combining usage, ingestion health, pricing freshness, and data-quality checks into actionable JSON/Markdown diagnostics.
 - Doctor and evidence bundles now include bounded workload terminal-state snapshots, surfacing stale runs, blocked policy decisions, approval waits, missing evaluations, and budget-exhausted workloads.
+- Evidence bundles now include redacted ingestion health, pricing source/rule status, dashboard consistency, anomaly events, and watchdog events for data discrepancy investigations.
 - Consistent dashboard bundle through `GET /api/dashboard`, so KPI, token, cost, and model panels read one storage snapshot and avoid mixed old/new states during scans.
 - Canonical `model.call` events now project into `usage_records`, while legacy session backfill skips sessions already owned by canonical workloads to avoid duplicate workload rows.
 - Pricing recalculation now updates canonical `model_calls` as well as `usage_records`, keeping workload detail costs aligned with dashboard and export totals.

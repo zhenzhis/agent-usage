@@ -78,20 +78,42 @@ func applyDoctorPrivacy(report *storage.DoctorReport, privacy config.PrivacyConf
 	for i := range report.WorkloadStates {
 		applyWorkloadStatePrivacy(&report.WorkloadStates[i], privacy)
 	}
+	applyIngestionHealthPrivacy(report.Ingestion, privacy)
 	if !(privacy.RedactPaths || privacy.ScreenshotMode) {
 		return
-	}
-	for i := range report.Ingestion {
-		for j := range report.Ingestion[i].Paths {
-			report.Ingestion[i].Paths[j] = "<redacted>"
-		}
-		for j := range report.Ingestion[i].PathStatus {
-			report.Ingestion[i].PathStatus[j].Path = "<redacted>"
-		}
 	}
 	for i := range report.Checks {
 		if report.Checks[i].Name == "path.missing" || report.Checks[i].Name == "path.unreadable" {
 			report.Checks[i].Message = "<redacted path>"
+		}
+	}
+}
+
+func applyIngestionHealthPrivacy(rows []storage.IngestionHealth, privacy config.PrivacyConfig) {
+	if !(privacy.RedactPaths || privacy.ScreenshotMode) {
+		return
+	}
+	for i := range rows {
+		for j := range rows[i].Paths {
+			rows[i].Paths[j] = "<redacted>"
+		}
+		for j := range rows[i].PathStatus {
+			rows[i].PathStatus[j].Path = "<redacted>"
+		}
+	}
+}
+
+func applyCostInsightPrivacy(rows []storage.CostInsightRow, privacy config.PrivacyConfig) {
+	if !(privacy.RedactPaths || privacy.HideProjectNames || privacy.HashSessionIDs || privacy.ScreenshotMode) {
+		return
+	}
+	for i := range rows {
+		if privacy.HashSessionIDs || privacy.ScreenshotMode {
+			rows[i].SessionID = hashValue(rows[i].SessionID)
+		}
+		if privacy.HideProjectNames || privacy.RedactPaths || privacy.ScreenshotMode {
+			rows[i].Project = "<redacted>"
+			rows[i].GitBranch = "<redacted>"
 		}
 	}
 }

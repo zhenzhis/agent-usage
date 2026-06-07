@@ -266,8 +266,26 @@ func TestEvidenceBundleIncludesRedactedWorkloadState(t *testing.T) {
 	if _, err := db.StartAgentRun(workloadID, "codex", "codex", "codex", "C:/private/workspace"); err != nil {
 		t.Fatalf("StartAgentRun: %v", err)
 	}
+	if err := db.UpsertIngestionHealth(storage.IngestionHealth{
+		Source:  "codex",
+		Enabled: true,
+		Paths:   []string{"C:/Users/zhang/private-ledger-path"},
+		PathStatus: []storage.PathStatus{{
+			Path:     "C:/Users/zhang/private-ledger-path",
+			Exists:   true,
+			Readable: true,
+		}},
+	}); err != nil {
+		t.Fatalf("UpsertIngestionHealth: %v", err)
+	}
+	if err := db.InsertUsage(&storage.UsageRecord{
+		Source: "codex", SessionID: "private-session", Model: "gpt-5",
+		InputTokens: 100000, OutputTokens: 500, CostUSD: 3.5, Timestamp: now, Project: "private-project", GitBranch: "feature/private",
+	}); err != nil {
+		t.Fatalf("InsertUsage: %v", err)
+	}
 	srv := New(db, "", Options{})
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/evidence-bundle?from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.Format("2006-01-02"), nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/evidence-bundle?from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.AddDate(0, 0, 1).Format("2006-01-02"), nil)
 	rr := httptest.NewRecorder()
 	srv.handleEvidenceBundle(rr, req)
 	if rr.Code != http.StatusOK {
@@ -278,12 +296,25 @@ func TestEvidenceBundleIncludesRedactedWorkloadState(t *testing.T) {
 		t.Fatalf("decode bundle: %v", err)
 	}
 	rows, ok := bundle["workload_states"].([]interface{})
-	if !ok || len(rows) != 1 {
+	if !ok || len(rows) == 0 {
 		t.Fatalf("missing workload states: %#v", bundle["workload_states"])
 	}
-	row := rows[0].(map[string]interface{})
-	if row["goal"] != "<redacted>" || row["project"] != "<redacted>" || row["repo"] != "<redacted>" || row["git_branch"] != "<redacted>" || row["team"] != "<redacted>" {
-		t.Fatalf("workload state privacy failed: %#v", row)
+	for _, rawRow := range rows {
+		row := rawRow.(map[string]interface{})
+		if row["goal"] != "<redacted>" || row["project"] != "<redacted>" || row["repo"] != "<redacted>" || row["git_branch"] != "<redacted>" || row["team"] != "<redacted>" || row["workload_id"] == workloadID {
+			t.Fatalf("workload state privacy failed: %#v", row)
+		}
+	}
+	body := rr.Body.String()
+	for _, key := range []string{`"dashboard"`, `"pricing_sources"`, `"pricing_rules"`, `"anomaly_events"`, `"watchdog_events"`} {
+		if !strings.Contains(body, key) {
+			t.Fatalf("evidence bundle missing %s: %s", key, body)
+		}
+	}
+	for _, secret := range []string{"C:/Users/zhang/private-ledger-path", "private-session", "private-project", "feature/private", workloadID} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("evidence bundle leaked %s: %s", secret, body)
+		}
 	}
 }
 

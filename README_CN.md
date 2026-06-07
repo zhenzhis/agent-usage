@@ -266,7 +266,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/quota/status` | 本地 quota 和 burn-rate 估算 |
 | `GET /api/anomalies` | 异常检测事件 |
 | `GET /api/watchdog/events` | 按筛选范围返回 runaway、调用密度、cache miss risk、非工作时段 watchdog 事件 |
-| `GET /api/evidence-bundle` | 脱敏证据包 |
+| `GET /api/evidence-bundle` | 脱敏证据包，包含 health、pricing、consistency、异常与 workload 状态证据 |
 | `GET /api/offline-bundle/export` | 导出带 hash/可选签名的离线包 |
 | `POST /api/offline-bundle/import` | 导入离线包中的 canonical events |
 | `GET /api/export?type=workloads&format=csv` | CSV/JSON 导出 |
