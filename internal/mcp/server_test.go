@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -119,9 +119,10 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	toolLine := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.record_tool_call","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","source":"codex","tool_call_id":"tool-mcp","tool_name":"shell","tool_type":"command","status":"ok","duration_ms":120,"params_hash":"sha256:params"}}}`
 	contextLine := `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ledger.record_context","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","source":"codex","context_ref_id":"ctx-mcp","ref_type":"repo","ref_hash":"sha256:context","label":"privacy-safe-context","repo":"zhenzhis/agent-ledger","git_branch":"main","privacy_label":"synthetic"}}}`
 	artifactLine := `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ledger.record_artifact","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","artifact_type":"report","label":"privacy-safe-summary","path_hash":"sha256:abc","sha256":"def","metadata":{"format":"markdown"}}}}`
-	closeLine := `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ledger.close_workload","arguments":{"workload_id":"` + workloadID + `","status":"completed","outcome":"accepted"}}}`
-	timelineLine := `{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"ledger.workload_timeline","arguments":{"workload_id":"` + workloadID + `","limit":20}}}`
-	responses := serveLines(t, srv, startRunLine, policyLine, toolLine, contextLine, artifactLine, closeLine, timelineLine)
+	evaluationLine := `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ledger.record_evaluation","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","source":"codex","evaluation_id":"eval-mcp","evaluator":"ci","status":"pass","score":0.97,"signal":"unit-tests","notes":"privacy-safe acceptance signal"}}}`
+	closeLine := `{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"ledger.close_workload","arguments":{"workload_id":"` + workloadID + `","status":"completed","outcome":"accepted"}}}`
+	timelineLine := `{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"ledger.workload_timeline","arguments":{"workload_id":"` + workloadID + `","limit":20}}}`
+	responses := serveLines(t, srv, startRunLine, policyLine, toolLine, contextLine, artifactLine, evaluationLine, closeLine, timelineLine)
 	startedRun := toolTextPayload(t, responses[0])
 	if startedRun["run_id"] == "" || startedRun["workload_id"] != workloadID {
 		t.Fatalf("start run payload=%#v", startedRun)
@@ -142,13 +143,21 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	if artifact["artifact_id"] == "" {
 		t.Fatalf("missing artifact id: %#v", artifact)
 	}
-	closed := toolTextPayload(t, responses[5])
+	evaluation := toolTextPayload(t, responses[5])
+	if evaluation["status"] != "inserted" {
+		t.Fatalf("missing evaluation result: %#v", evaluation)
+	}
+	closed := toolTextPayload(t, responses[6])
 	if closed["status"] != "completed" {
 		t.Fatalf("close payload=%#v", closed)
 	}
-	timeline := toolTextPayload(t, responses[6])
-	if rows, ok := timeline["rows"].([]interface{}); !ok || len(rows) == 0 {
+	timeline := toolTextPayload(t, responses[7])
+	rows, ok := timeline["rows"].([]interface{})
+	if !ok || len(rows) == 0 {
 		t.Fatalf("timeline payload=%#v", timeline)
+	}
+	if !timelineHasKind(rows, "evaluation") {
+		t.Fatalf("timeline missing evaluation: %#v", timeline)
 	}
 
 	detail, err := db.GetWorkloadDetail(workloadID)
@@ -173,6 +182,19 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	if len(detail.Artifacts) != 1 || detail.Artifacts[0].Label != "privacy-safe-summary" {
 		t.Fatalf("artifacts=%#v", detail.Artifacts)
 	}
+	if len(detail.Evaluations) != 1 || detail.Evaluations[0].EvaluationID != "eval-mcp" || detail.Evaluations[0].Status != "pass" || detail.Evaluations[0].Signal != "unit-tests" {
+		t.Fatalf("evaluations=%#v", detail.Evaluations)
+	}
+}
+
+func timelineHasKind(rows []interface{}, kind string) bool {
+	for _, row := range rows {
+		m, ok := row.(map[string]interface{})
+		if ok && m["kind"] == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMCPPolicyDisabledDoesNotEvaluateRules(t *testing.T) {

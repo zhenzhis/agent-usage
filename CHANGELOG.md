@@ -49,10 +49,11 @@
 - Workload detail UI now shows the recent audit timeline while isolating timeline API failures from the core detail view.
 - Explicit tool-call entrypoints through `agent-ledger workload tool` and MCP `ledger.record_tool_call`, recording tool metadata without command parameters or tool input content.
 - Explicit context-reference entrypoints through `agent-ledger workload context` and MCP `ledger.record_context`, both backed by canonical `context.ref` events.
+- Explicit evaluation entrypoints through `agent-ledger workload evaluation` and MCP `ledger.record_evaluation`, recording test, review, quality, or acceptance signals without prompt or artifact content.
 - Local MCP stdio JSON-RPC tools for budget lookup, workload lifecycle, run start/heartbeat/liveness, privacy-safe artifacts, advisory policy decisions, cost explanation, and similar workload search.
 - Local MCP resources and prompts for metadata-only schema/catalog/budget/workload/policy context plus workload, cost-review, and incident-evidence templates.
 - Hourly and daily usage aggregate tables with dashboard aggregate fallback.
-- CLI commands: `today`, `top`, `doctor`, `battery`, `workload list/create/show/timeline/close/start-run/heartbeat/liveness/tool/context`, `run --goal ... -- <command>`, `export`, `pricing sync`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
+- CLI commands: `today`, `top`, `doctor`, `battery`, `workload list/create/show/timeline/close/start-run/heartbeat/liveness/tool/context/evaluation`, `run --goal ... -- <command>`, `export`, `pricing sync`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
 - Cursor-compatible session pagination via `next_cursor`.
 - Black/white/gray data-dense dashboard panels for workloads, pricing, quota, quality, model calls, cache, watchdog, and cost intelligence.
 

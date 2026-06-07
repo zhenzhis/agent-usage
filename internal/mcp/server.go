@@ -220,6 +220,19 @@ func tools() []map[string]interface{} {
 			"sha256":        stringSchema(),
 			"metadata":      objectSchema(),
 		}),
+		tool("ledger.record_evaluation", "Record a metadata-only quality, test, review, or acceptance signal for a workload.", map[string]interface{}{
+			"workload_id":   requiredStringSchema(),
+			"run_id":        stringSchema(),
+			"evaluation_id": stringSchema(),
+			"source":        stringSchema(),
+			"evaluator":     stringSchema(),
+			"status":        stringSchema(),
+			"score":         numberSchema(),
+			"signal":        stringSchema(),
+			"notes":         stringSchema(),
+			"event_id":      stringSchema(),
+			"timestamp":     stringSchema(),
+		}),
 		tool("ledger.record_context", "Record a metadata-only context reference such as a repo, worktree, trace, task, or external memory handle.", map[string]interface{}{
 			"workload_id":    requiredStringSchema(),
 			"run_id":         stringSchema(),
@@ -396,6 +409,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolRecordToolCall(args)
 	case "ledger.record_artifact":
 		return s.toolRecordArtifact(args)
+	case "ledger.record_evaluation":
+		return s.toolRecordEvaluation(args)
 	case "ledger.record_context":
 		return s.toolRecordContext(args)
 	case "ledger.record_event":
@@ -715,6 +730,55 @@ func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{"artifact_id": id, "workload_id": in.WorkloadID}, nil
+}
+
+func (s *Server) toolRecordEvaluation(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		WorkloadID   string  `json:"workload_id"`
+		RunID        string  `json:"run_id"`
+		EvaluationID string  `json:"evaluation_id"`
+		Source       string  `json:"source"`
+		Evaluator    string  `json:"evaluator"`
+		Status       string  `json:"status"`
+		Score        float64 `json:"score"`
+		Signal       string  `json:"signal"`
+		Notes        string  `json:"notes"`
+		EventID      string  `json:"event_id"`
+		Timestamp    string  `json:"timestamp"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	if in.WorkloadID == "" {
+		return nil, fmt.Errorf("workload_id is required")
+	}
+	ts := time.Now().UTC()
+	if in.Timestamp != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, in.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		ts = parsed
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"evaluation_id": in.EvaluationID,
+		"evaluator":     firstNonEmpty(in.Evaluator, "mcp"),
+		"status":        firstNonEmpty(in.Status, "unknown"),
+		"score":         in.Score,
+		"signal":        firstNonEmpty(in.Signal, "manual"),
+		"notes":         in.Notes,
+	})
+	return s.db.IngestCanonicalEvent(storage.CanonicalEvent{
+		EventID:       in.EventID,
+		Source:        firstNonEmpty(in.Source, "mcp"),
+		EventType:     "evaluation.recorded",
+		SourceEventID: in.EvaluationID,
+		WorkloadID:    in.WorkloadID,
+		AgentRunID:    in.RunID,
+		Timestamp:     ts,
+		Payload:       payload,
+		Confidence:    1,
+	})
 }
 
 func (s *Server) toolRecordToolCall(args json.RawMessage) (interface{}, error) {

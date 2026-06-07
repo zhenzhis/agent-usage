@@ -1282,6 +1282,8 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 		return runWorkloadContextCLI(args[1:], db)
 	case "tool", "record-tool":
 		return runWorkloadToolCLI(args[1:], db)
+	case "evaluation", "record-evaluation", "eval":
+		return runWorkloadEvaluationCLI(args[1:], db)
 	default:
 		return fmt.Errorf("unknown workload command %q", args[0])
 	}
@@ -1366,6 +1368,53 @@ func runWorkloadToolCLI(args []string, db *storage.DB) error {
 		Source:        firstNonEmptyCLI(cliValue(args, "--source"), "local"),
 		EventType:     "tool.call",
 		SourceEventID: firstNonEmptyCLI(cliValue(args, "--tool-call-id"), cliValue(args, "--source-event-id")),
+		WorkloadID:    workloadID,
+		AgentRunID:    firstNonEmptyCLI(cliValue(args, "--run-id"), cliValue(args, "--agent-run-id")),
+		Project:       cliValue(args, "--project"),
+		GitBranch:     firstNonEmptyCLI(cliValue(args, "--branch"), cliValue(args, "--git-branch")),
+		Timestamp:     ts,
+		Payload:       rawPayload,
+		Confidence:    1,
+	})
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(result)
+}
+
+func runWorkloadEvaluationCLI(args []string, db *storage.DB) error {
+	workloadID := firstNonEmptyCLI(cliValue(args, "--workload-id"), cliValue(args, "--id"))
+	if workloadID == "" {
+		return fmt.Errorf("--workload-id is required")
+	}
+	status := firstNonEmptyCLI(cliValue(args, "--status"), "unknown")
+	signal := firstNonEmptyCLI(cliValue(args, "--signal"), cliValue(args, "--type"), "manual")
+	score, err := parseFloat(firstNonEmptyCLI(cliValue(args, "--score"), "0"))
+	if err != nil {
+		return fmt.Errorf("invalid --score: %w", err)
+	}
+	ts := time.Now().UTC()
+	if raw := cliValue(args, "--timestamp"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return fmt.Errorf("invalid --timestamp: %w", err)
+		}
+		ts = parsed
+	}
+	payload := map[string]interface{}{
+		"evaluation_id": firstNonEmptyCLI(cliValue(args, "--evaluation-id"), cliValue(args, "--eval-id")),
+		"evaluator":     firstNonEmptyCLI(cliValue(args, "--evaluator"), "local"),
+		"status":        status,
+		"score":         score,
+		"signal":        signal,
+		"notes":         cliValue(args, "--notes"),
+	}
+	rawPayload, _ := json.Marshal(payload)
+	result, err := db.IngestCanonicalEvent(storage.CanonicalEvent{
+		EventID:       cliValue(args, "--event-id"),
+		Source:        firstNonEmptyCLI(cliValue(args, "--source"), "local"),
+		EventType:     "evaluation.recorded",
+		SourceEventID: firstNonEmptyCLI(cliValue(args, "--evaluation-id"), cliValue(args, "--eval-id"), cliValue(args, "--source-event-id")),
 		WorkloadID:    workloadID,
 		AgentRunID:    firstNonEmptyCLI(cliValue(args, "--run-id"), cliValue(args, "--agent-run-id")),
 		Project:       cliValue(args, "--project"),
