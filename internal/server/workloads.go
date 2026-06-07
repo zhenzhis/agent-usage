@@ -389,6 +389,14 @@ func applyWorkloadDetailPrivacy(detail *storage.WorkloadDetail, privacy config.P
 			detail.ModelCalls[i].SessionID = hashValue(detail.ModelCalls[i].SessionID)
 		}
 	}
+	for i := range detail.ContextRefs {
+		if privacy.RedactPaths || privacy.HideProjectNames || privacy.ScreenshotMode {
+			detail.ContextRefs[i].Label = "<redacted>"
+			detail.ContextRefs[i].Repo = "<redacted>"
+			detail.ContextRefs[i].GitBranch = "<redacted>"
+			detail.ContextRefs[i].CommitSHA = "<redacted>"
+		}
+	}
 	for i := range detail.Sessions {
 		applySessionPrivacy(&detail.Sessions[i], privacy)
 	}

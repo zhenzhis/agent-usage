@@ -181,7 +181,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `canonical_events`：面向未来 collector、MCP、A2A、gateway 的规范事件流。
 - `workloads`、`agent_runs`、`agent_run_events`、`model_calls`、`tool_calls`：goal/run/heartbeat/call 级账本。
 - `workload_sessions`：旧 session 与 workload 的兼容映射。
-- `artifacts`、`evaluations`、`policy_decisions`、`context_refs`：AgentOps 扩展记录。
+- `context_refs`、`artifacts`、`evaluations`、`policy_decisions`：隐私安全的 AgentOps 上下文、产物、结果和治理记录。
 - `usage_records`：API 调用级 token 与费用。
 - `sessions`：source-scoped 会话元数据。
 - `prompt_events`：按时间统计 prompt。

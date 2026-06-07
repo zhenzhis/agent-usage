@@ -40,6 +40,7 @@
 - Local policy approval requests with `GET/POST /api/policy/approvals`, `agent-ledger policy approvals`, and `agent-ledger policy resolve`, allowing approved action/target retries by `approval_id`.
 - Legacy session backfill into workload/run/model-call records for immediate compatibility with existing local data.
 - Workload APIs: list/create/close/start-run/heartbeat/liveness/detail/graph, model registry, policy decisions, and workload CSV/JSON export.
+- Workload detail and graph now expose `context_refs`, making context/worktree/protocol references visible alongside runs, model calls, tools, artifacts, evaluations, and policies.
 - Local MCP stdio JSON-RPC tools for budget lookup, workload lifecycle, run start/heartbeat/liveness, privacy-safe artifacts, advisory policy decisions, cost explanation, and similar workload search.
 - Local MCP resources and prompts for metadata-only schema/catalog/budget/workload/policy context plus workload, cost-review, and incident-evidence templates.
 - Hourly and daily usage aggregate tables with dashboard aggregate fallback.

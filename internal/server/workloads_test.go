@@ -153,3 +153,30 @@ func TestAgentRunLivenessAPI(t *testing.T) {
 		t.Fatalf("privacy redaction failed: %+v", row)
 	}
 }
+
+func TestWorkloadDetailPrivacyRedactsContextRefs(t *testing.T) {
+	detail := &storage.WorkloadDetail{
+		Summary: storage.WorkloadSummary{
+			WorkloadID: "wl-sensitive",
+			Project:    "private-project",
+			Repo:       "zhenzhis/private-project",
+			GitBranch:  "feature/private",
+		},
+		ContextRefs: []storage.ContextRefRow{{
+			ContextRefID: "ctx-sensitive",
+			Label:        "C:/Users/zhang/quant/private-project",
+			Repo:         "zhenzhis/private-project",
+			GitBranch:    "feature/private",
+			CommitSHA:    "abc123",
+			RefHash:      "sha256:safe",
+		}},
+	}
+	applyWorkloadDetailPrivacy(detail, config.PrivacyConfig{ScreenshotMode: true})
+	ctx := detail.ContextRefs[0]
+	if ctx.Label != "<redacted>" || ctx.Repo != "<redacted>" || ctx.GitBranch != "<redacted>" || ctx.CommitSHA != "<redacted>" {
+		t.Fatalf("context privacy redaction failed: %+v", ctx)
+	}
+	if ctx.RefHash != "sha256:safe" {
+		t.Fatalf("ref hash should remain visible for evidence correlation: %+v", ctx)
+	}
+}

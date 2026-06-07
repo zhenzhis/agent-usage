@@ -153,6 +153,22 @@ type ToolCallRow struct {
 	Confidence float64 `json:"confidence"`
 }
 
+// ContextRefRow represents one privacy-safe context reference attached to a workload.
+type ContextRefRow struct {
+	ContextRefID string  `json:"context_ref_id"`
+	WorkloadID   string  `json:"workload_id"`
+	RunID        string  `json:"run_id"`
+	RefType      string  `json:"ref_type"`
+	RefHash      string  `json:"ref_hash"`
+	Label        string  `json:"label"`
+	Repo         string  `json:"repo"`
+	GitBranch    string  `json:"git_branch"`
+	CommitSHA    string  `json:"commit_sha"`
+	PrivacyLabel string  `json:"privacy_label"`
+	CreatedAt    string  `json:"created_at"`
+	Confidence   float64 `json:"confidence"`
+}
+
 // ArtifactRow represents one privacy-safe workload artifact reference.
 type ArtifactRow struct {
 	ArtifactID   string  `json:"artifact_id"`
@@ -198,6 +214,7 @@ type WorkloadDetail struct {
 	RunEvents   []AgentRunEventRow  `json:"run_events"`
 	ModelCalls  []ModelCallDetail   `json:"model_calls"`
 	ToolCalls   []ToolCallRow       `json:"tool_calls"`
+	ContextRefs []ContextRefRow     `json:"context_refs"`
 	Artifacts   []ArtifactRow       `json:"artifacts"`
 	Evaluations []EvaluationRow     `json:"evaluations"`
 	Policies    []PolicyDecisionRow `json:"policy_decisions"`
@@ -703,6 +720,9 @@ func (d *DB) GetWorkloadDetail(workloadID string) (*WorkloadDetail, error) {
 	if detail.ToolCalls, err = d.getToolCalls(workloadID); err != nil {
 		return nil, err
 	}
+	if detail.ContextRefs, err = d.getContextRefs(workloadID); err != nil {
+		return nil, err
+	}
 	if detail.Artifacts, err = d.getArtifacts(workloadID); err != nil {
 		return nil, err
 	}
@@ -745,6 +765,15 @@ func (d *DB) GetWorkloadGraph(workloadID string) (*WorkloadGraph, error) {
 		graph.Nodes = append(graph.Nodes, GraphNode{ID: t.ToolCallID, Kind: "tool", Label: t.ToolName})
 		if t.RunID != "" {
 			graph.Edges = append(graph.Edges, GraphEdge{From: t.RunID, To: t.ToolCallID, Label: "uses"})
+		}
+	}
+	for _, c := range detail.ContextRefs {
+		label := firstNonEmpty(c.Label, c.RefType, c.RefHash)
+		graph.Nodes = append(graph.Nodes, GraphNode{ID: c.ContextRefID, Kind: "context", Label: label, Meta: map[string]string{"type": c.RefType, "privacy": c.PrivacyLabel}})
+		if c.RunID != "" {
+			graph.Edges = append(graph.Edges, GraphEdge{From: c.RunID, To: c.ContextRefID, Label: "context"})
+		} else {
+			graph.Edges = append(graph.Edges, GraphEdge{From: detail.Summary.WorkloadID, To: c.ContextRefID, Label: "context"})
 		}
 	}
 	return graph, nil
@@ -947,6 +976,25 @@ func (d *DB) getToolCalls(workloadID string) ([]ToolCallRow, error) {
 	for rows.Next() {
 		var r ToolCallRow
 		if err := rows.Scan(&r.ToolCallID, &r.WorkloadID, &r.RunID, &r.Source, &r.ToolName, &r.ToolType, &r.Status, &r.ErrorClass, &r.DurationMS, &r.Timestamp, &r.Confidence); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) getContextRefs(workloadID string) ([]ContextRefRow, error) {
+	rows, err := d.db.Query(`SELECT context_ref_id,workload_id,run_id,ref_type,ref_hash,label,repo,git_branch,commit_sha,privacy_label,created_at,confidence
+		FROM context_refs WHERE workload_id=? ORDER BY created_at DESC LIMIT 500`, workloadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ContextRefRow
+	for rows.Next() {
+		var r ContextRefRow
+		if err := rows.Scan(&r.ContextRefID, &r.WorkloadID, &r.RunID, &r.RefType, &r.RefHash, &r.Label, &r.Repo, &r.GitBranch,
+			&r.CommitSHA, &r.PrivacyLabel, &r.CreatedAt, &r.Confidence); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

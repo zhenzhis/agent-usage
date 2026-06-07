@@ -79,6 +79,12 @@ const I18N = {
     outcome: "Outcome",
     runs: "runs",
     toolCalls: "tool calls",
+    contextRefs: "context refs",
+    refType: "Type",
+    refHash: "Hash",
+    privacy: "Privacy",
+    tool: "Tool",
+    duration: "Duration",
     confidence: "confidence",
     sessionLedger: "Session Ledger",
     filterProject: "Project / workspace",
@@ -240,6 +246,12 @@ const I18N = {
     outcome: "结果",
     runs: "次运行",
     toolCalls: "工具调用",
+    contextRefs: "上下文引用",
+    refType: "类型",
+    refHash: "Hash",
+    privacy: "隐私",
+    tool: "工具",
+    duration: "耗时",
     confidence: "可信度",
     sessionLedger: "会话账本",
     filterProject: "项目 / 工作区",
@@ -1427,6 +1439,7 @@ function buildWorkloadDetail(data) {
     [t("runs"), summary.runs || 0],
     [t("modelCalls"), summary.model_calls || 0],
     [t("toolCalls"), summary.tool_calls || 0],
+    [t("contextRefs"), Array.isArray(data.context_refs) ? data.context_refs.length : 0],
     [t("tokens"), fmt(summary.tokens || 0)],
     [t("cost"), fmtCost(summary.cost_usd || 0)],
     [t("confidence"), `${Math.round(Number(summary.confidence || 0) * 100)}%`],
@@ -1441,13 +1454,13 @@ function buildWorkloadDetail(data) {
     item.append(k, v);
     wrap.appendChild(item);
   });
-  const calls = Array.isArray(data.model_calls) ? data.model_calls.slice(0, 8) : [];
-  if (calls.length > 0) {
+  const appendDetailTable = (headers, rows) => {
+    if (!rows.length) return;
     const table = document.createElement("table");
     table.className = "detail-table";
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    [t("model"), t("source"), t("calls"), t("tokens"), t("cost")].forEach((label) => {
+    headers.forEach((label) => {
       const th = document.createElement("th");
       th.textContent = label;
       headRow.appendChild(th);
@@ -1455,18 +1468,41 @@ function buildWorkloadDetail(data) {
     head.appendChild(headRow);
     table.appendChild(head);
     const body = document.createElement("tbody");
-    calls.forEach((row) => {
-      const tr = document.createElement("tr");
-      tr.appendChild(createCell(row.model || t("unknownModel"), "project-cell"));
-      tr.appendChild(createCell(row.source || "-", "muted-cell"));
-      tr.appendChild(createCell(fmt(row.calls || 0), "num"));
-      tr.appendChild(createCell(fmt(row.tokens || 0), "num"));
-      tr.appendChild(createCell(fmtCost(row.cost_usd || 0), "cost-cell"));
-      body.appendChild(tr);
-    });
+    rows.forEach((cells) => body.appendChild(cells));
     table.appendChild(body);
     wrap.appendChild(table);
-  }
+  };
+  const calls = Array.isArray(data.model_calls) ? data.model_calls.slice(0, 8) : [];
+  appendDetailTable([t("model"), t("source"), t("calls"), t("tokens"), t("cost")], calls.map((row) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(createCell(row.model || t("unknownModel"), "project-cell"));
+    tr.appendChild(createCell(row.source || "-", "muted-cell"));
+    tr.appendChild(createCell(fmt(row.calls || 0), "num"));
+    tr.appendChild(createCell(fmt(row.tokens || 0), "num"));
+    tr.appendChild(createCell(fmtCost(row.cost_usd || 0), "cost-cell"));
+    return tr;
+  }));
+  const tools = Array.isArray(data.tool_calls) ? data.tool_calls.slice(0, 8) : [];
+  appendDetailTable([t("tool"), t("refType"), t("status"), t("duration"), t("source")], tools.map((row) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(createCell(row.tool_name || "-", "project-cell"));
+    tr.appendChild(createCell(row.tool_type || "-", "muted-cell"));
+    tr.appendChild(createCell(row.status || "-", "muted-cell"));
+    tr.appendChild(createCell(`${fmt(row.duration_ms || 0)} ms`, "num"));
+    tr.appendChild(createCell(row.source || "-", "muted-cell"));
+    return tr;
+  }));
+  const contexts = Array.isArray(data.context_refs) ? data.context_refs.slice(0, 8) : [];
+  appendDetailTable([t("contextRefs"), t("refType"), t("project"), t("branch"), t("privacy"), t("refHash")], contexts.map((row) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(createCell(row.label || row.context_ref_id || "-", "project-cell"));
+    tr.appendChild(createCell(row.ref_type || "-", "muted-cell"));
+    tr.appendChild(createCell(row.repo || "-", "project-cell"));
+    tr.appendChild(createCell(row.git_branch || "-", "muted-cell"));
+    tr.appendChild(createCell(row.privacy_label || "-", "muted-cell"));
+    tr.appendChild(createCell(row.ref_hash || "-", "muted-cell"));
+    return tr;
+  }));
   return wrap;
 }
 

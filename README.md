@@ -181,7 +181,7 @@ Core tables:
 - `canonical_events`: normalized event stream for future collectors, MCP, A2A, and gateways.
 - `workloads`, `agent_runs`, `agent_run_events`, `model_calls`, `tool_calls`: goal/run/heartbeat/call ledger.
 - `workload_sessions`: compatibility link from old source-scoped sessions to workloads.
-- `artifacts`, `evaluations`, `policy_decisions`, `context_refs`: future-proof AgentOps records.
+- `context_refs`, `artifacts`, `evaluations`, `policy_decisions`: privacy-safe AgentOps context, artifact, outcome, and governance records.
 - `usage_records`: raw API-call token and cost data.
 - `sessions`: source-scoped session metadata.
 - `prompt_events`: prompt timestamps for time-accurate prompt counts.

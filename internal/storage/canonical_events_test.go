@@ -126,6 +126,23 @@ func TestIngestCanonicalEventBuildsWorkloadLedger(t *testing.T) {
 			}),
 		},
 		{
+			EventID:    "evt-context",
+			Source:     "codex",
+			EventType:  "context.ref",
+			WorkloadID: start.WorkloadID,
+			AgentRunID: run.RunID,
+			Timestamp:  ts.Add(3*time.Minute + 30*time.Second),
+			Payload: rawJSON(t, map[string]interface{}{
+				"ref_type":      "repo",
+				"ref_hash":      "sha256:context",
+				"label":         "agent-ledger working tree",
+				"repo":          "zhenzhis/agent-ledger",
+				"git_branch":    "main",
+				"commit_sha":    "abc123",
+				"privacy_label": "local",
+			}),
+		},
+		{
 			EventID:    "evt-artifact",
 			Source:     "codex",
 			EventType:  "artifact.created",
@@ -184,6 +201,9 @@ func TestIngestCanonicalEventBuildsWorkloadLedger(t *testing.T) {
 	if len(detail.Runs) != 1 || len(detail.ModelCalls) != 1 || len(detail.ToolCalls) != 1 {
 		t.Fatalf("runs=%d model_calls=%d tool_calls=%d", len(detail.Runs), len(detail.ModelCalls), len(detail.ToolCalls))
 	}
+	if len(detail.ContextRefs) != 1 || detail.ContextRefs[0].RefHash != "sha256:context" || detail.ContextRefs[0].Label != "agent-ledger working tree" {
+		t.Fatalf("context refs=%#v", detail.ContextRefs)
+	}
 	if detail.Runs[0].HeartbeatCount != 1 || detail.Runs[0].Phase != "editing" || detail.Runs[0].Progress != 0.4 {
 		t.Fatalf("run heartbeat snapshot not updated: %#v", detail.Runs[0])
 	}
@@ -205,6 +225,24 @@ func TestIngestCanonicalEventBuildsWorkloadLedger(t *testing.T) {
 	}
 	if len(detail.Sessions) != 1 || detail.Sessions[0].SessionID != "sess-event-ledger" {
 		t.Fatalf("sessions=%#v", detail.Sessions)
+	}
+	graph, err := db.GetWorkloadGraph(start.WorkloadID)
+	if err != nil {
+		t.Fatalf("graph: %v", err)
+	}
+	var contextNode, contextEdge bool
+	for _, node := range graph.Nodes {
+		if node.Kind == "context" && node.Label == "agent-ledger working tree" {
+			contextNode = true
+		}
+	}
+	for _, edge := range graph.Edges {
+		if edge.To == detail.ContextRefs[0].ContextRefID && edge.Label == "context" {
+			contextEdge = true
+		}
+	}
+	if !contextNode || !contextEdge {
+		t.Fatalf("context missing from graph: nodes=%#v edges=%#v", graph.Nodes, graph.Edges)
 	}
 }
 
