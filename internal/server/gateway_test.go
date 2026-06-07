@@ -212,6 +212,70 @@ func TestGatewayProxiesAndRecordsUsage(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesGatewayProxiesAndRecordsUsage(t *testing.T) {
+	db := testServerDB(t)
+	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")
+	upstreamAuth := ""
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/responses" {
+			t.Fatalf("unexpected upstream path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"resp_gateway_test",
+			"model":"gpt-5.5",
+			"output":[{"type":"message","content":[{"type":"output_text","text":"secret responses output must not persist"}]}],
+			"usage":{"input_tokens":50,"input_tokens_details":{"cached_tokens":5},"output_tokens":12,"output_tokens_details":{"reasoning_tokens":2}}
+		}`))
+	}))
+	defer upstream.Close()
+
+	srv := New(db, "", Options{Gateway: testGatewayConfig(upstream.URL)})
+	body := `{"model":"gpt-5.5","input":"secret responses prompt must not persist","metadata":{"agent_ledger.project":"responses-gateway-project","agent_ledger.goal":"responses gateway smoke"}}`
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/gateway/openai/v1/responses", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handleOpenAIResponsesGateway(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if upstreamAuth != "Bearer sk-test" {
+		t.Fatalf("upstream auth header was not set correctly")
+	}
+	if rr.Header().Get("X-Agent-Ledger-Usage-Recorded") != "true" {
+		t.Fatalf("usage recorded header=%q", rr.Header().Get("X-Agent-Ledger-Usage-Recorded"))
+	}
+	usageRows, err := db.GetModelCalls(time.Now().Add(-time.Hour), time.Now().Add(time.Hour), "gateway", "gpt-5.5", "responses-gateway-project", 10)
+	if err != nil {
+		t.Fatalf("GetModelCalls: %v", err)
+	}
+	if len(usageRows) != 1 || usageRows[0].Calls != 1 || usageRows[0].Tokens != 62 {
+		t.Fatalf("unexpected responses gateway usage projection: %+v", usageRows)
+	}
+	audit, err := db.GetAuditLog(20)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	rawAudit, _ := json.Marshal(audit)
+	if strings.Contains(string(rawAudit), "secret responses prompt") || strings.Contains(string(rawAudit), "secret responses output") || strings.Contains(string(rawAudit), "sk-test") {
+		t.Fatalf("sensitive responses gateway data leaked into audit log: %s", string(rawAudit))
+	}
+}
+
+func TestOpenAIResponsesGatewayRejectsStreamingExplicitly(t *testing.T) {
+	db := testServerDB(t)
+	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")
+	srv := New(db, "", Options{Gateway: testGatewayConfig("http://127.0.0.1:1")})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/gateway/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.5","stream":true,"input":"smoke"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handleOpenAIResponsesGateway(rr, req)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "streaming gateway is not supported") {
+		t.Fatalf("expected explicit streaming rejection, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestAnthropicGatewayProxiesAndRecordsUsage(t *testing.T) {
 	db := testServerDB(t)
 	t.Setenv("AGENT_LEDGER_TEST_ANTHROPIC_KEY", "sk-ant-test")
