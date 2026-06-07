@@ -119,6 +119,48 @@ func TestGatewayProxiesAndRecordsUsage(t *testing.T) {
 	}
 }
 
+func TestGatewayAttachesLedgerContext(t *testing.T) {
+	db := testServerDB(t)
+	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")
+	workloadID, err := db.CreateWorkload("gateway attached workload", "gateway", "gateway-project", "agent-ledger", "main", "", "", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(workloadID, "gateway", "codex", "codex run", "/workspace/agent-ledger")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_gateway_context",
+			"model":"gpt-5.5",
+			"usage":{"prompt_tokens":12,"completion_tokens":4}
+		}`))
+	}))
+	defer upstream.Close()
+
+	srv := New(db, "", Options{Gateway: testGatewayConfig(upstream.URL)})
+	body := `{"model":"gpt-5.5","messages":[{"role":"user","content":"secret context prompt must not persist"}],"metadata":{"agent_ledger.project":"gateway-project","agent_ledger.goal":"gateway attached workload","agent_ledger.workload_id":"` + workloadID + `","agent_ledger.agent_run_id":"` + runID + `","agent_ledger.session_id":"gateway-session-1","agent_ledger.git_branch":"main"}}`
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/gateway/openai/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handleOpenAIChatGateway(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	detail, err := db.GetWorkloadDetail(workloadID)
+	if err != nil {
+		t.Fatalf("GetWorkloadDetail: %v", err)
+	}
+	if len(detail.ModelCalls) != 1 || detail.ModelCalls[0].RunID != runID || detail.ModelCalls[0].SessionID != "gateway-session-1" {
+		t.Fatalf("gateway usage was not attached to supplied workload/run/session: %+v", detail.ModelCalls)
+	}
+	if detail.Summary.ModelCalls != 1 || detail.Summary.Tokens != 16 || detail.Summary.GitBranch != "main" {
+		t.Fatalf("unexpected workload summary after gateway attach: %+v", detail.Summary)
+	}
+}
+
 func TestGatewayPolicyApprovalRequired(t *testing.T) {
 	db := testServerDB(t)
 	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")

@@ -127,6 +127,8 @@ gateway:
 
 可选 gateway 是本地 OpenAI-compatible Chat Completions 代理。它默认关闭，支持 JSON 响应和 SSE streaming，只从配置的环境变量读取上游 API key，并只记录 token usage 与审计元数据，不保存 request messages 或 response content。streaming 记账依赖上游返回最终 `usage` chunk，例如 OpenAI `stream_options.include_usage`。
 
+Gateway 请求可以通过 query 参数或 request `metadata` 附加账本上下文：`agent_ledger.project`、`agent_ledger.goal`、`agent_ledger.workload_id`、`agent_ledger.agent_run_id`、`agent_ledger.session_id`、`agent_ledger.git_branch`。这样 wrapper、MCP 工具和异步 agent 可以把实时模型调用绑定到已有 workload/run，而无需暴露 prompt 内容。
+
 ## 价格与成本
 
 Agent Ledger 使用非重叠 token 字段：

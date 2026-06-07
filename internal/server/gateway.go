@@ -22,6 +22,15 @@ type openAIChatGatewayRequest struct {
 	Metadata map[string]interface{} `json:"metadata"`
 }
 
+type gatewayLedgerContext struct {
+	Project    string
+	Goal       string
+	WorkloadID string
+	AgentRunID string
+	SessionID  string
+	GitBranch  string
+}
+
 func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -54,9 +63,8 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 		badRequest(w, fmt.Errorf("model is required"))
 		return
 	}
-	project := firstNonEmpty(r.URL.Query().Get("project"), gatewayMetadataString(payload.Metadata, "agent_ledger.project", "project"))
-	goal := firstNonEmpty(r.URL.Query().Get("goal"), gatewayMetadataString(payload.Metadata, "agent_ledger.goal", "goal"), "Gateway model call "+model)
-	if !s.evaluateOperationPolicy(w, r, "model.call", "gateway", model, project, "openai-chat-completions") {
+	ledgerCtx := gatewayContext(r, payload.Metadata, model)
+	if !s.evaluateOperationPolicy(w, r, "model.call", "gateway", model, ledgerCtx.Project, "openai-chat-completions") {
 		return
 	}
 	apiKey := strings.TrimSpace(os.Getenv(cfg.APIKeyEnv))
@@ -80,12 +88,12 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	resp, err := (&http.Client{Timeout: cfg.Timeout}).Do(upReq)
 	if err != nil {
 		http.Error(w, "gateway upstream request failed", http.StatusBadGateway)
-		_ = s.db.AppendAuditLog("local", s.roleFor(r), "gateway.openai.chat.upstream_error", model, map[string]string{"error": err.Error(), "project": project})
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "gateway.openai.chat.upstream_error", model, map[string]string{"error": err.Error(), "project": ledgerCtx.Project})
 		return
 	}
 	defer resp.Body.Close()
 	if payload.Stream {
-		s.handleOpenAIChatGatewayStream(w, resp, cfg, model, project, goal, started)
+		s.handleOpenAIChatGatewayStream(w, resp, cfg, model, ledgerCtx, started)
 		return
 	}
 
@@ -104,9 +112,9 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	recorded := false
 	eventCount := 0
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		recorded, eventCount = s.recordOpenAIChatGatewayUsage(respBody, model, project, goal, started)
+		recorded, eventCount = s.recordOpenAIChatGatewayUsage(respBody, model, ledgerCtx, started)
 	} else {
-		_ = s.db.AppendAuditLog("local", s.roleFor(r), "gateway.openai.chat.upstream_status", model, map[string]string{"status": fmt.Sprint(resp.StatusCode), "project": project})
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "gateway.openai.chat.upstream_status", model, map[string]string{"status": fmt.Sprint(resp.StatusCode), "project": ledgerCtx.Project})
 	}
 
 	w.Header().Set("Content-Type", firstNonEmpty(resp.Header.Get("Content-Type"), "application/json"))
@@ -117,11 +125,11 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	_, _ = w.Write(respBody)
 }
 
-func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model, project, goal string, started time.Time) (bool, int) {
+func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model string, ledgerCtx gatewayLedgerContext, started time.Time) (bool, int) {
 	calls, err := integrations.DecodeProviderCalls(raw)
 	if err != nil {
 		log.Printf("gateway usage decode failed: %v", err)
-		_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.usage_decode_error", model, map[string]string{"error": err.Error(), "project": project})
+		_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.usage_decode_error", model, map[string]string{"error": err.Error(), "project": ledgerCtx.Project})
 		return false, 0
 	}
 	for i := range calls {
@@ -132,7 +140,10 @@ func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model, project, goal s
 			calls[i].Model = model
 		}
 		if strings.TrimSpace(calls[i].Project) == "" {
-			calls[i].Project = project
+			calls[i].Project = ledgerCtx.Project
+		}
+		if strings.TrimSpace(calls[i].SessionID) == "" {
+			calls[i].SessionID = ledgerCtx.SessionID
 		}
 		if calls[i].Timestamp.IsZero() {
 			calls[i].Timestamp = started
@@ -141,9 +152,12 @@ func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model, project, goal s
 			calls[i].Metadata = map[string]interface{}{}
 		}
 		calls[i].Metadata["agent_ledger.source"] = "gateway"
-		calls[i].Metadata["agent_ledger.goal"] = goal
-		calls[i].Metadata["agent_ledger.project"] = project
+		calls[i].Metadata["agent_ledger.goal"] = ledgerCtx.Goal
+		calls[i].Metadata["agent_ledger.project"] = ledgerCtx.Project
 		calls[i].Metadata["agent_ledger.latency_ms"] = int64(time.Since(started) / time.Millisecond)
+		setGatewayMetadata(calls[i].Metadata, "agent_ledger.workload_id", ledgerCtx.WorkloadID)
+		setGatewayMetadata(calls[i].Metadata, "agent_ledger.agent_run_id", ledgerCtx.AgentRunID)
+		setGatewayMetadata(calls[i].Metadata, "agent_ledger.git_branch", ledgerCtx.GitBranch)
 		if calls[i].Usage.CostUSD == 0 {
 			calls[i].Metadata["pricing_source"] = "unpriced"
 			calls[i].Metadata["pricing_confidence"] = "needs-local-pricing"
@@ -152,7 +166,7 @@ func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model, project, goal s
 	events, err := integrations.ConvertProviderCalls(calls)
 	if err != nil {
 		log.Printf("gateway usage conversion failed: %v", err)
-		_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.usage_convert_error", model, map[string]string{"error": err.Error(), "project": project})
+		_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.usage_convert_error", model, map[string]string{"error": err.Error(), "project": ledgerCtx.Project})
 		return false, 0
 	}
 	inserted := 0
@@ -160,18 +174,18 @@ func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model, project, goal s
 		result, err := s.db.IngestCanonicalEvent(event)
 		if err != nil {
 			log.Printf("gateway usage ingest failed: %v", err)
-			_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.usage_ingest_error", model, map[string]string{"error": err.Error(), "project": project})
+			_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.usage_ingest_error", model, map[string]string{"error": err.Error(), "project": ledgerCtx.Project})
 			return false, inserted
 		}
 		if result != nil && result.Status == "inserted" {
 			inserted++
 		}
 	}
-	_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat", model, map[string]string{"calls": fmt.Sprint(len(calls)), "events": fmt.Sprint(len(events)), "inserted": fmt.Sprint(inserted), "project": project})
+	_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat", model, map[string]string{"calls": fmt.Sprint(len(calls)), "events": fmt.Sprint(len(events)), "inserted": fmt.Sprint(inserted), "project": ledgerCtx.Project, "workload_id": ledgerCtx.WorkloadID, "run_id": ledgerCtx.AgentRunID})
 	return len(events) > 0, len(events)
 }
 
-func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model, project, goal string, started time.Time) {
+func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming is not supported by this response writer", http.StatusInternalServerError)
@@ -194,7 +208,7 @@ func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http
 		if len(line) > 0 {
 			streamed += int64(len(line))
 			if streamed > cfg.MaxResponseBytes {
-				_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.stream_too_large", model, map[string]string{"status": fmt.Sprint(resp.StatusCode), "project": project})
+				_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.stream_too_large", model, map[string]string{"status": fmt.Sprint(resp.StatusCode), "project": ledgerCtx.Project})
 				break
 			}
 			_, _ = w.Write(line)
@@ -211,7 +225,7 @@ func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http
 			break
 		}
 		if err != nil {
-			_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.stream_read_error", model, map[string]string{"error": err.Error(), "status": fmt.Sprint(resp.StatusCode), "project": project})
+			_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.stream_read_error", model, map[string]string{"error": err.Error(), "status": fmt.Sprint(resp.StatusCode), "project": ledgerCtx.Project})
 			break
 		}
 	}
@@ -226,13 +240,13 @@ func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http
 				"usage": json.RawMessage(usage),
 			})
 			if err == nil {
-				recorded, eventCount = s.recordOpenAIChatGatewayUsage(body, responseModel, project, goal, started)
+				recorded, eventCount = s.recordOpenAIChatGatewayUsage(body, responseModel, ledgerCtx, started)
 			}
 		} else {
-			_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.stream_usage_missing", model, map[string]string{"project": project})
+			_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.stream_usage_missing", model, map[string]string{"project": ledgerCtx.Project})
 		}
 	} else {
-		_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.upstream_status", model, map[string]string{"status": fmt.Sprint(resp.StatusCode), "project": project})
+		_ = s.db.AppendAuditLog("local", "gateway", "gateway.openai.chat.upstream_status", model, map[string]string{"status": fmt.Sprint(resp.StatusCode), "project": ledgerCtx.Project})
 	}
 	w.Header().Set("X-Agent-Ledger-Usage-Recorded", fmt.Sprint(recorded))
 	w.Header().Set("X-Agent-Ledger-Usage-Events", fmt.Sprint(eventCount))
@@ -292,4 +306,28 @@ func gatewayMetadataString(metadata map[string]interface{}, keys ...string) stri
 		}
 	}
 	return ""
+}
+
+func gatewayContext(r *http.Request, metadata map[string]interface{}, model string) gatewayLedgerContext {
+	return gatewayLedgerContext{
+		Project:    firstNonEmpty(gatewayQuery(r, "project"), gatewayMetadataString(metadata, "agent_ledger.project", "project")),
+		Goal:       firstNonEmpty(gatewayQuery(r, "goal"), gatewayMetadataString(metadata, "agent_ledger.goal", "goal"), "Gateway model call "+model),
+		WorkloadID: firstNonEmpty(gatewayQuery(r, "workload_id"), gatewayMetadataString(metadata, "agent_ledger.workload_id", "workload_id")),
+		AgentRunID: firstNonEmpty(gatewayQuery(r, "agent_run_id"), gatewayQuery(r, "run_id"), gatewayMetadataString(metadata, "agent_ledger.agent_run_id", "agent_run_id", "run_id")),
+		SessionID:  firstNonEmpty(gatewayQuery(r, "session_id"), gatewayMetadataString(metadata, "agent_ledger.session_id", "session_id")),
+		GitBranch:  firstNonEmpty(gatewayQuery(r, "git_branch"), gatewayQuery(r, "branch"), gatewayMetadataString(metadata, "agent_ledger.git_branch", "git_branch", "branch")),
+	}
+}
+
+func gatewayQuery(r *http.Request, key string) string {
+	if r == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.URL.Query().Get(key))
+}
+
+func setGatewayMetadata(metadata map[string]interface{}, key, value string) {
+	if strings.TrimSpace(value) != "" {
+		metadata[key] = value
+	}
 }
