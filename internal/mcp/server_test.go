@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -116,9 +116,10 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 
 	startRunLine := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ledger.start_run","arguments":{"workload_id":"` + workloadID + `","source":"codex","agent_name":"codex-worker","command":"codex worker","cwd":"C:/work"}}}`
 	policyLine := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ledger.get_policy","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","model":"gpt-5.5","role":"operator"}}}`
-	artifactLine := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.record_artifact","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","artifact_type":"report","label":"privacy-safe-summary","path_hash":"sha256:abc","sha256":"def","metadata":{"format":"markdown"}}}}`
-	closeLine := `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ledger.close_workload","arguments":{"workload_id":"` + workloadID + `","status":"completed","outcome":"accepted"}}}`
-	responses := serveLines(t, srv, startRunLine, policyLine, artifactLine, closeLine)
+	contextLine := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.record_context","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","source":"codex","context_ref_id":"ctx-mcp","ref_type":"repo","ref_hash":"sha256:context","label":"privacy-safe-context","repo":"zhenzhis/agent-ledger","git_branch":"main","privacy_label":"synthetic"}}}`
+	artifactLine := `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ledger.record_artifact","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","artifact_type":"report","label":"privacy-safe-summary","path_hash":"sha256:abc","sha256":"def","metadata":{"format":"markdown"}}}}`
+	closeLine := `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ledger.close_workload","arguments":{"workload_id":"` + workloadID + `","status":"completed","outcome":"accepted"}}}`
+	responses := serveLines(t, srv, startRunLine, policyLine, contextLine, artifactLine, closeLine)
 	startedRun := toolTextPayload(t, responses[0])
 	if startedRun["run_id"] == "" || startedRun["workload_id"] != workloadID {
 		t.Fatalf("start run payload=%#v", startedRun)
@@ -127,11 +128,15 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	if policy["action"] != "warn" {
 		t.Fatalf("policy action=%#v", policy["action"])
 	}
-	artifact := toolTextPayload(t, responses[2])
+	context := toolTextPayload(t, responses[2])
+	if context["status"] != "inserted" {
+		t.Fatalf("missing context result: %#v", context)
+	}
+	artifact := toolTextPayload(t, responses[3])
 	if artifact["artifact_id"] == "" {
 		t.Fatalf("missing artifact id: %#v", artifact)
 	}
-	closed := toolTextPayload(t, responses[3])
+	closed := toolTextPayload(t, responses[4])
 	if closed["status"] != "completed" {
 		t.Fatalf("close payload=%#v", closed)
 	}
@@ -145,6 +150,9 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	}
 	if len(detail.Runs) != 2 {
 		t.Fatalf("runs=%#v", detail.Runs)
+	}
+	if len(detail.ContextRefs) != 1 || detail.ContextRefs[0].ContextRefID != "ctx-mcp" || detail.ContextRefs[0].RefHash != "sha256:context" {
+		t.Fatalf("context_refs=%#v", detail.ContextRefs)
 	}
 	if len(detail.Policies) != 1 || detail.Policies[0].Action != "warn" {
 		t.Fatalf("policy decisions=%#v", detail.Policies)

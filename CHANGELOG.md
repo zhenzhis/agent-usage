@@ -41,6 +41,7 @@
 - Legacy session backfill into workload/run/model-call records for immediate compatibility with existing local data.
 - Workload APIs: list/create/close/start-run/heartbeat/liveness/detail/graph, model registry, policy decisions, and workload CSV/JSON export.
 - Workload detail and graph now expose `context_refs`, making context/worktree/protocol references visible alongside runs, model calls, tools, artifacts, evaluations, and policies.
+- Explicit context-reference entrypoints through `agent-ledger workload context` and MCP `ledger.record_context`, both backed by canonical `context.ref` events.
 - Local MCP stdio JSON-RPC tools for budget lookup, workload lifecycle, run start/heartbeat/liveness, privacy-safe artifacts, advisory policy decisions, cost explanation, and similar workload search.
 - Local MCP resources and prompts for metadata-only schema/catalog/budget/workload/policy context plus workload, cost-review, and incident-evidence templates.
 - Hourly and daily usage aggregate tables with dashboard aggregate fallback.

@@ -1140,10 +1140,59 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"rows": rows, "max_age": maxAge.String(), "stale_only": staleOnly})
+	case "context", "record-context":
+		return runWorkloadContextCLI(args[1:], db)
 	default:
 		return fmt.Errorf("unknown workload command %q", args[0])
 	}
 	return nil
+}
+
+func runWorkloadContextCLI(args []string, db *storage.DB) error {
+	workloadID := firstNonEmptyCLI(cliValue(args, "--workload-id"), cliValue(args, "--id"))
+	if workloadID == "" {
+		return fmt.Errorf("--workload-id is required")
+	}
+	refHash := firstNonEmptyCLI(cliValue(args, "--hash"), cliValue(args, "--ref-hash"))
+	label := cliValue(args, "--label")
+	if refHash == "" && label == "" {
+		return fmt.Errorf("at least one of --hash or --label is required")
+	}
+	ts := time.Now().UTC()
+	if raw := cliValue(args, "--timestamp"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return fmt.Errorf("invalid --timestamp: %w", err)
+		}
+		ts = parsed
+	}
+	payload := map[string]interface{}{
+		"ref_type":      firstNonEmptyCLI(cliValue(args, "--type"), cliValue(args, "--ref-type"), "context"),
+		"ref_hash":      refHash,
+		"label":         label,
+		"repo":          cliValue(args, "--repo"),
+		"git_branch":    firstNonEmptyCLI(cliValue(args, "--branch"), cliValue(args, "--git-branch")),
+		"commit_sha":    firstNonEmptyCLI(cliValue(args, "--commit"), cliValue(args, "--commit-sha")),
+		"privacy_label": firstNonEmptyCLI(cliValue(args, "--privacy-label"), "local"),
+	}
+	rawPayload, _ := json.Marshal(payload)
+	result, err := db.IngestCanonicalEvent(storage.CanonicalEvent{
+		EventID:       cliValue(args, "--event-id"),
+		Source:        firstNonEmptyCLI(cliValue(args, "--source"), "local"),
+		EventType:     "context.ref",
+		SourceEventID: firstNonEmptyCLI(cliValue(args, "--context-ref-id"), cliValue(args, "--source-event-id")),
+		WorkloadID:    workloadID,
+		AgentRunID:    firstNonEmptyCLI(cliValue(args, "--run-id"), cliValue(args, "--agent-run-id")),
+		Project:       cliValue(args, "--project"),
+		GitBranch:     firstNonEmptyCLI(cliValue(args, "--branch"), cliValue(args, "--git-branch")),
+		Timestamp:     ts,
+		Payload:       rawPayload,
+		Confidence:    1,
+	})
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(result)
 }
 
 func runWrappedCLI(args []string, db *storage.DB) error {

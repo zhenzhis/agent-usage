@@ -202,6 +202,21 @@ func tools() []map[string]interface{} {
 			"sha256":        stringSchema(),
 			"metadata":      objectSchema(),
 		}),
+		tool("ledger.record_context", "Record a metadata-only context reference such as a repo, worktree, trace, task, or external memory handle.", map[string]interface{}{
+			"workload_id":    requiredStringSchema(),
+			"run_id":         stringSchema(),
+			"source":         stringSchema(),
+			"context_ref_id": stringSchema(),
+			"ref_type":       stringSchema(),
+			"ref_hash":       stringSchema(),
+			"label":          stringSchema(),
+			"repo":           stringSchema(),
+			"git_branch":     stringSchema(),
+			"commit_sha":     stringSchema(),
+			"privacy_label":  stringSchema(),
+			"event_id":       stringSchema(),
+			"timestamp":      stringSchema(),
+		}),
 		tool("ledger.record_event", "Ingest one canonical metadata-only event into the workload ledger.", map[string]interface{}{
 			"source":          requiredStringSchema(),
 			"event_type":      requiredStringSchema(),
@@ -337,6 +352,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolRunLiveness(args)
 	case "ledger.record_artifact":
 		return s.toolRecordArtifact(args)
+	case "ledger.record_context":
+		return s.toolRecordContext(args)
 	case "ledger.record_event":
 		return s.toolRecordEvent(args)
 	case "ledger.event_schema":
@@ -635,6 +652,62 @@ func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{"artifact_id": id, "workload_id": in.WorkloadID}, nil
+}
+
+func (s *Server) toolRecordContext(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		WorkloadID   string `json:"workload_id"`
+		RunID        string `json:"run_id"`
+		Source       string `json:"source"`
+		ContextRefID string `json:"context_ref_id"`
+		RefType      string `json:"ref_type"`
+		RefHash      string `json:"ref_hash"`
+		Label        string `json:"label"`
+		Repo         string `json:"repo"`
+		GitBranch    string `json:"git_branch"`
+		CommitSHA    string `json:"commit_sha"`
+		PrivacyLabel string `json:"privacy_label"`
+		EventID      string `json:"event_id"`
+		Timestamp    string `json:"timestamp"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	if in.WorkloadID == "" {
+		return nil, fmt.Errorf("workload_id is required")
+	}
+	if in.RefHash == "" && in.Label == "" {
+		return nil, fmt.Errorf("at least one of ref_hash or label is required")
+	}
+	ts := time.Now().UTC()
+	if in.Timestamp != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, in.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		ts = parsed
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"ref_type":      firstNonEmpty(in.RefType, "context"),
+		"ref_hash":      in.RefHash,
+		"label":         in.Label,
+		"repo":          in.Repo,
+		"git_branch":    in.GitBranch,
+		"commit_sha":    in.CommitSHA,
+		"privacy_label": firstNonEmpty(in.PrivacyLabel, "local"),
+	})
+	return s.db.IngestCanonicalEvent(storage.CanonicalEvent{
+		EventID:       in.EventID,
+		Source:        firstNonEmpty(in.Source, "mcp"),
+		EventType:     "context.ref",
+		SourceEventID: in.ContextRefID,
+		WorkloadID:    in.WorkloadID,
+		AgentRunID:    in.RunID,
+		GitBranch:     in.GitBranch,
+		Timestamp:     ts,
+		Payload:       payload,
+		Confidence:    1,
+	})
 }
 
 func (s *Server) toolRecordEvent(args json.RawMessage) (interface{}, error) {
