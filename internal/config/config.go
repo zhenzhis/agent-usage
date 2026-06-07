@@ -11,19 +11,20 @@ import (
 
 // Config holds the top-level application configuration.
 type Config struct {
-	Server     ServerConfig     `yaml:"server"`
-	Collectors CollectorConfigs `yaml:"collectors"`
-	Storage    StorageConfig    `yaml:"storage"`
-	Pricing    PricingConfig    `yaml:"pricing"`
-	Privacy    PrivacyConfig    `yaml:"privacy"`
-	Projects   ProjectsConfig   `yaml:"projects"`
-	Budgets    BudgetConfig     `yaml:"budgets"`
-	Quota      QuotaConfig      `yaml:"quota"`
-	Watchdog   WatchdogConfig   `yaml:"watchdog"`
-	RBAC       RBACConfig       `yaml:"rbac"`
-	Policies   PolicyConfig     `yaml:"policies"`
-	Webhooks   WebhookConfig    `yaml:"webhooks"`
-	Teams      TeamsConfig      `yaml:"teams"`
+	Server       ServerConfig       `yaml:"server"`
+	Collectors   CollectorConfigs   `yaml:"collectors"`
+	Storage      StorageConfig      `yaml:"storage"`
+	Pricing      PricingConfig      `yaml:"pricing"`
+	Privacy      PrivacyConfig      `yaml:"privacy"`
+	Projects     ProjectsConfig     `yaml:"projects"`
+	Budgets      BudgetConfig       `yaml:"budgets"`
+	Quota        QuotaConfig        `yaml:"quota"`
+	Watchdog     WatchdogConfig     `yaml:"watchdog"`
+	RBAC         RBACConfig         `yaml:"rbac"`
+	Policies     PolicyConfig       `yaml:"policies"`
+	Webhooks     WebhookConfig      `yaml:"webhooks"`
+	Teams        TeamsConfig        `yaml:"teams"`
+	Integrations IntegrationsConfig `yaml:"integrations"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -172,6 +173,18 @@ type TeamsConfig struct {
 	Groups      map[string]string `yaml:"groups"`
 }
 
+// IntegrationsConfig controls optional protocol adapters and receivers.
+type IntegrationsConfig struct {
+	OTLPReceiver OTLPReceiverConfig `yaml:"otlp_receiver"`
+}
+
+// OTLPReceiverConfig controls the local OTLP HTTP/JSON traces receiver.
+type OTLPReceiverConfig struct {
+	Enabled      bool  `yaml:"enabled"`
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
+	MaxSpans     int   `yaml:"max_spans"`
+}
+
 func expandPath(p string) string {
 	if strings.HasPrefix(p, "~/") {
 		home, _ := os.UserHomeDir()
@@ -234,6 +247,9 @@ func DefaultConfig() *Config {
 		Policies: PolicyConfig{Enabled: false},
 		Webhooks: WebhookConfig{Enabled: false},
 		Teams:    TeamsConfig{Groups: map[string]string{}},
+		Integrations: IntegrationsConfig{
+			OTLPReceiver: OTLPReceiverConfig{Enabled: false, MaxBodyBytes: 4 << 20, MaxSpans: 1000},
+		},
 	}
 }
 
@@ -290,6 +306,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Teams.Groups == nil {
 		cfg.Teams.Groups = map[string]string{}
+	}
+	if cfg.Integrations.OTLPReceiver.MaxBodyBytes <= 0 {
+		cfg.Integrations.OTLPReceiver.MaxBodyBytes = 4 << 20
+	}
+	if cfg.Integrations.OTLPReceiver.MaxSpans <= 0 {
+		cfg.Integrations.OTLPReceiver.MaxSpans = 1000
 	}
 	if cfg.Pricing.StaleAfter <= 0 {
 		cfg.Pricing.StaleAfter = 24 * time.Hour

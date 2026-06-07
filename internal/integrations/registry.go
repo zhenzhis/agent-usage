@@ -16,12 +16,13 @@ type Source struct {
 
 // Options controls runtime-specific capability flags for the registry.
 type Options struct {
-	Sources         []Source `json:"sources"`
-	PricingMode     string   `json:"pricing_mode"`
-	PoliciesEnabled bool     `json:"policies_enabled"`
-	RBACEnabled     bool     `json:"rbac_enabled"`
-	QuotaEnabled    bool     `json:"quota_enabled"`
-	WebhooksEnabled bool     `json:"webhooks_enabled"`
+	Sources             []Source `json:"sources"`
+	PricingMode         string   `json:"pricing_mode"`
+	PoliciesEnabled     bool     `json:"policies_enabled"`
+	RBACEnabled         bool     `json:"rbac_enabled"`
+	QuotaEnabled        bool     `json:"quota_enabled"`
+	WebhooksEnabled     bool     `json:"webhooks_enabled"`
+	OTLPReceiverEnabled bool     `json:"otlp_receiver_enabled"`
 }
 
 // Capability describes one supported or planned integration surface.
@@ -76,11 +77,12 @@ func OptionsFromConfig(cfg *config.Config) Options {
 			sourceFromConfig("kiro", cfg.Collectors.Kiro),
 			sourceFromConfig("pi", cfg.Collectors.Pi),
 		},
-		PricingMode:     cfg.Pricing.Mode,
-		PoliciesEnabled: cfg.Policies.Enabled,
-		RBACEnabled:     cfg.RBAC.Enabled,
-		QuotaEnabled:    cfg.Quota.Enabled,
-		WebhooksEnabled: cfg.Webhooks.Enabled,
+		PricingMode:         cfg.Pricing.Mode,
+		PoliciesEnabled:     cfg.Policies.Enabled,
+		RBACEnabled:         cfg.RBAC.Enabled,
+		QuotaEnabled:        cfg.Quota.Enabled,
+		WebhooksEnabled:     cfg.Webhooks.Enabled,
+		OTLPReceiverEnabled: cfg.Integrations.OTLPReceiver.Enabled,
 	}
 }
 
@@ -250,14 +252,16 @@ func Registry(opts Options) Catalog {
 			ID:             "protocol.otlp_receiver",
 			Name:           "OpenTelemetry OTLP Receiver",
 			Category:       "protocol",
-			Protocol:       "OTLP HTTP/gRPC",
+			Protocol:       "OTLP HTTP/JSON traces",
 			Direction:      "ingest",
-			Status:         "planned",
-			Maturity:       "roadmap",
-			Enabled:        false,
-			Privacy:        "must preserve metadata-only span projection and reject prompt/message content",
+			Status:         "experimental",
+			Maturity:       "local-preview",
+			Enabled:        opts.OTLPReceiverEnabled,
+			Privacy:        "metadata-only span projection; prompt/message attributes are intentionally not persisted",
 			EventTypes:     []string{"model.call", "context.ref"},
-			NextMilestones: []string{"explicit receiver config", "OTLP fixture conformance", "backpressure and batch size limits"},
+			Endpoints:      []string{"POST /v1/traces", "POST /api/otlp/v1/traces"},
+			Limitations:    []string{"JSON receiver only; OTLP protobuf and gRPC are not yet accepted", "disabled by default and restricted to localhost or authenticated operators"},
+			NextMilestones: []string{"OTLP protobuf/gRPC conformance", "collector exporter examples", "backpressure metrics"},
 		},
 	}
 	capabilities = append(capabilities, collectorCapabilities(opts.Sources)...)

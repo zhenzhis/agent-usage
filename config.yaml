@@ -91,3 +91,9 @@ teams:
   machine_name: ""
   git_author: ""
   groups: {}
+
+integrations:
+  otlp_receiver:
+    enabled: false
+    max_body_bytes: 4194304
+    max_spans: 1000

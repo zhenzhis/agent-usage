@@ -103,6 +103,12 @@ privacy:
   hash_session_ids: false
   hide_project_names: false
   screenshot_mode: false
+
+integrations:
+  otlp_receiver:
+    enabled: false
+    max_body_bytes: 4194304
+    max_spans: 1000
 ```
 
 Use `pricing.overrides` for enterprise contracts, relay pricing, regional multipliers, or provider-specific discounts.
@@ -181,6 +187,8 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/event-schema` | Canonical event schema and supported event types |
 | `POST /api/events` | Ingest metadata-only canonical events |
 | `POST /api/otel/genai` | Convert OpenTelemetry GenAI JSON spans into canonical model-call events |
+| `POST /v1/traces` | Optional local OTLP HTTP/JSON traces receiver when `integrations.otlp_receiver.enabled` is true |
+| `POST /api/otlp/v1/traces` | Same receiver under the API namespace for local reverse proxies |
 | `POST /api/a2a/tasks` | Convert A2A JSON task snapshots/events into workload/run/artifact/evaluation events |
 | `POST /api/provider/calls` | Convert provider response usage envelopes into canonical model-call events |
 | `GET /api/reconciliation/status` | Recent local/provider bill comparisons |
@@ -231,7 +239,7 @@ Current tools:
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
 
-Canonical event ingest supports workload, run, model-call, tool-call, context-ref, artifact, evaluation, and policy-decision events. Payloads are metadata-only; raw prompt/content keys are rejected instead of silently persisted. `GET /api/integrations`, `agent-ledger integrations`, and `ledger.integrations` expose the current connector/protocol capability catalog without leaking local source paths. `POST /api/otel/genai` and `agent-ledger otel ingest` accept OpenTelemetry GenAI JSON spans and persist only selected metadata/token fields. `POST /api/a2a/tasks` and `agent-ledger a2a ingest` accept A2A task snapshots/events and persist task lifecycle metadata while excluding message/history/artifact-part content. `POST /api/provider/calls` and `agent-ledger provider ingest` accept OpenAI-compatible, Anthropic-style, and LiteLLM-style usage envelopes while excluding request/response message content. `POST /api/reconciliation/import` and `agent-ledger reconcile import` accept local provider CSV/JSON billing exports, store only summary totals, statement hash, window, and warnings, and compare them with the local ledger for the same window.
+Canonical event ingest supports workload, run, model-call, tool-call, context-ref, artifact, evaluation, and policy-decision events. Payloads are metadata-only; raw prompt/content keys are rejected instead of silently persisted. `GET /api/integrations`, `agent-ledger integrations`, and `ledger.integrations` expose the current connector/protocol capability catalog without leaking local source paths. `POST /api/otel/genai` and `agent-ledger otel ingest` accept OpenTelemetry GenAI JSON spans and persist only selected metadata/token fields. When explicitly enabled, `POST /v1/traces` and `POST /api/otlp/v1/traces` accept OTLP HTTP/JSON trace batches with body and span-count limits; OTLP protobuf/gRPC are intentionally rejected until conformance tests are added. `POST /api/a2a/tasks` and `agent-ledger a2a ingest` accept A2A task snapshots/events and persist task lifecycle metadata while excluding message/history/artifact-part content. `POST /api/provider/calls` and `agent-ledger provider ingest` accept OpenAI-compatible, Anthropic-style, and LiteLLM-style usage envelopes while excluding request/response message content. `POST /api/reconciliation/import` and `agent-ledger reconcile import` accept local provider CSV/JSON billing exports, store only summary totals, statement hash, window, and warnings, and compare them with the local ledger for the same window.
 
 ## Troubleshooting Data Accuracy
 
@@ -294,9 +302,9 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, OpenTelemetry GenAI JSON span mapping, A2A task telemetry mapping, provider usage envelope mapping, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, CLI workload/event/policy/router/replay/badge/preflight commands, CLI run wrapper, and local MCP stdio tools.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, CLI workload/event/policy/router/replay/badge/preflight commands, CLI run wrapper, and local MCP stdio tools.
 
-Planned integrations: full OTLP receiver mode, live provider/API gateway mode, Postgres team mode, OIDC/SSO, richer MCP resources/prompts, and enterprise policy approval flows.
+Planned integrations: OTLP protobuf/gRPC conformance, live provider/API gateway mode, Postgres team mode, OIDC/SSO, richer MCP resources/prompts, and enterprise policy approval flows.
 
 ## License
 

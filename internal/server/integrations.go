@@ -24,11 +24,12 @@ func (s *Server) integrationOptions() integrations.Options {
 		})
 	}
 	return integrations.Options{
-		Sources:         sources,
-		PricingMode:     s.options.Pricing.Mode,
-		PoliciesEnabled: s.options.Policies.Enabled,
-		RBACEnabled:     s.options.RBAC.Enabled,
-		QuotaEnabled:    s.options.Quota.Enabled,
-		WebhooksEnabled: s.options.Webhooks.Enabled,
+		Sources:             sources,
+		PricingMode:         s.options.Pricing.Mode,
+		PoliciesEnabled:     s.options.Policies.Enabled,
+		RBACEnabled:         s.options.RBAC.Enabled,
+		QuotaEnabled:        s.options.Quota.Enabled,
+		WebhooksEnabled:     s.options.Webhooks.Enabled,
+		OTLPReceiverEnabled: s.options.Integrations.OTLPReceiver.Enabled,
 	}
 }

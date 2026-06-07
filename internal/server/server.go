@@ -44,23 +44,24 @@ type SourceOption struct {
 
 // Options provides optional operational capabilities for the HTTP server.
 type Options struct {
-	AuthToken   string
-	AdminToken  string
-	ViewerToken string
-	RBAC        config.RBACConfig
-	Privacy     config.PrivacyConfig
-	Budgets     config.BudgetConfig
-	Quota       config.QuotaConfig
-	Watchdog    config.WatchdogConfig
-	Policies    config.PolicyConfig
-	Webhooks    config.WebhookConfig
-	Teams       config.TeamsConfig
-	Pricing     config.PricingConfig
-	Sources     []SourceOption
-	Scan        func(source string, reset bool) error
-	Recalc      func() error
-	RecalcMode  func(mode string) error
-	PricingSync func() error
+	AuthToken    string
+	AdminToken   string
+	ViewerToken  string
+	RBAC         config.RBACConfig
+	Privacy      config.PrivacyConfig
+	Budgets      config.BudgetConfig
+	Quota        config.QuotaConfig
+	Watchdog     config.WatchdogConfig
+	Policies     config.PolicyConfig
+	Webhooks     config.WebhookConfig
+	Teams        config.TeamsConfig
+	Integrations config.IntegrationsConfig
+	Pricing      config.PricingConfig
+	Sources      []SourceOption
+	Scan         func(source string, reset bool) error
+	Recalc       func() error
+	RecalcMode   func(mode string) error
+	PricingSync  func() error
 }
 
 // New creates a Server that will listen on the given address (host:port).
@@ -92,6 +93,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/event-schema", s.handleCanonicalEventSchema)
 	mux.HandleFunc("/api/events", s.handleCanonicalEvents)
 	mux.HandleFunc("/api/otel/genai", s.handleOTelGenAI)
+	mux.HandleFunc("/api/otlp/v1/traces", s.handleOTLPTraces)
+	mux.HandleFunc("/v1/traces", s.handleOTLPTraces)
 	mux.HandleFunc("/api/a2a/tasks", s.handleA2ATasks)
 	mux.HandleFunc("/api/provider/calls", s.handleProviderCalls)
 	mux.HandleFunc("/api/health/ingestion", s.handleIngestionHealth)

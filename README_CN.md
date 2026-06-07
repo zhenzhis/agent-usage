@@ -103,6 +103,12 @@ privacy:
   hash_session_ids: false
   hide_project_names: false
   screenshot_mode: false
+
+integrations:
+  otlp_receiver:
+    enabled: false
+    max_body_bytes: 4194304
+    max_spans: 1000
 ```
 
 企业合同价、三方中转价、地区倍率和内部折扣请通过 `pricing.overrides` 配置。
@@ -181,6 +187,8 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/event-schema` | Canonical event schema 与支持的事件类型 |
 | `POST /api/events` | 写入 metadata-only canonical events |
 | `POST /api/otel/genai` | 将 OpenTelemetry GenAI JSON span 转成 canonical model-call events |
+| `POST /v1/traces` | 显式开启 `integrations.otlp_receiver.enabled` 后可用的本地 OTLP HTTP/JSON traces receiver |
+| `POST /api/otlp/v1/traces` | 同一 receiver 的 API 命名空间路径，便于本地反向代理 |
 | `POST /api/a2a/tasks` | 将 A2A JSON task snapshot/event 转成 workload/run/artifact/evaluation events |
 | `POST /api/provider/calls` | 将 provider response usage envelope 转成 canonical model-call events |
 | `GET /api/reconciliation/status` | 查看最近本地账本与 provider 账单对账 |
@@ -231,7 +239,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
 
-Canonical event ingest 支持 workload、run、model call、tool call、context ref、artifact、evaluation、policy decision 事件。Payload 只允许元数据；如果出现 raw prompt/content 相关键会直接失败，不会静默持久化。`GET /api/integrations`、`agent-ledger integrations` 与 `ledger.integrations` 会暴露当前 connector/protocol 能力目录，但不会泄露本地 source 原始路径。`POST /api/otel/genai` 与 `agent-ledger otel ingest` 支持 OpenTelemetry GenAI JSON span，并只保留经过挑选的元数据和 token 字段。`POST /api/a2a/tasks` 与 `agent-ledger a2a ingest` 支持 A2A task snapshot/event，只保留任务生命周期元数据，不保存 message/history/artifact part 内容。`POST /api/provider/calls` 与 `agent-ledger provider ingest` 支持 OpenAI-compatible、Anthropic-style、LiteLLM-style usage envelope，不保存 request/response message 内容。`POST /api/reconciliation/import` 与 `agent-ledger reconcile import` 支持导入本地 provider CSV/JSON 账单，只保存汇总金额、账单 hash、窗口和 warning，并与相同窗口的本地账本做差异比较。
+Canonical event ingest 支持 workload、run、model call、tool call、context ref、artifact、evaluation、policy decision 事件。Payload 只允许元数据；如果出现 raw prompt/content 相关键会直接失败，不会静默持久化。`GET /api/integrations`、`agent-ledger integrations` 与 `ledger.integrations` 会暴露当前 connector/protocol 能力目录，但不会泄露本地 source 原始路径。`POST /api/otel/genai` 与 `agent-ledger otel ingest` 支持 OpenTelemetry GenAI JSON span，并只保留经过挑选的元数据和 token 字段。显式开启后，`POST /v1/traces` 与 `POST /api/otlp/v1/traces` 可接收 OTLP HTTP/JSON trace batch，并有 body 与 span 数量上限；OTLP protobuf/gRPC 在加入 conformance tests 前会被明确拒绝。`POST /api/a2a/tasks` 与 `agent-ledger a2a ingest` 支持 A2A task snapshot/event，只保留任务生命周期元数据，不保存 message/history/artifact part 内容。`POST /api/provider/calls` 与 `agent-ledger provider ingest` 支持 OpenAI-compatible、Anthropic-style、LiteLLM-style usage envelope，不保存 request/response message 内容。`POST /api/reconciliation/import` 与 `agent-ledger reconcile import` 支持导入本地 provider CSV/JSON 账单，只保存汇总金额、账单 hash、窗口和 warning，并与相同窗口的本地账本做差异比较。
 
 ## 数据准确性排障
 
@@ -294,9 +302,9 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、A2A task telemetry mapping、provider usage envelope mapping、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy/router/replay/badge/preflight 命令、CLI run wrapper 和本地 MCP stdio tools。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy/router/replay/badge/preflight 命令、CLI run wrapper 和本地 MCP stdio tools。
 
-后续路线：完整 OTLP receiver mode、live provider/API gateway mode、Postgres 团队模式、OIDC/SSO、更完整的 MCP resources/prompts、企业策略审批流。
+后续路线：OTLP protobuf/gRPC conformance、live provider/API gateway mode、Postgres 团队模式、OIDC/SSO、更完整的 MCP resources/prompts、企业策略审批流。
 
 ## License
 

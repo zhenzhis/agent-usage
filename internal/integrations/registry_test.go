@@ -25,10 +25,15 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	}
 	assertCapability(t, catalog, "protocol.canonical_events.http", "implemented", true)
 	assertCapability(t, catalog, "protocol.opentelemetry_genai", "implemented", true)
+	assertCapability(t, catalog, "protocol.otlp_receiver", "experimental", false)
 	assertCapability(t, catalog, "protocol.a2a", "implemented", true)
 	assertCapability(t, catalog, "gateway.provider_api", "implemented", true)
 	assertCapability(t, catalog, "finops.provider_reconciliation", "implemented", true)
 	assertCapability(t, catalog, "governance.policy_evaluator", "implemented", true)
+
+	cfg.Integrations.OTLPReceiver.Enabled = true
+	enabledCatalog := Registry(OptionsFromConfig(cfg))
+	assertCapability(t, enabledCatalog, "protocol.otlp_receiver", "experimental", true)
 }
 
 func TestCollectorCapabilitiesDoNotExposeRawPaths(t *testing.T) {
