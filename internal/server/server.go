@@ -77,6 +77,8 @@ func (s *Server) Start() error {
 	sub, _ := fs.Sub(staticFS, "static")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 
+	mux.HandleFunc("/.well-known/agent-ledger.json", s.handleDiscovery)
+	mux.HandleFunc("/api/discovery", s.handleDiscovery)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/cost-by-model", s.handleCostByModel)

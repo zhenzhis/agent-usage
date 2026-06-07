@@ -17,6 +17,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger workload feed --severity warning --max-age 10m
 ./agent-ledger event schema                # print canonical event schema
 ./agent-ledger event ingest < event.json   # ingest metadata-only canonical event(s)
+./agent-ledger discovery                   # print local discovery manifest
 ./agent-ledger integrations                # print privacy-safe integration capability catalog
 ./agent-ledger otel convert/ingest         # map OpenTelemetry GenAI JSON spans to canonical events
 ./agent-ledger a2a convert/ingest          # map A2A task snapshots/events to canonical events

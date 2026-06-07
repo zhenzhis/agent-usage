@@ -10,6 +10,7 @@
 - Canonical Workload Ledger foundation with `canonical_events`, `workloads`, `agent_runs`, `model_calls`, `tool_calls`, `context_refs`, `artifacts`, `evaluations`, and `policy_decisions`.
 - Async run start, heartbeat, and liveness ledger with `agent_run_events`, run snapshot fields, `agent.run.heartbeat` canonical events, `POST /api/agent-runs`, `POST /api/agent-runs/heartbeat`, `GET /api/agent-runs/liveness`, `agent-ledger workload start-run|heartbeat|liveness`, and MCP `ledger.start_run` / `ledger.heartbeat_run` / `ledger.run_liveness`.
 - Metadata-only canonical event schema and ingest through storage, `GET /api/event-schema`, `POST /api/events`, `agent-ledger event schema/ingest`, and `ledger.event_schema` / `ledger.record_event`.
+- Privacy-safe discovery manifest through `GET /.well-known/agent-ledger.json`, `GET /api/discovery`, and `agent-ledger discovery`, exposing local protocol entrypoints without prompt content, secrets, or raw source paths.
 - Privacy-safe integration capability catalog through `GET /api/integrations`, `agent-ledger integrations`, and `ledger.integrations`, covering implemented collectors/protocols plus experimental provider gateway surfaces.
 - OpenTelemetry GenAI JSON span mapping through `POST /api/otel/genai` and `agent-ledger otel convert|ingest`, projecting token metadata into canonical `model.call` plus hashed `context.ref` events while excluding prompt/completion message attributes.
 - Optional local OTLP HTTP/JSON traces receiver through `POST /v1/traces` and `POST /api/otlp/v1/traces`, gated by `integrations.otlp_receiver.enabled` with body and span-count limits.
@@ -57,7 +58,7 @@
 - Local MCP stdio JSON-RPC tools for budget lookup, workload lifecycle, run start/heartbeat/liveness, privacy-safe artifacts, advisory policy decisions, cost explanation, and similar workload search.
 - Local MCP resources and prompts for metadata-only schema/catalog/budget/workload/policy context plus workload, cost-review, and incident-evidence templates.
 - Hourly and daily usage aggregate tables with dashboard aggregate fallback.
-- CLI commands: `today`, `top`, `doctor`, `battery`, `workload list/create/show/timeline/state/feed/close/start-run/heartbeat/liveness/tool/context/evaluation`, `run --goal ... -- <command>`, `export`, `pricing sync`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
+- CLI commands: `today`, `top`, `doctor`, `battery`, `discovery`, `workload list/create/show/timeline/state/feed/close/start-run/heartbeat/liveness/tool/context/evaluation`, `run --goal ... -- <command>`, `export`, `pricing sync`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
 - Cursor-compatible session pagination via `next_cursor`.
 - Black/white/gray data-dense dashboard panels for workloads, pricing, quota, quality, model calls, cache, watchdog, and cost intelligence.
 

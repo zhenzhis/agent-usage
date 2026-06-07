@@ -24,6 +24,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 		t.Fatalf("expected enabled collector count: %#v", catalog.Summary)
 	}
 	assertCapability(t, catalog, "protocol.canonical_events.http", "implemented", true)
+	assertCapability(t, catalog, "protocol.workload_event_feed", "implemented", true)
 	assertCapability(t, catalog, "protocol.opentelemetry_genai", "implemented", true)
 	assertCapability(t, catalog, "protocol.otlp_receiver", "experimental", false)
 	assertCapability(t, catalog, "protocol.a2a", "implemented", true)
@@ -59,6 +60,42 @@ func TestCollectorCapabilitiesDoNotExposeRawPaths(t *testing.T) {
 		}
 	}
 	t.Fatal("collector.claude capability missing")
+}
+
+func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Collectors.Claude.Enabled = true
+	cfg.Collectors.Claude.Paths = []string{"C:/Users/example/.claude/projects"}
+	cfg.RBAC.Enabled = true
+	manifest := Discovery(OptionsFromConfig(cfg))
+	if manifest.Contract != "agent-ledger.discovery" || manifest.Version != "v1" || !manifest.LocalFirst {
+		t.Fatalf("unexpected discovery identity: %#v", manifest)
+	}
+	if manifest.PromptContentStored || manifest.UsageDataUploaded {
+		t.Fatalf("discovery must keep privacy defaults explicit: %#v", manifest)
+	}
+	if manifest.Auth == "" || manifest.MCPCommand != "agent-ledger mcp" || manifest.CapabilityCatalogURI != "/api/integrations" {
+		t.Fatalf("discovery missing entrypoints: %#v", manifest)
+	}
+	if !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
+		t.Fatalf("discovery missing agent protocols: %#v", manifest.Protocols)
+	}
+	for _, protocol := range manifest.Protocols {
+		for _, value := range append(append(append([]string{}, protocol.Endpoints...), protocol.Commands...), protocol.DataClasses...) {
+			if value == "C:/Users/example/.claude/projects" {
+				t.Fatalf("raw path leaked in discovery protocol: %#v", protocol)
+			}
+		}
+	}
+}
+
+func hasDiscoveryProtocol(manifest DiscoveryManifest, id string) bool {
+	for _, protocol := range manifest.Protocols {
+		if protocol.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func assertCapability(t *testing.T, catalog Catalog, id, status string, enabled bool) {

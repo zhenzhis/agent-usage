@@ -417,6 +417,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runChargebackCLI(args[1:], cfg, db)
 	case "fleet":
 		return runFleetCLI(args[1:], db)
+	case "discovery":
+		return json.NewEncoder(os.Stdout).Encode(integrations.Discovery(integrations.OptionsFromConfig(cfg)))
 	case "integrations":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "otel":
