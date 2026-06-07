@@ -27,6 +27,7 @@
 - Pricing recalculation now updates canonical `model_calls` as well as `usage_records`, keeping workload detail costs aligned with dashboard and export totals.
 - Doctor and Data Quality reports now include canonical-to-usage projection consistency checks for missing projections, cost mismatches, and duplicate legacy/canonical session owners.
 - Canonical-to-usage projection repair through `POST /api/projections/repair` and `agent-ledger projection repair`, backfilling missing projected usage rows, realigning cache/cost metadata, and rebuilding usage aggregates.
+- Advanced dashboard action for projection repair using the current time/source/model/project filters.
 - Quota/Battery forecasts now include reset time, projected window usage, and estimated time-to-limit based on local burn rate.
 - Session Cost Replay through `GET /api/session-replay` and `agent-ledger replay`, returning chronological per-call token/cost accumulation without reading prompt content.
 - Repo AI Cost Badge through `GET /api/badge/repo.svg` and `agent-ledger badge`, rendering local black/white SVG cost, token, session, or cache badges.

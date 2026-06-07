@@ -88,6 +88,7 @@ const I18N = {
     pricingSync: "Pricing",
     doctor: "Doctor",
     recalcCosts: "Rebuild Costs",
+    repairProjections: "Repair Ledger",
     resetScan: "Clean Rescan",
     exportCsv: "Export CSV",
     reportMd: "Markdown Report",
@@ -96,6 +97,8 @@ const I18N = {
     scanStarted: "Scan started",
     scanDone: "Scan completed",
     recalcDone: "Cost rebuild completed",
+    repairStarted: "Repairing ledger projections",
+    repairDone: "Ledger projection repair completed",
     pricingDone: "Pricing sync completed",
     resetConfirm: "Reset scan state and usage for current source, then rescan?",
     resetNeedsSource: "Choose one source before reset",
@@ -164,6 +167,8 @@ const I18N = {
     rows: "rows",
     records: "records",
     issuesLabel: "issues",
+    inserted: "inserted",
+    updatedRows: "updated",
     unitMin: "min",
     unitSec: "sec",
     noIssues: "No issues detected",
@@ -238,6 +243,7 @@ const I18N = {
     pricingSync: "同步价格",
     doctor: "诊断",
     recalcCosts: "重建费用",
+    repairProjections: "修复账本",
     resetScan: "清理重扫",
     exportCsv: "导出 CSV",
     reportMd: "Markdown 报告",
@@ -246,6 +252,8 @@ const I18N = {
     scanStarted: "开始扫描",
     scanDone: "扫描完成",
     recalcDone: "费用重建完成",
+    repairStarted: "正在修复账本投影",
+    repairDone: "账本投影修复完成",
     pricingDone: "价格同步完成",
     resetConfirm: "清理当前来源的扫描状态和用量后重新扫描？",
     resetNeedsSource: "清理重扫前请选择单个来源",
@@ -314,6 +322,8 @@ const I18N = {
     rows: "行",
     records: "条记录",
     issuesLabel: "问题",
+    inserted: "已补回",
+    updatedRows: "已更新",
     unitMin: "分钟",
     unitSec: "秒",
     noIssues: "未发现问题",
@@ -1798,6 +1808,18 @@ $("btn-recalc").addEventListener("click", async () => {
     await postApi("recalculate-costs");
     await refresh();
     showStatus(t("recalcDone"));
+  } catch (err) {
+    showStatus(`${t("actionFailed")}: ${err.message}`, "error");
+  }
+});
+
+$("btn-repair-projections").addEventListener("click", async () => {
+  try {
+    showStatus(t("repairStarted"));
+    const body = await postApi("projections/repair");
+    await refresh();
+    const result = body.result || {};
+    showStatus(`${t("repairDone")}: ${fmt(result.inserted || 0)} ${t("inserted")}, ${fmt(result.updated || 0)} ${t("updatedRows")}`);
   } catch (err) {
     showStatus(`${t("actionFailed")}: ${err.message}`, "error");
   }
