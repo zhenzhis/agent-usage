@@ -389,12 +389,17 @@ func migrate(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			provider TEXT DEFAULT '',
 			format TEXT DEFAULT '',
+			currency TEXT DEFAULT 'USD',
 			local_cost_usd REAL DEFAULT 0,
 			provider_cost_usd REAL DEFAULT 0,
 			diff_usd REAL DEFAULT 0,
 			rows_seen INTEGER DEFAULT 0,
+			payload_sha256 TEXT DEFAULT '',
+			window_start DATETIME,
+			window_end DATETIME,
 			status TEXT DEFAULT '',
 			notes TEXT DEFAULT '',
+			warnings TEXT DEFAULT '',
 			imported_at DATETIME NOT NULL
 		);
 
@@ -426,6 +431,11 @@ func migrate(db *sql.DB) error {
 	db.Exec("ALTER TABLE pricing ADD COLUMN match_type TEXT DEFAULT 'direct'")
 	db.Exec("ALTER TABLE pricing ADD COLUMN priority INTEGER DEFAULT 999")
 	db.Exec("ALTER TABLE pricing ADD COLUMN confidence TEXT DEFAULT 'unknown'")
+	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN currency TEXT DEFAULT 'USD'")
+	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN payload_sha256 TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN window_start DATETIME")
+	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN window_end DATETIME")
+	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN warnings TEXT DEFAULT ''")
 
 	// Versioned migrations: each runs once, tracked via meta table.
 	migrations := []struct {

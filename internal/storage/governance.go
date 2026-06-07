@@ -93,12 +93,17 @@ type ReconciliationImport struct {
 	ID              int64   `json:"id"`
 	Provider        string  `json:"provider"`
 	Format          string  `json:"format"`
+	Currency        string  `json:"currency"`
 	LocalCostUSD    float64 `json:"local_cost_usd"`
 	ProviderCostUSD float64 `json:"provider_cost_usd"`
 	DiffUSD         float64 `json:"diff_usd"`
 	RowsSeen        int     `json:"rows_seen"`
+	PayloadSHA256   string  `json:"payload_sha256"`
+	WindowStart     string  `json:"window_start"`
+	WindowEnd       string  `json:"window_end"`
 	Status          string  `json:"status"`
 	Notes           string  `json:"notes"`
+	Warnings        string  `json:"warnings"`
 	ImportedAt      string  `json:"imported_at"`
 }
 
@@ -536,14 +541,56 @@ func (d *DB) DetectAnomalies(from, to time.Time, multiplier float64, nightStart,
 
 // InsertReconciliationImport stores one provider reconciliation summary.
 func (d *DB) InsertReconciliationImport(provider, format string, localCost, providerCost float64, rowsSeen int, notes string) error {
-	status := "ok"
+	return d.InsertReconciliationImportDetailed(ReconciliationImport{
+		Provider: provider, Format: format, Currency: "USD", LocalCostUSD: localCost,
+		ProviderCostUSD: providerCost, RowsSeen: rowsSeen, Notes: notes,
+	})
+}
+
+// InsertReconciliationImportDetailed stores one provider reconciliation summary
+// with statement integrity and provider window metadata.
+func (d *DB) InsertReconciliationImportDetailed(row ReconciliationImport) error {
+	PrepareReconciliationImport(&row)
+	_, err := d.db.Exec(`INSERT INTO reconciliation_imports(provider,format,currency,local_cost_usd,provider_cost_usd,diff_usd,rows_seen,payload_sha256,window_start,window_end,status,notes,warnings,imported_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, row.Provider, row.Format, row.Currency, row.LocalCostUSD, row.ProviderCostUSD, row.DiffUSD,
+		row.RowsSeen, row.PayloadSHA256, row.WindowStart, row.WindowEnd, row.Status, row.Notes, row.Warnings, time.Now().UTC())
+	return err
+}
+
+// PrepareReconciliationImport normalizes derived fields before storage or API
+// responses.
+func PrepareReconciliationImport(row *ReconciliationImport) {
+	if row == nil {
+		return
+	}
+	row.Provider = strings.TrimSpace(row.Provider)
+	if row.Provider == "" {
+		row.Provider = "provider"
+	}
+	row.Format = strings.TrimSpace(row.Format)
+	if row.Format == "" {
+		row.Format = "manual"
+	}
+	row.Currency = strings.ToUpper(strings.TrimSpace(row.Currency))
+	if row.Currency == "" {
+		row.Currency = "USD"
+	}
+	row.DiffUSD = row.ProviderCostUSD - row.LocalCostUSD
+	row.Status = reconciliationStatus(row.LocalCostUSD, row.ProviderCostUSD, row.Warnings)
+}
+
+func reconciliationStatus(localCost, providerCost float64, warnings string) string {
+	if providerCost == 0 {
+		return "empty"
+	}
 	diff := providerCost - localCost
 	if math.Abs(diff) > math.Max(1, localCost*0.05) {
-		status = "mismatch"
+		return "mismatch"
 	}
-	_, err := d.db.Exec(`INSERT INTO reconciliation_imports(provider,format,local_cost_usd,provider_cost_usd,diff_usd,rows_seen,status,notes,imported_at)
-		VALUES(?,?,?,?,?,?,?,?,?)`, provider, format, localCost, providerCost, diff, rowsSeen, status, notes, time.Now().UTC())
-	return err
+	if strings.TrimSpace(warnings) != "" {
+		return "warning"
+	}
+	return "ok"
 }
 
 // GetReconciliationImports returns recent reconciliation imports.
@@ -551,7 +598,8 @@ func (d *DB) GetReconciliationImports(limit int) ([]ReconciliationImport, error)
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := d.db.Query(`SELECT id,provider,format,local_cost_usd,provider_cost_usd,diff_usd,rows_seen,status,notes,imported_at
+	rows, err := d.db.Query(`SELECT id,provider,format,COALESCE(currency,'USD'),local_cost_usd,provider_cost_usd,diff_usd,rows_seen,
+			COALESCE(payload_sha256,''),COALESCE(window_start,''),COALESCE(window_end,''),status,notes,COALESCE(warnings,''),imported_at
 		FROM reconciliation_imports ORDER BY imported_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -560,7 +608,8 @@ func (d *DB) GetReconciliationImports(limit int) ([]ReconciliationImport, error)
 	var out []ReconciliationImport
 	for rows.Next() {
 		var r ReconciliationImport
-		if err := rows.Scan(&r.ID, &r.Provider, &r.Format, &r.LocalCostUSD, &r.ProviderCostUSD, &r.DiffUSD, &r.RowsSeen, &r.Status, &r.Notes, &r.ImportedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Provider, &r.Format, &r.Currency, &r.LocalCostUSD, &r.ProviderCostUSD, &r.DiffUSD,
+			&r.RowsSeen, &r.PayloadSHA256, &r.WindowStart, &r.WindowEnd, &r.Status, &r.Notes, &r.Warnings, &r.ImportedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

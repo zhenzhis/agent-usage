@@ -18,6 +18,7 @@ import (
 	"github.com/zhenzhis/agent-ledger/internal/mcp"
 	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
 	"github.com/zhenzhis/agent-ledger/internal/pricing"
+	"github.com/zhenzhis/agent-ledger/internal/reconciliation"
 	"github.com/zhenzhis/agent-ledger/internal/server"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
@@ -395,6 +396,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runBundleCLI(args[1:], db)
 	case "policy":
 		return runPolicyCLI(args[1:], cfg, db)
+	case "reconcile":
+		return runReconcileCLI(args[1:], db)
 	case "integrations":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "otel":
@@ -409,6 +412,79 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func runReconcileCLI(args []string, db *storage.DB) error {
+	if len(args) == 0 || (args[0] != "status" && args[0] != "parse" && args[0] != "import") {
+		return fmt.Errorf("usage: agent-ledger reconcile status|parse|import [--file bill.csv|bill.json] [--format csv|json|auto] [--provider name] [--from YYYY-MM-DD --to YYYY-MM-DD]")
+	}
+	if args[0] == "status" {
+		rows, err := db.GetReconciliationImports(50)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(rows)
+	}
+	raw, err := readCLIInput(args[1:], "--file", 4<<20)
+	if err != nil {
+		return err
+	}
+	summary, err := reconciliation.ParseProviderStatement(raw, cliValue(args[1:], "--format"), cliValue(args[1:], "--provider"))
+	if err != nil {
+		return err
+	}
+	if args[0] == "parse" {
+		return json.NewEncoder(os.Stdout).Encode(summary)
+	}
+	from, to, err := cliReconciliationWindow(args[1:], summary)
+	if err != nil {
+		return err
+	}
+	localCost, err := parseFloat(cliValue(args[1:], "--local-cost-usd"))
+	if err != nil {
+		return err
+	}
+	if localCost == 0 {
+		stats, err := db.GetDashboardStatsFiltered(from, to, cliValue(args[1:], "--source"), cliValue(args[1:], "--model"), cliValue(args[1:], "--project"))
+		if err != nil {
+			return err
+		}
+		localCost = stats.TotalCost
+	}
+	row := storage.ReconciliationImport{
+		Provider: summary.Provider, Format: summary.Format, Currency: summary.Currency,
+		LocalCostUSD: localCost, ProviderCostUSD: summary.ProviderCostUSD, RowsSeen: summary.RowsSeen,
+		PayloadSHA256: summary.PayloadSHA256, Warnings: reconciliation.WarningsJSON(summary.Warnings),
+	}
+	if !summary.WindowStart.IsZero() {
+		row.WindowStart = summary.WindowStart.Format(time.RFC3339)
+	}
+	if !summary.WindowEnd.IsZero() {
+		row.WindowEnd = summary.WindowEnd.Format(time.RFC3339)
+	}
+	storage.PrepareReconciliationImport(&row)
+	if err := db.InsertReconciliationImportDetailed(row); err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(row)
+}
+
+func cliReconciliationWindow(args []string, summary *reconciliation.ImportSummary) (time.Time, time.Time, error) {
+	now := time.Now()
+	if cliValue(args, "--from") != "" || cliValue(args, "--to") != "" {
+		return cliDateRange(args, now)
+	}
+	if summary != nil && !summary.WindowStart.IsZero() && !summary.WindowEnd.IsZero() {
+		return summary.WindowStart, statementWindowEnd(summary.WindowEnd), nil
+	}
+	return now.AddDate(0, -1, 0), now, nil
+}
+
+func statementWindowEnd(end time.Time) time.Time {
+	if end.Hour() == 0 && end.Minute() == 0 && end.Second() == 0 && end.Nanosecond() == 0 {
+		return end.AddDate(0, 0, 1)
+	}
+	return end.Add(time.Nanosecond)
 }
 
 func runProviderCLI(args []string, db *storage.DB) error {

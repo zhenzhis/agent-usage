@@ -115,3 +115,30 @@ func TestDashboardStatsUseRawForNonUTCDayAlignedRange(t *testing.T) {
 		t.Fatalf("expected raw local-day stats, got %+v", stats)
 	}
 }
+
+func TestInsertReconciliationImportDetailed(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	row := ReconciliationImport{
+		Provider: "openai", Format: "csv", Currency: "USD", LocalCostUSD: 5, ProviderCostUSD: 8,
+		RowsSeen: 2, PayloadSHA256: "abc123", WindowStart: "2026-06-06T00:00:00Z",
+		WindowEnd: "2026-06-07T00:00:00Z", Warnings: `["sample warning"]`,
+	}
+	if err := db.InsertReconciliationImportDetailed(row); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.GetReconciliationImports(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows=%d", len(rows))
+	}
+	got := rows[0]
+	if got.Status != "mismatch" || got.PayloadSHA256 != "abc123" || got.WindowStart == "" || got.Warnings == "" {
+		t.Fatalf("unexpected reconciliation row: %+v", got)
+	}
+}

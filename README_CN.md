@@ -58,6 +58,9 @@ CLI：
 ./agent-ledger a2a ingest --file task.json
 ./agent-ledger provider convert --file response.json
 ./agent-ledger provider ingest --file response.json
+./agent-ledger reconcile parse --file provider-bill.csv --format csv
+./agent-ledger reconcile import --file provider-bill.csv --format csv --provider openai
+./agent-ledger reconcile status
 ./agent-ledger bundle export --privacy --signed --out usage-bundle.json
 ./agent-ledger bundle import --file usage-bundle.json --verify
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
@@ -154,6 +157,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `prompt_events`：按时间统计 prompt。
 - `pricing`、`pricing_sources`、`pricing_snapshots`：价格规则和价格源健康。
 - `hourly_usage_aggregate`、`daily_usage_aggregate`：Dashboard rollup。
+- `reconciliation_imports`：本地账本与 provider 账单的对账记录，包含 payload hash 和账单窗口。
 - `ingestion_health`、`insight_events`、`audit_log`：运维和质量证据。
 
 ## API
@@ -174,6 +178,8 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `POST /api/otel/genai` | 将 OpenTelemetry GenAI JSON span 转成 canonical model-call events |
 | `POST /api/a2a/tasks` | 将 A2A JSON task snapshot/event 转成 workload/run/artifact/evaluation events |
 | `POST /api/provider/calls` | 将 provider response usage envelope 转成 canonical model-call events |
+| `GET /api/reconciliation/status` | 查看最近本地账本与 provider 账单对账 |
+| `POST /api/reconciliation/import` | 导入手动 summary 或 provider CSV/JSON 账单并做本地对账 |
 | `POST /api/policy/evaluate` | 评估本地 advisory policy，并可选择写入 policy decision |
 | `GET /api/sessions` | 服务端分页会话账本 |
 | `GET /api/model-registry` | 模型与价格治理注册表 |
@@ -211,7 +217,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
 
-Canonical event ingest 支持 workload、run、model call、tool call、context ref、artifact、evaluation、policy decision 事件。Payload 只允许元数据；如果出现 raw prompt/content 相关键会直接失败，不会静默持久化。`GET /api/integrations`、`agent-ledger integrations` 与 `ledger.integrations` 会暴露当前 connector/protocol 能力目录，但不会泄露本地 source 原始路径。`POST /api/otel/genai` 与 `agent-ledger otel ingest` 支持 OpenTelemetry GenAI JSON span，并只保留经过挑选的元数据和 token 字段。`POST /api/a2a/tasks` 与 `agent-ledger a2a ingest` 支持 A2A task snapshot/event，只保留任务生命周期元数据，不保存 message/history/artifact part 内容。`POST /api/provider/calls` 与 `agent-ledger provider ingest` 支持 OpenAI-compatible、Anthropic-style、LiteLLM-style usage envelope，不保存 request/response message 内容。
+Canonical event ingest 支持 workload、run、model call、tool call、context ref、artifact、evaluation、policy decision 事件。Payload 只允许元数据；如果出现 raw prompt/content 相关键会直接失败，不会静默持久化。`GET /api/integrations`、`agent-ledger integrations` 与 `ledger.integrations` 会暴露当前 connector/protocol 能力目录，但不会泄露本地 source 原始路径。`POST /api/otel/genai` 与 `agent-ledger otel ingest` 支持 OpenTelemetry GenAI JSON span，并只保留经过挑选的元数据和 token 字段。`POST /api/a2a/tasks` 与 `agent-ledger a2a ingest` 支持 A2A task snapshot/event，只保留任务生命周期元数据，不保存 message/history/artifact part 内容。`POST /api/provider/calls` 与 `agent-ledger provider ingest` 支持 OpenAI-compatible、Anthropic-style、LiteLLM-style usage envelope，不保存 request/response message 内容。`POST /api/reconciliation/import` 与 `agent-ledger reconcile import` 支持导入本地 provider CSV/JSON 账单，只保存汇总金额、账单 hash、窗口和 warning，并与相同窗口的本地账本做差异比较。
 
 ## 安全模型
 
@@ -241,7 +247,7 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . &
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、A2A task telemetry mapping、provider usage envelope mapping、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy 命令、CLI run wrapper 和本地 MCP stdio tools。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、A2A task telemetry mapping、provider usage envelope mapping、provider 账单导入对账、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy 命令、CLI run wrapper 和本地 MCP stdio tools。
 
 后续路线：完整 OTLP receiver mode、live provider/API gateway mode、Postgres 团队模式、OIDC/SSO、更完整的 MCP resources/prompts、企业策略审批流。
 

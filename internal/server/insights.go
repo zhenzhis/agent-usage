@@ -3,10 +3,25 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/zhenzhis/agent-ledger/internal/reconciliation"
+	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
+
+type reconciliationImportPayload struct {
+	Provider        string  `json:"provider"`
+	Format          string  `json:"format"`
+	ProviderCostUSD float64 `json:"provider_cost_usd"`
+	LocalCostUSD    float64 `json:"local_cost_usd"`
+	RowsSeen        int     `json:"rows_seen"`
+	Notes           string  `json:"notes"`
+	Raw             string  `json:"raw"`
+}
 
 func (s *Server) handlePricingStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -278,39 +293,141 @@ func (s *Server) handleReconciliationImport(w http.ResponseWriter, r *http.Reque
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
 		return
 	}
-	var payload struct {
-		Provider        string  `json:"provider"`
-		Format          string  `json:"format"`
-		ProviderCostUSD float64 `json:"provider_cost_usd"`
-		LocalCostUSD    float64 `json:"local_cost_usd"`
-		RowsSeen        int     `json:"rows_seen"`
-		Notes           string  `json:"notes"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload); err != nil {
+	var payload reconciliationImportPayload
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
+	if err != nil {
 		badRequest(w, err)
 		return
 	}
-	if payload.Provider == "" {
-		payload.Provider = "manual"
+	if len(raw) == 0 {
+		badRequest(w, fmt.Errorf("reconciliation import body is required"))
+		return
 	}
-	if payload.Format == "" {
-		payload.Format = "json"
-	}
-	if payload.LocalCostUSD == 0 {
-		from, to, _, err := s.parseTimeRange(r)
-		if err == nil {
-			stats, _ := s.db.GetDashboardStatsFiltered(from, to, "", "", "")
-			if stats != nil {
-				payload.LocalCostUSD = stats.TotalCost
+	isJSON := strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "json") || len(raw) > 0 && raw[0] == '{'
+	hasSummaryFields := false
+	if isJSON {
+		_ = json.Unmarshal(raw, &payload)
+		var probe map[string]interface{}
+		if err := json.Unmarshal(raw, &probe); err == nil {
+			for _, key := range []string{"provider_cost_usd", "local_cost_usd", "rows_seen", "notes", "raw"} {
+				if _, ok := probe[key]; ok {
+					hasSummaryFields = true
+					break
+				}
 			}
 		}
 	}
-	if err := s.db.InsertReconciliationImport(payload.Provider, payload.Format, payload.LocalCostUSD, payload.ProviderCostUSD, payload.RowsSeen, payload.Notes); err != nil {
+	row, err := s.reconciliationRowFromRequest(r, raw, payload, hasSummaryFields)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	storage.PrepareReconciliationImport(row)
+	if err := s.db.InsertReconciliationImportDetailed(*row); err != nil {
 		serverError(w, err)
 		return
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "reconciliation.import", payload.Provider, map[string]string{"format": payload.Format})
-	writeJSON(w, map[string]interface{}{"ok": true})
+	_ = s.db.AppendAuditLog("local", s.roleFor(r), "reconciliation.import", row.Provider, map[string]string{"format": row.Format, "sha256": row.PayloadSHA256})
+	writeJSON(w, map[string]interface{}{"ok": true, "import": row})
+}
+
+func (s *Server) reconciliationRowFromRequest(r *http.Request, raw []byte, payload reconciliationImportPayload, hasSummaryFields bool) (*storage.ReconciliationImport, error) {
+	format := firstNonEmpty(r.URL.Query().Get("format"), payload.Format)
+	provider := firstNonEmpty(r.URL.Query().Get("provider"), payload.Provider)
+	row := &storage.ReconciliationImport{}
+	if !hasSummaryFields || payload.Raw != "" || strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "text/csv") {
+		statementRaw := raw
+		if payload.Raw != "" {
+			statementRaw = []byte(payload.Raw)
+		}
+		summary, err := reconciliation.ParseProviderStatement(statementRaw, format, provider)
+		if err != nil {
+			return nil, err
+		}
+		row.Provider = summary.Provider
+		row.Format = summary.Format
+		row.Currency = summary.Currency
+		row.ProviderCostUSD = summary.ProviderCostUSD
+		row.RowsSeen = summary.RowsSeen
+		row.PayloadSHA256 = summary.PayloadSHA256
+		if !summary.WindowStart.IsZero() {
+			row.WindowStart = summary.WindowStart.Format(time.RFC3339)
+		}
+		if !summary.WindowEnd.IsZero() {
+			row.WindowEnd = summary.WindowEnd.Format(time.RFC3339)
+		}
+		row.Warnings = reconciliation.WarningsJSON(summary.Warnings)
+		row.Notes = payload.Notes
+	} else {
+		row.Provider = firstNonEmpty(provider, "manual")
+		row.Format = firstNonEmpty(format, "json")
+		row.Currency = "USD"
+		row.ProviderCostUSD = payload.ProviderCostUSD
+		row.LocalCostUSD = payload.LocalCostUSD
+		row.RowsSeen = payload.RowsSeen
+		row.Notes = payload.Notes
+	}
+	if row.LocalCostUSD == 0 {
+		from, to, err := reconciliationLocalWindow(r, row)
+		if err != nil {
+			return nil, err
+		}
+		stats, err := s.db.GetDashboardStatsFiltered(from, to, r.URL.Query().Get("source"), r.URL.Query().Get("model"), r.URL.Query().Get("project"))
+		if err != nil {
+			return nil, err
+		}
+		row.LocalCostUSD = stats.TotalCost
+	}
+	return row, nil
+}
+
+func reconciliationLocalWindow(r *http.Request, row *storage.ReconciliationImport) (time.Time, time.Time, error) {
+	if r.URL.Query().Get("from") != "" || r.URL.Query().Get("to") != "" {
+		from := r.URL.Query().Get("from")
+		to := r.URL.Query().Get("to")
+		if from == "" || to == "" {
+			return time.Time{}, time.Time{}, fmt.Errorf("both from and to are required when overriding reconciliation window")
+		}
+		fromTime, err := time.Parse("2006-01-02", from)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+		toTime, err := time.Parse("2006-01-02", to)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+		return fromTime, toTime.AddDate(0, 0, 1), nil
+	}
+	if row.WindowStart != "" && row.WindowEnd != "" {
+		from, err := time.Parse(time.RFC3339, row.WindowStart)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+		to, err := time.Parse(time.RFC3339, row.WindowEnd)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+		return from, reconciliationStatementWindowEnd(to), nil
+	}
+	now := time.Now()
+	return now.AddDate(0, -1, 0), now, nil
+}
+
+func reconciliationStatementWindowEnd(end time.Time) time.Time {
+	if end.Hour() == 0 && end.Minute() == 0 && end.Second() == 0 && end.Nanosecond() == 0 {
+		return end.AddDate(0, 0, 1)
+	}
+	return end.Add(time.Nanosecond)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {

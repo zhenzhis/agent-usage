@@ -27,6 +27,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "protocol.opentelemetry_genai", "implemented", true)
 	assertCapability(t, catalog, "protocol.a2a", "implemented", true)
 	assertCapability(t, catalog, "gateway.provider_api", "implemented", true)
+	assertCapability(t, catalog, "finops.provider_reconciliation", "implemented", true)
 	assertCapability(t, catalog, "governance.policy_evaluator", "implemented", true)
 }
 
