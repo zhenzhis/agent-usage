@@ -265,6 +265,22 @@ func TestWorkloadEventsAPIPrivacy(t *testing.T) {
 	if feed.Total != 1 || len(feed.Rows) != 1 {
 		t.Fatalf("unexpected feed: %+v", feed)
 	}
+	if feed.Cursor == "" || !strings.HasPrefix(feed.Cursor, "sha256:") || rr.Header().Get("ETag") == "" {
+		t.Fatalf("feed missing cursor or ETag: cursor=%q etag=%q", feed.Cursor, rr.Header().Get("ETag"))
+	}
+	notModifiedReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/workload-events?from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.Format("2006-01-02")+"&max_age=10m&severity=warning&cursor="+feed.Cursor, nil)
+	notModifiedRR := httptest.NewRecorder()
+	srv.handleWorkloadEvents(notModifiedRR, notModifiedReq)
+	if notModifiedRR.Code != http.StatusNotModified {
+		t.Fatalf("cursor request status=%d body=%s", notModifiedRR.Code, notModifiedRR.Body.String())
+	}
+	etagReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/workload-events?from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.Format("2006-01-02")+"&max_age=10m&severity=warning", nil)
+	etagReq.Header.Set("If-None-Match", rr.Header().Get("ETag"))
+	etagRR := httptest.NewRecorder()
+	srv.handleWorkloadEvents(etagRR, etagReq)
+	if etagRR.Code != http.StatusNotModified {
+		t.Fatalf("etag request status=%d body=%s", etagRR.Code, etagRR.Body.String())
+	}
 	row := feed.Rows[0]
 	if row.Phase != "stale" || row.Severity != "warning" || !row.Stale {
 		t.Fatalf("unexpected event row: %+v", row)
@@ -299,7 +315,7 @@ func TestWorkloadEventsStreamOncePrivacy(t *testing.T) {
 		t.Fatalf("content-type=%s", got)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "event: workload_events") || !strings.Contains(body, `"rows"`) {
+	if !strings.Contains(body, "id: sha256:") || !strings.Contains(body, "event: workload_events") || !strings.Contains(body, `"rows"`) {
 		t.Fatalf("unexpected SSE body: %s", body)
 	}
 	if strings.Contains(body, workloadID) || strings.Contains(body, "private-project") || strings.Contains(body, "private stream goal") || strings.Contains(body, "feature/private") {

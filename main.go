@@ -535,11 +535,15 @@ func runNotifyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		if err != nil {
 			return err
 		}
+		approvals, err := db.ListApprovalRequests("pending", limit)
+		if err != nil {
+			return err
+		}
 		dryRun := cliBool(args[1:], "--dry-run")
 		if dryRun {
-			return json.NewEncoder(os.Stdout).Encode(notifications.BuildWebhookPayload(feed, cfg.Webhooks.MaxEvents))
+			return json.NewEncoder(os.Stdout).Encode(notifications.BuildWebhookPayloadWithApprovals(feed, approvals, cfg.Webhooks.MaxEvents))
 		}
-		result, err := notifications.SendWebhook(context.Background(), cfg.Webhooks, feed, false)
+		result, err := notifications.SendWebhookWithApprovals(context.Background(), cfg.Webhooks, feed, approvals, false)
 		if err != nil {
 			return err
 		}

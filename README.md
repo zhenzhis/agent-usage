@@ -239,8 +239,8 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/workload-graph` | Compact workload graph |
 | `GET /api/workload-timeline` | Chronological workload audit timeline |
 | `GET /api/workload-state` | Derived terminal-state snapshot for one async agent workload |
-| `GET /api/workload-events` | Derived local workload state feed for monitors, routers, and notification adapters |
-| `GET /api/workload-events/stream` | Local SSE workload state stream for polling monitors and router subscriptions |
+| `GET /api/workload-events` | Derived local workload state feed for monitors, routers, and notification adapters; returns `cursor`, `generated_at`, and `ETag` for incremental polling |
+| `GET /api/workload-events/stream` | Local SSE workload state stream for polling monitors and router subscriptions; emits the feed cursor as the SSE `id` |
 | `POST /api/notifications/webhook` | Explicitly send a redacted workload-event summary to the configured webhook |
 | `GET /api/integrations` | Privacy-safe integration capability catalog |
 | `GET /api/integrations/adapter-spec` | Machine-readable adapter contract for future agent CLIs, frameworks, gateways, OTel, A2A, and provider integrations |

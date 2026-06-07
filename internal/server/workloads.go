@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
@@ -333,6 +334,11 @@ func (s *Server) handleWorkloadEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	setWorkloadFeedCacheHeaders(w, feed)
+	if workloadFeedNotModified(r, feed) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	applyWorkloadEventFeedPrivacy(feed, s.privacyFor(r))
 	writeJSON(w, feed)
 }
@@ -425,17 +431,61 @@ func (s *Server) workloadEventFeedFromRequest(r *http.Request, fallbackLimit int
 
 func writeWorkloadEventsSSE(w http.ResponseWriter, flusher http.Flusher, feed *storage.WorkloadEventFeed, privacy config.PrivacyConfig) {
 	applyWorkloadEventFeedPrivacy(feed, privacy)
-	writeSSE(w, flusher, "workload_events", feed)
+	writeSSEWithID(w, flusher, "workload_events", feed.Cursor, feed)
 }
 
 func writeSSE(w http.ResponseWriter, flusher http.Flusher, event string, payload interface{}) {
+	writeSSEWithID(w, flusher, event, "", payload)
+}
+
+func writeSSEWithID(w http.ResponseWriter, flusher http.Flusher, event, id string, payload interface{}) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		raw = []byte(`{"error":"failed to encode event"}`)
 	}
+	if id != "" {
+		fmt.Fprintf(w, "id: %s\n", id)
+	}
 	fmt.Fprintf(w, "event: %s\n", event)
 	fmt.Fprintf(w, "data: %s\n\n", raw)
 	flusher.Flush()
+}
+
+func setWorkloadFeedCacheHeaders(w http.ResponseWriter, feed *storage.WorkloadEventFeed) {
+	if feed == nil || feed.Cursor == "" {
+		return
+	}
+	w.Header().Set("ETag", quoteWorkloadFeedCursor(feed.Cursor))
+}
+
+func workloadFeedNotModified(r *http.Request, feed *storage.WorkloadEventFeed) bool {
+	if feed == nil || feed.Cursor == "" {
+		return false
+	}
+	if requestCursorMatches(r.URL.Query().Get("cursor"), feed.Cursor) {
+		return true
+	}
+	return requestCursorMatches(r.Header.Get("If-None-Match"), feed.Cursor)
+}
+
+func quoteWorkloadFeedCursor(cursor string) string {
+	return `"` + strings.ReplaceAll(cursor, `"`, "") + `"`
+}
+
+func requestCursorMatches(raw, cursor string) bool {
+	if raw == "" || cursor == "" {
+		return false
+	}
+	raw = strings.TrimSpace(raw)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, "W/")
+		part = strings.Trim(part, `"`)
+		if part == cursor {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleFleetAttribution(w http.ResponseWriter, r *http.Request) {

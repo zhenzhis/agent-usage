@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -37,6 +39,8 @@ type WorkloadEventFeed struct {
 	Rows              []WorkloadFeedEvent `json:"rows"`
 	Total             int                 `json:"total"`
 	Limit             int                 `json:"limit"`
+	GeneratedAt       string              `json:"generated_at"`
+	Cursor            string              `json:"cursor"`
 	From              string              `json:"from"`
 	To                string              `json:"to"`
 	StaleAfterSeconds int64               `json:"stale_after_seconds"`
@@ -70,10 +74,13 @@ func (d *DB) GetWorkloadEventFeed(from, to time.Time, source, model, project, ph
 		}
 		rows = append(rows, workloadFeedEventFromState(state, eventSeverity))
 	}
+	generatedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	return &WorkloadEventFeed{
 		Rows:              rows,
 		Total:             len(rows),
 		Limit:             limit,
+		GeneratedAt:       generatedAt,
+		Cursor:            workloadFeedCursor(rows),
 		From:              from.UTC().Format(time.RFC3339Nano),
 		To:                to.UTC().Format(time.RFC3339Nano),
 		StaleAfterSeconds: int64(staleAfter / time.Second),
@@ -170,4 +177,25 @@ func workloadFeedEventID(workloadID, phase, timestamp string) string {
 	raw = strings.ReplaceAll(raw, ":", "_")
 	raw = strings.ReplaceAll(raw, ".", "_")
 	return raw
+}
+
+func workloadFeedCursor(rows []WorkloadFeedEvent) string {
+	h := sha256.New()
+	if len(rows) == 0 {
+		_, _ = h.Write([]byte("empty"))
+	} else {
+		for _, row := range rows {
+			_, _ = h.Write([]byte(row.EventID))
+			_, _ = h.Write([]byte("|"))
+			_, _ = h.Write([]byte(row.EventType))
+			_, _ = h.Write([]byte("|"))
+			_, _ = h.Write([]byte(row.Timestamp))
+			_, _ = h.Write([]byte("|"))
+			_, _ = h.Write([]byte(row.Phase))
+			_, _ = h.Write([]byte("|"))
+			_, _ = h.Write([]byte(row.Severity))
+			_, _ = h.Write([]byte("\n"))
+		}
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }

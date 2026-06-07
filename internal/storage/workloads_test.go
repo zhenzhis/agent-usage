@@ -338,8 +338,18 @@ func TestWorkloadEventFeedDerivesSeverity(t *testing.T) {
 	if feed.Total != 2 || len(feed.Rows) != 2 {
 		t.Fatalf("unexpected feed: %+v", feed)
 	}
+	if feed.GeneratedAt == "" || feed.Cursor == "" || !strings.HasPrefix(feed.Cursor, "sha256:") {
+		t.Fatalf("feed missing generated_at or cursor: %+v", feed)
+	}
 	if !feedHasSeverity(feed.Rows, blockedID, "critical") || !feedHasSeverity(feed.Rows, staleID, "warning") {
 		t.Fatalf("unexpected feed severities: %+v", feed.Rows)
+	}
+	sameFeed, err := db.GetWorkloadEventFeed(now.AddDate(0, 0, -1), now.AddDate(0, 0, 1), "codex", "", "", "", "", 10, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("GetWorkloadEventFeed same: %v", err)
+	}
+	if sameFeed.Cursor != feed.Cursor {
+		t.Fatalf("same feed rows should keep stable cursor: %q != %q", sameFeed.Cursor, feed.Cursor)
 	}
 	warnings, err := db.GetWorkloadEventFeed(now.AddDate(0, 0, -1), now.AddDate(0, 0, 1), "codex", "", "", "", "warning", 10, 10*time.Minute)
 	if err != nil {

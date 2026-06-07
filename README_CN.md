@@ -239,8 +239,8 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/workload-graph` | workload 图谱 |
 | `GET /api/workload-timeline` | 按时间排序的 workload 审计时间线 |
 | `GET /api/workload-state` | 单个异步 agent workload 的 terminal-state 派生快照 |
-| `GET /api/workload-events` | 面向 monitor、router、通知适配器的本地 workload 状态事件 feed |
-| `GET /api/workload-events/stream` | 面向本地轮询 monitor 与 router subscription 的 SSE workload 状态流 |
+| `GET /api/workload-events` | 面向 monitor、router、通知适配器的本地 workload 状态事件 feed；返回 `cursor`、`generated_at` 与 `ETag`，支持增量轮询 |
+| `GET /api/workload-events/stream` | 面向本地轮询 monitor 与 router subscription 的 SSE workload 状态流；SSE `id` 使用 feed cursor |
 | `POST /api/notifications/webhook` | 显式发送脱敏 workload-event 摘要到配置的 webhook |
 | `GET /api/integrations` | 隐私安全的集成能力目录 |
 | `GET /api/integrations/adapter-spec` | 面向未来 Agent CLI、框架、gateway、OTel、A2A 与 provider 集成的机器可读 adapter 契约 |
