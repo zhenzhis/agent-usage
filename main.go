@@ -377,16 +377,7 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(rows)
 	case "wrapped":
-		monthFrom := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
-		stats, err := db.GetDashboardStatsFiltered(monthFrom, dayTo, "", "", "")
-		if err != nil {
-			return err
-		}
-		models, _ := db.GetCostByModelFiltered(monthFrom, dayTo, "", "")
-		fmt.Printf("# Agent Ledger Wrapped\n\n- Tokens: %d\n- Cost: $%.4f\n- Sessions: %d\n", stats.TotalTokens, stats.TotalCost, stats.TotalSessions)
-		if len(models) > 0 {
-			fmt.Printf("- Top model: %s ($%.4f)\n", models[0].Model, models[0].Cost)
-		}
+		return runAgentWrappedCLI(args[1:], db)
 	case "workload":
 		return runWorkloadCLI(args[1:], db)
 	case "run":
@@ -462,6 +453,60 @@ func runChargebackCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return w.Error()
 	}
 	return json.NewEncoder(os.Stdout).Encode(rows)
+}
+
+func runAgentWrappedCLI(args []string, db *storage.DB) error {
+	period, from, to, err := wrappedCLIWindow(args, time.Now())
+	if err != nil {
+		return err
+	}
+	report, err := db.GetAgentWrapped(from, to, period, cliValue(args, "--source"), cliValue(args, "--model"), cliValue(args, "--project"))
+	if err != nil {
+		return err
+	}
+	if cliBool(args, "--privacy") {
+		redactWrappedReport(report)
+	}
+	if strings.EqualFold(cliValue(args, "--format"), "json") {
+		return json.NewEncoder(os.Stdout).Encode(report)
+	}
+	_, err = os.Stdout.Write([]byte(storage.FormatWrappedMarkdown(report)))
+	return err
+}
+
+func wrappedCLIWindow(args []string, now time.Time) (string, time.Time, time.Time, error) {
+	if cliValue(args, "--from") != "" || cliValue(args, "--to") != "" {
+		from, to, err := cliDateRange(args, now)
+		return firstNonEmptyCLI(cliValue(args, "--period"), "custom"), from, to, err
+	}
+	period := strings.ToLower(firstNonEmptyCLI(cliValue(args, "--period"), "month"))
+	switch period {
+	case "week", "weekly":
+		d := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		d = d.AddDate(0, 0, -int((d.Weekday()+6)%7))
+		return "weekly", d, now, nil
+	case "year", "yearly", "annual":
+		return "yearly", time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.Local), now, nil
+	case "month", "monthly":
+		return "monthly", time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local), now, nil
+	default:
+		return period, now.AddDate(0, -1, 0), now, nil
+	}
+}
+
+func redactWrappedReport(report *storage.WrappedReport) {
+	if report == nil {
+		return
+	}
+	report.TopProject.Project = "<redacted>"
+	report.MostExpensiveSession.SessionID = "<redacted>"
+	report.MostExpensiveSession.Project = "<redacted>"
+	report.MostExpensiveSession.GitBranch = "<redacted>"
+	for i := range report.Highlights {
+		if report.Highlights[i].Label == "top project" {
+			report.Highlights[i].Value = "<redacted>"
+		}
+	}
 }
 
 func runReconcileCLI(args []string, db *storage.DB) error {

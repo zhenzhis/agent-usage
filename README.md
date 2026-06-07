@@ -187,6 +187,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/router/simulate?to_model=gpt-5-mini&ratio=0.5` | Simulate cost impact of model-routing changes without mutating the ledger |
 | `GET /api/preflight/estimate?task=refactor&project=repo-name` | Estimate likely cost/tokens before starting an agent workload |
 | `GET /api/chargeback` | Team/project/source/model showback using raw usage first, canonical model calls as fallback |
+| `GET /api/wrapped?period=monthly&format=markdown` | Monthly/weekly/yearly Agent Wrapped summary without prompt analysis |
 | `POST /api/policy/evaluate` | Evaluate local advisory policy rules and optionally record decisions |
 | `GET /api/sessions` | Server-side paginated session ledger |
 | `GET /api/session-replay?source=codex&session_id=...` | Chronological per-call token/cost replay for one session |

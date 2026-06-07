@@ -52,6 +52,25 @@ func applyChargebackPrivacy(rows []storage.ChargebackRow, privacy config.Privacy
 	}
 }
 
+func applyWrappedPrivacy(report *storage.WrappedReport, privacy config.PrivacyConfig) {
+	if report == nil {
+		return
+	}
+	if privacy.HashSessionIDs || privacy.ScreenshotMode {
+		report.MostExpensiveSession.SessionID = hashValue(report.MostExpensiveSession.SessionID)
+	}
+	if privacy.HideProjectNames || privacy.ScreenshotMode {
+		report.TopProject.Project = "<redacted>"
+		report.MostExpensiveSession.Project = "<redacted>"
+		report.MostExpensiveSession.GitBranch = "<redacted>"
+		for i := range report.Highlights {
+			if report.Highlights[i].Label == "top project" {
+				report.Highlights[i].Value = "<redacted>"
+			}
+		}
+	}
+}
+
 func hashValue(value string) string {
 	if value == "" {
 		return ""

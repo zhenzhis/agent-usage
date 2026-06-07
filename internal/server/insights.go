@@ -372,6 +372,38 @@ func (s *Server) handleChargeback(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, rows)
 }
 
+func (s *Server) handleWrapped(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	from, to, _, err := s.parseTimeRange(r)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	report, err := s.db.GetAgentWrapped(from, to,
+		firstNonEmpty(r.URL.Query().Get("period"), "custom"),
+		r.URL.Query().Get("source"),
+		r.URL.Query().Get("model"),
+		r.URL.Query().Get("project"),
+	)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	applyWrappedPrivacy(report, s.privacyFor(r))
+	if strings.EqualFold(r.URL.Query().Get("format"), "markdown") {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		_, _ = w.Write([]byte(storage.FormatWrappedMarkdown(report)))
+		return
+	}
+	writeJSON(w, report)
+}
+
 func (s *Server) handleReconciliationImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
