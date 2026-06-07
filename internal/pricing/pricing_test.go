@@ -1,6 +1,14 @@
 package pricing
 
-import "testing"
+import (
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/storage"
+)
 
 func TestCalcCost_Basic(t *testing.T) {
 	// prices: [input, output, cache_read, cache_creation]
@@ -51,5 +59,56 @@ func TestCalcCost_ZeroPrices(t *testing.T) {
 	cost := CalcCost(1000, 500, 200, 300, prices)
 	if cost != 0 {
 		t.Errorf("expected 0, got %f", cost)
+	}
+}
+
+func TestSyncWithConfigAppliesOfficialAndOverrideWhenLiteLLMFails(t *testing.T) {
+	oldFetch := fetchPricingBytes
+	fetchPricingBytes = func(string) ([]byte, string, error) {
+		return nil, "", errors.New("offline fallback")
+	}
+	defer func() { fetchPricingBytes = oldFetch }()
+
+	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := SyncWithConfig(db, config.PricingConfig{Overrides: []config.PriceRule{{
+		Model: "gpt-5", Source: "contract", InputCostPerToken: 0.000001, OutputCostPerToken: 0.000002,
+	}}}); err != nil {
+		t.Fatalf("SyncWithConfig should preserve official/local rules on fallback failure: %v", err)
+	}
+	rows, err := db.GetPricingAudit(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gpt5 storage.PricingAuditRow
+	for _, row := range rows {
+		if row.Model == "gpt-5" {
+			gpt5 = row
+			break
+		}
+	}
+	if gpt5.PricingSource != "contract" || gpt5.Priority != 1 || gpt5.Confidence != "override" {
+		t.Fatalf("local override did not win over official/fallback rows: %+v", gpt5)
+	}
+	summary, err := db.GetPricingRuleSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.OverrideRules < 1 || summary.OfficialRules < 1 || summary.TotalRules < summary.OverrideRules+summary.OfficialRules {
+		t.Fatalf("unexpected pricing summary: %+v", summary)
+	}
+	sources, err := db.GetPricingSources(24 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]string{}
+	for _, source := range sources {
+		status[source.Name] = source.Status
+	}
+	if status["litellm"] != "error" || status["openai-official"] != "seeded" || status["anthropic-official"] != "seeded" {
+		t.Fatalf("unexpected source statuses: %+v", sources)
 	}
 }

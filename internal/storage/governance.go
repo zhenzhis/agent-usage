@@ -215,6 +215,52 @@ func (d *DB) GetPricingAudit(limit int) ([]PricingAuditRow, error) {
 	return out, rows.Err()
 }
 
+// GetPricingRuleSummary returns a compact view of the effective pricing table.
+func (d *DB) GetPricingRuleSummary() (*PricingRuleSummary, error) {
+	rows, err := d.db.Query(`SELECT COALESCE(pricing_source,''),COALESCE(confidence,''),COUNT(*),
+		COALESCE(MIN(updated_at),''),COALESCE(MAX(updated_at),'')
+		FROM pricing GROUP BY 1,2`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	summary := &PricingRuleSummary{
+		BySource:     map[string]int{},
+		ByConfidence: map[string]int{},
+	}
+	for rows.Next() {
+		var source, confidence, oldest, newest string
+		var count int
+		if err := rows.Scan(&source, &confidence, &count, &oldest, &newest); err != nil {
+			return nil, err
+		}
+		if source == "" {
+			source = "unknown"
+		}
+		if confidence == "" {
+			confidence = "unknown"
+		}
+		summary.TotalRules += count
+		summary.BySource[source] += count
+		summary.ByConfidence[confidence] += count
+		switch confidence {
+		case "override":
+			summary.OverrideRules += count
+		case "official":
+			summary.OfficialRules += count
+		case "fallback":
+			summary.FallbackRules += count
+		}
+		if summary.OldestUpdatedAt == "" || (oldest != "" && oldest < summary.OldestUpdatedAt) {
+			summary.OldestUpdatedAt = oldest
+		}
+		if newest > summary.NewestUpdatedAt {
+			summary.NewestUpdatedAt = newest
+		}
+	}
+	return summary, rows.Err()
+}
+
 // AppendAuditLog stores a local operation audit event.
 func (d *DB) AppendAuditLog(actor, role, action, target string, params map[string]string) error {
 	raw, _ := json.Marshal(params)

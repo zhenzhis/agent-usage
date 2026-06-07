@@ -130,6 +130,18 @@ type PricingAuditRow struct {
 	Confidence             string  `json:"confidence"`
 }
 
+// PricingRuleSummary summarizes the effective pricing rule set.
+type PricingRuleSummary struct {
+	TotalRules      int            `json:"total_rules"`
+	BySource        map[string]int `json:"by_source"`
+	ByConfidence    map[string]int `json:"by_confidence"`
+	OverrideRules   int            `json:"override_rules"`
+	OfficialRules   int            `json:"official_rules"`
+	FallbackRules   int            `json:"fallback_rules"`
+	OldestUpdatedAt string         `json:"oldest_updated_at"`
+	NewestUpdatedAt string         `json:"newest_updated_at"`
+}
+
 // AuditEvent is a local immutable operational audit event.
 type AuditEvent struct {
 	ID        int64  `json:"id"`

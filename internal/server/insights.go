@@ -38,10 +38,16 @@ func (s *Server) handlePricingStatus(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	rules, err := s.db.GetPricingRuleSummary()
+	if err != nil {
+		serverError(w, err)
+		return
+	}
 	writeJSON(w, map[string]interface{}{
 		"sources":         sources,
 		"unpriced_models": unpriced.UnpricedModels,
 		"confidence_mix":  unpriced.ConfidenceMix,
+		"rules":           rules,
 		"mode":            s.options.Pricing.Mode,
 		"stale_after":     s.options.Pricing.StaleAfter.String(),
 	})

@@ -20,6 +20,8 @@ const openAIPricingURL = "https://openai.com/api/pricing/"
 const anthropicPricingURL = "https://platform.claude.com/docs/en/about-claude/pricing"
 const maxPricingResponseBytes = 8 * 1024 * 1024
 
+var fetchPricingBytes = fetchBytes
+
 type modelPricing struct {
 	InputCostPerToken           *float64 `json:"input_cost_per_token"`
 	OutputCostPerToken          *float64 `json:"output_cost_per_token"`
@@ -38,11 +40,13 @@ func SyncWithConfig(db *storage.DB, cfg config.PricingConfig) error {
 		cfg.Mode = "official-plus-litellm"
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	var warnings []string
 	if err := syncLiteLLM(db); err != nil {
 		_ = db.UpsertPricingSource(storage.PricingSourceStatus{
 			Name: "litellm", Kind: "fallback", Priority: 100, URL: liteLLMPricingURL, LastFetchAt: now, Status: "error", LastError: err.Error(),
 		})
-		return err
+		_ = db.InsertPricingAuditEvent("sync.warning", "litellm", "", err.Error())
+		warnings = append(warnings, "LiteLLM fallback sync failed: "+err.Error())
 	}
 	if err := applyOfficialSeeds(db); err != nil {
 		return err
@@ -71,12 +75,16 @@ func SyncWithConfig(db *storage.DB, cfg config.PricingConfig) error {
 			return err
 		}
 	}
-	_ = db.InsertPricingAuditEvent("sync", "pricing", "", "pricing sync completed with official overlays and LiteLLM fallback")
+	message := "pricing sync completed with official overlays and LiteLLM fallback"
+	if len(warnings) > 0 {
+		message = "pricing sync completed with official/local rules; " + strings.Join(warnings, "; ")
+	}
+	_ = db.InsertPricingAuditEvent("sync", "pricing", "", message)
 	return nil
 }
 
 func syncLiteLLM(db *storage.DB) error {
-	body, etag, err := fetchBytes(liteLLMPricingURL)
+	body, etag, err := fetchPricingBytes(liteLLMPricingURL)
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err != nil {
 		return err

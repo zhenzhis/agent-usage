@@ -254,7 +254,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/session-replay?source=codex&session_id=...` | Chronological per-call token/cost replay for one session |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | Local SVG repo cost/tokens/cache badge |
 | `GET /api/model-registry` | Pricing and model governance registry |
-| `GET /api/pricing/status` | Pricing freshness, source state, unpriced models |
+| `GET /api/pricing/status` | Pricing freshness, source state, effective rule summary, unpriced models |
 | `POST /api/pricing/sync` | Sync pricing |
 | `POST /api/pricing/recalculate?mode=zero|all` | Recalculate costs |
 | `POST /api/projections/repair` | Repair canonical `model_calls` to `usage_records` projection drift and rebuild aggregates |

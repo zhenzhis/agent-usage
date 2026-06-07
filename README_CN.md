@@ -254,7 +254,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/session-replay?source=codex&session_id=...` | 单个 session 的调用级 token/cost 时间回放 |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | 本地 SVG repo 成本、token 或 cache badge |
 | `GET /api/model-registry` | 模型与价格治理注册表 |
-| `GET /api/pricing/status` | 价格源、新鲜度、未计价模型 |
+| `GET /api/pricing/status` | 价格源、新鲜度、有效规则摘要、未计价模型 |
 | `POST /api/pricing/sync` | 同步价格 |
 | `POST /api/pricing/recalculate?mode=zero|all` | 重算费用 |
 | `POST /api/projections/repair` | 修复 canonical `model_calls` 到 `usage_records` 的投影漂移，并重建 aggregates |
