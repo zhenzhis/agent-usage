@@ -13,6 +13,7 @@ node --check internal/server/static/app.js
 git diff --check
 docker compose up -d --build
 printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | ./agent-ledger mcp
+printf '{"source":"local","event_type":"workload.started","payload":{"goal":"release smoke"}}\n' | ./agent-ledger event ingest
 ```
 
 If available, also run:

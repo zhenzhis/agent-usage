@@ -1,0 +1,492 @@
+package storage
+
+import (
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// CanonicalEvent is the stable event contract for wrappers, gateways, MCP tools,
+// and future agent protocols. Payload must contain metadata only, never prompt text.
+type CanonicalEvent struct {
+	EventID       string          `json:"event_id"`
+	Source        string          `json:"source"`
+	EventType     string          `json:"event_type"`
+	SourceEventID string          `json:"source_event_id"`
+	WorkloadID    string          `json:"workload_id"`
+	AgentRunID    string          `json:"agent_run_id"`
+	SessionID     string          `json:"session_id"`
+	Model         string          `json:"model"`
+	Project       string          `json:"project"`
+	GitBranch     string          `json:"git_branch"`
+	Timestamp     time.Time       `json:"timestamp"`
+	PayloadHash   string          `json:"payload_hash"`
+	Payload       json.RawMessage `json:"payload"`
+	Confidence    float64         `json:"confidence"`
+}
+
+// CanonicalEventResult describes an ingest outcome.
+type CanonicalEventResult struct {
+	EventID    string   `json:"event_id"`
+	Status     string   `json:"status"`
+	EventType  string   `json:"event_type"`
+	WorkloadID string   `json:"workload_id,omitempty"`
+	RunID      string   `json:"run_id,omitempty"`
+	Derived    []string `json:"derived,omitempty"`
+}
+
+// IngestCanonicalEvent stores one canonical event and applies supported ledger projections.
+func (d *DB) IngestCanonicalEvent(event CanonicalEvent) (*CanonicalEventResult, error) {
+	event.Source = strings.TrimSpace(event.Source)
+	event.EventType = normalizeCanonicalEventType(event.EventType)
+	if event.Source == "" {
+		return nil, fmt.Errorf("source is required")
+	}
+	if event.EventType == "" {
+		return nil, fmt.Errorf("event_type is required")
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now().UTC()
+	}
+	if event.Confidence <= 0 {
+		event.Confidence = 1
+	}
+	payload, payloadJSON, err := canonicalPayload(event.Payload)
+	if err != nil {
+		return nil, err
+	}
+	if event.PayloadHash == "" {
+		event.PayloadHash = hashPayload(payloadJSON)
+	}
+	if event.EventID == "" {
+		event.EventID = deterministicEventID(event, event.PayloadHash)
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+	res, err := tx.Exec(`INSERT INTO canonical_events(event_id,source,event_type,source_event_id,workload_id,agent_run_id,session_id,model,project,git_branch,timestamp,payload_hash,payload,confidence,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO NOTHING`,
+		event.EventID, event.Source, event.EventType, event.SourceEventID, event.WorkloadID, event.AgentRunID, event.SessionID, event.Model,
+		event.Project, normalizeBranch(event.GitBranch), event.Timestamp, event.PayloadHash, payloadJSON, event.Confidence, now)
+	if err != nil {
+		return nil, err
+	}
+	inserted, _ := res.RowsAffected()
+	if inserted == 0 {
+		existing := CanonicalEventResult{EventID: event.EventID, Status: "duplicate", EventType: event.EventType}
+		_ = tx.QueryRow(`SELECT workload_id,agent_run_id,event_type FROM canonical_events WHERE event_id=?`, event.EventID).Scan(&existing.WorkloadID, &existing.RunID, &existing.EventType)
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return &existing, nil
+	}
+
+	derived, err := d.applyCanonicalEvent(tx, &event, payload, now)
+	if err != nil {
+		return nil, err
+	}
+	if event.WorkloadID != "" || event.AgentRunID != "" {
+		if _, err := tx.Exec(`UPDATE canonical_events SET workload_id=?, agent_run_id=? WHERE event_id=?`, event.WorkloadID, event.AgentRunID, event.EventID); err != nil {
+			return nil, err
+		}
+	}
+	if event.WorkloadID != "" && event.SessionID != "" {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO workload_sessions(workload_id,source,session_id,confidence,created_at) VALUES(?,?,?,?,?)`,
+			event.WorkloadID, event.Source, event.SessionID, event.Confidence, now); err != nil {
+			return nil, err
+		}
+		sessionProject := firstNonEmptyStorage(event.Project, payloadString(payload, "project"))
+		sessionBranch := normalizeBranch(firstNonEmptyStorage(event.GitBranch, payloadString(payload, "git_branch")))
+		if _, err := tx.Exec(`INSERT INTO sessions(source,session_id,project,git_branch,start_time,prompts)
+			VALUES(?,?,?,?,?,0)
+			ON CONFLICT(source,session_id) DO UPDATE SET
+				project=CASE WHEN excluded.project!='' THEN excluded.project ELSE project END,
+				git_branch=CASE WHEN excluded.git_branch!='' THEN excluded.git_branch ELSE git_branch END,
+				start_time=CASE WHEN start_time IS NULL OR excluded.start_time < start_time THEN excluded.start_time ELSE start_time END`,
+			event.Source, event.SessionID, sessionProject, sessionBranch, event.Timestamp); err != nil {
+			return nil, err
+		}
+	}
+	if event.WorkloadID != "" {
+		_, _ = tx.Exec(`UPDATE workloads SET updated_at=? WHERE workload_id=?`, now, event.WorkloadID)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &CanonicalEventResult{EventID: event.EventID, Status: "inserted", EventType: event.EventType, WorkloadID: event.WorkloadID, RunID: event.AgentRunID, Derived: derived}, nil
+}
+
+func (d *DB) applyCanonicalEvent(tx *sql.Tx, event *CanonicalEvent, payload map[string]interface{}, now time.Time) ([]string, error) {
+	switch event.EventType {
+	case "workload.started":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		return []string{"workload"}, nil
+	case "workload.closed":
+		if err := closeEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		return []string{"workload"}, nil
+	case "agent.run.started":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		if event.AgentRunID == "" {
+			event.AgentRunID = firstPayloadString(payload, "run_id", "agent_run_id")
+		}
+		if event.AgentRunID == "" {
+			event.AgentRunID = generatedID("run")
+		}
+		_, err := tx.Exec(`INSERT OR IGNORE INTO agent_runs(run_id,workload_id,parent_run_id,source,agent_name,agent_version,command,cwd,status,started_at,confidence)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?)`, event.AgentRunID, event.WorkloadID, payloadString(payload, "parent_run_id"), event.Source,
+			firstNonEmptyStorage(payloadString(payload, "agent_name"), event.Source), payloadString(payload, "agent_version"),
+			payloadString(payload, "command"), payloadString(payload, "cwd"), firstNonEmptyStorage(payloadString(payload, "status"), "running"), event.Timestamp, event.Confidence)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"agent_run"}, nil
+	case "agent.run.finished":
+		if event.AgentRunID == "" {
+			event.AgentRunID = firstPayloadString(payload, "run_id", "agent_run_id")
+		}
+		if event.AgentRunID == "" {
+			return nil, fmt.Errorf("agent_run_id is required for %s", event.EventType)
+		}
+		status := firstNonEmptyStorage(payloadString(payload, "status"), "completed")
+		res, err := tx.Exec(`UPDATE agent_runs SET status=?, exit_code=?, error=?, ended_at=?, duration_ms=? WHERE run_id=?`,
+			status, payloadInt(payload, "exit_code"), payloadString(payload, "error"), event.Timestamp, payloadInt64(payload, "duration_ms"), event.AgentRunID)
+		if err != nil {
+			return nil, err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return nil, sql.ErrNoRows
+		}
+		return []string{"agent_run"}, nil
+	case "model.call":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		if event.SessionID == "" {
+			event.SessionID = payloadString(payload, "session_id")
+		}
+		if event.Model == "" {
+			event.Model = payloadString(payload, "model")
+		}
+		if event.Model == "" {
+			return nil, fmt.Errorf("model is required for %s", event.EventType)
+		}
+		callID := firstNonEmptyStorage(payloadString(payload, "call_id"), event.SourceEventID, generatedID("call"))
+		_, err := tx.Exec(`INSERT OR IGNORE INTO model_calls(call_id,workload_id,run_id,source,session_id,provider,model,model_alias,input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,reasoning_output_tokens,cost_usd,latency_ms,finish_reason,pricing_source,pricing_confidence,timestamp,confidence)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, callID, event.WorkloadID, event.AgentRunID, event.Source,
+			firstNonEmptyStorage(event.SessionID, payloadString(payload, "session_id")), payloadString(payload, "provider"), event.Model, payloadString(payload, "model_alias"),
+			payloadInt64(payload, "input_tokens"), payloadInt64(payload, "output_tokens"), payloadInt64(payload, "cache_read_input_tokens"),
+			payloadInt64(payload, "cache_creation_input_tokens"), payloadInt64(payload, "reasoning_output_tokens"), payloadFloat(payload, "cost_usd"),
+			payloadInt64(payload, "latency_ms"), payloadString(payload, "finish_reason"), payloadString(payload, "pricing_source"),
+			payloadString(payload, "pricing_confidence"), event.Timestamp, event.Confidence)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"model_call"}, nil
+	case "tool.call":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		toolID := firstNonEmptyStorage(payloadString(payload, "tool_call_id"), event.SourceEventID, generatedID("tool"))
+		_, err := tx.Exec(`INSERT OR IGNORE INTO tool_calls(tool_call_id,workload_id,run_id,source,tool_name,tool_type,status,error_class,duration_ms,params_hash,timestamp,confidence)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, toolID, event.WorkloadID, event.AgentRunID, event.Source, payloadString(payload, "tool_name"),
+			payloadString(payload, "tool_type"), payloadString(payload, "status"), payloadString(payload, "error_class"),
+			payloadInt64(payload, "duration_ms"), payloadString(payload, "params_hash"), event.Timestamp, event.Confidence)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"tool_call"}, nil
+	case "context.ref":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		refID := firstNonEmptyStorage(payloadString(payload, "context_ref_id"), event.SourceEventID, generatedID("ctx"))
+		_, err := tx.Exec(`INSERT OR IGNORE INTO context_refs(context_ref_id,workload_id,run_id,ref_type,ref_hash,label,repo,git_branch,commit_sha,privacy_label,created_at,confidence)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, refID, event.WorkloadID, event.AgentRunID, payloadString(payload, "ref_type"), payloadString(payload, "ref_hash"),
+			payloadString(payload, "label"), payloadString(payload, "repo"), normalizeBranch(firstNonEmptyStorage(payloadString(payload, "git_branch"), event.GitBranch)),
+			payloadString(payload, "commit_sha"), firstNonEmptyStorage(payloadString(payload, "privacy_label"), "local"), event.Timestamp, event.Confidence)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"context_ref"}, nil
+	case "artifact.created":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		artifactID := firstNonEmptyStorage(payloadString(payload, "artifact_id"), event.SourceEventID, generatedID("art"))
+		_, err := tx.Exec(`INSERT OR IGNORE INTO artifacts(artifact_id,workload_id,run_id,artifact_type,label,path_hash,sha256,metadata,created_at,confidence)
+			VALUES(?,?,?,?,?,?,?,?,?,?)`, artifactID, event.WorkloadID, event.AgentRunID, payloadString(payload, "artifact_type"),
+			payloadString(payload, "label"), payloadString(payload, "path_hash"), payloadString(payload, "sha256"), payloadMetadataJSON(payload), event.Timestamp, event.Confidence)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"artifact"}, nil
+	case "evaluation.recorded":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		evaluationID := firstNonEmptyStorage(payloadString(payload, "evaluation_id"), event.SourceEventID, generatedID("eval"))
+		_, err := tx.Exec(`INSERT OR IGNORE INTO evaluations(evaluation_id,workload_id,evaluator,status,score,signal,notes,created_at)
+			VALUES(?,?,?,?,?,?,?,?)`, evaluationID, event.WorkloadID, firstNonEmptyStorage(payloadString(payload, "evaluator"), "local"),
+			payloadString(payload, "status"), payloadFloat(payload, "score"), payloadString(payload, "signal"), payloadString(payload, "notes"), event.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"evaluation"}, nil
+	case "policy.decision":
+		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
+			return nil, err
+		}
+		decisionID := firstNonEmptyStorage(payloadString(payload, "decision_id"), event.SourceEventID, generatedID("pol"))
+		action := firstNonEmptyStorage(payloadString(payload, "action"), "allow")
+		_, err := tx.Exec(`INSERT OR IGNORE INTO policy_decisions(decision_id,workload_id,run_id,rule_id,action,reason,actor_role,created_at)
+			VALUES(?,?,?,?,?,?,?,?)`, decisionID, event.WorkloadID, event.AgentRunID, payloadString(payload, "rule_id"), action,
+			payloadString(payload, "reason"), payloadString(payload, "actor_role"), event.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"policy_decision"}, nil
+	default:
+		return nil, fmt.Errorf("unsupported event_type %q", event.EventType)
+	}
+}
+
+func ensureEventWorkload(tx *sql.Tx, event *CanonicalEvent, payload map[string]interface{}, now time.Time) error {
+	if event.WorkloadID == "" {
+		event.WorkloadID = firstPayloadString(payload, "workload_id")
+	}
+	if event.WorkloadID == "" {
+		goal := payloadString(payload, "goal")
+		if goal == "" {
+			return fmt.Errorf("workload_id or payload.goal is required for %s", event.EventType)
+		}
+		event.WorkloadID = generatedID("wl")
+	}
+	goal := firstNonEmptyStorage(payloadString(payload, "goal"), event.WorkloadID)
+	source := firstNonEmptyStorage(payloadString(payload, "source"), event.Source)
+	project := firstNonEmptyStorage(payloadString(payload, "project"), event.Project)
+	branch := normalizeBranch(firstNonEmptyStorage(payloadString(payload, "git_branch"), event.GitBranch))
+	_, err := tx.Exec(`INSERT OR IGNORE INTO workloads(workload_id,goal,status,source,project,repo,git_branch,owner,team,budget_usd,outcome,confidence,created_at,updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.WorkloadID, goal, "active", source, project, payloadString(payload, "repo"), branch,
+		payloadString(payload, "owner"), payloadString(payload, "team"), payloadFloat(payload, "budget_usd"), "", event.Confidence, now, now)
+	return err
+}
+
+func closeEventWorkload(tx *sql.Tx, event *CanonicalEvent, payload map[string]interface{}, now time.Time) error {
+	if event.WorkloadID == "" {
+		event.WorkloadID = firstPayloadString(payload, "workload_id")
+	}
+	if event.WorkloadID == "" {
+		return fmt.Errorf("workload_id is required for %s", event.EventType)
+	}
+	status := firstNonEmptyStorage(payloadString(payload, "status"), "completed")
+	if !validWorkloadStatus(status) {
+		return fmt.Errorf("unsupported workload status %q", status)
+	}
+	res, err := tx.Exec(`UPDATE workloads SET status=?, outcome=?, updated_at=?, closed_at=? WHERE workload_id=?`,
+		status, payloadString(payload, "outcome"), now, now, event.WorkloadID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func canonicalPayload(raw json.RawMessage) (map[string]interface{}, string, error) {
+	if len(raw) == 0 {
+		return map[string]interface{}{}, "{}", nil
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, "", fmt.Errorf("payload must be a JSON object: %w", err)
+	}
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	if containsPromptContentKey(payload) {
+		return nil, "", fmt.Errorf("payload appears to contain prompt/content text; store hashes or metadata only")
+	}
+	stable, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", err
+	}
+	return payload, string(stable), nil
+}
+
+func containsPromptContentKey(v interface{}) bool {
+	switch x := v.(type) {
+	case map[string]interface{}:
+		for k, child := range x {
+			switch strings.ToLower(k) {
+			case "prompt", "prompts", "messages", "content", "input_text", "output_text", "completion", "transcript":
+				return true
+			}
+			if containsPromptContentKey(child) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, child := range x {
+			if containsPromptContentKey(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func normalizeCanonicalEventType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "workload_started", "workload.start", "workload.started":
+		return "workload.started"
+	case "workload_closed", "workload.close", "workload.closed":
+		return "workload.closed"
+	case "agent_run_started", "run.started", "agent.run.start", "agent.run.started":
+		return "agent.run.started"
+	case "agent_run_finished", "run.finished", "agent.run.finish", "agent.run.finished":
+		return "agent.run.finished"
+	case "model_call", "model.call":
+		return "model.call"
+	case "tool_call", "tool.call":
+		return "tool.call"
+	case "context_ref", "context.ref":
+		return "context.ref"
+	case "artifact_created", "artifact.created":
+		return "artifact.created"
+	case "evaluation_recorded", "evaluation.recorded":
+		return "evaluation.recorded"
+	case "policy_decision", "policy.decision":
+		return "policy.decision"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
+func deterministicEventID(event CanonicalEvent, payloadHash string) string {
+	parts := []string{
+		event.Source, event.EventType, event.SourceEventID, event.WorkloadID, event.AgentRunID,
+		event.SessionID, event.Model, event.Project, event.GitBranch, event.Timestamp.UTC().Format(time.RFC3339Nano), payloadHash,
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "evt_" + hex.EncodeToString(sum[:16])
+}
+
+func hashPayload(payload string) string {
+	sum := sha256.Sum256([]byte(payload))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func payloadString(payload map[string]interface{}, key string) string {
+	v, ok := payload[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch x := v.(type) {
+	case string:
+		return strings.TrimSpace(x)
+	case fmt.Stringer:
+		return strings.TrimSpace(x.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(x))
+	}
+}
+
+func firstPayloadString(payload map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value := payloadString(payload, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func payloadInt(payload map[string]interface{}, key string) int {
+	return int(payloadInt64(payload, key))
+}
+
+func payloadInt64(payload map[string]interface{}, key string) int64 {
+	v, ok := payload[key]
+	if !ok || v == nil {
+		return 0
+	}
+	switch x := v.(type) {
+	case int64:
+		return x
+	case int:
+		return int64(x)
+	case float64:
+		return int64(x)
+	case json.Number:
+		n, _ := x.Int64()
+		return n
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+func payloadFloat(payload map[string]interface{}, key string) float64 {
+	v, ok := payload[key]
+	if !ok || v == nil {
+		return 0
+	}
+	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case int:
+		return float64(x)
+	case int64:
+		return float64(x)
+	case json.Number:
+		n, _ := x.Float64()
+		return n
+	case string:
+		n, _ := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+func payloadMetadataJSON(payload map[string]interface{}) string {
+	if metadata, ok := payload["metadata"]; ok && metadata != nil {
+		raw, _ := json.Marshal(metadata)
+		return string(raw)
+	}
+	return "{}"
+}
+
+func firstNonEmptyStorage(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}

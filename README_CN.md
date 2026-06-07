@@ -49,6 +49,7 @@ CLI：
 ./agent-ledger workload list
 ./agent-ledger workload create --goal "review strategy engine" --source codex --project quant
 ./agent-ledger run --goal "debug ingestion" --agent codex -- codex
+./agent-ledger event ingest --file event.json
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -156,6 +157,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `POST /api/workloads/close` | 关闭 workload 并记录结果 |
 | `GET /api/workload-detail` | workload 的 run、model call、tool、session、policy 明细 |
 | `GET /api/workload-graph` | workload 图谱 |
+| `POST /api/events` | 写入 metadata-only canonical events |
 | `GET /api/sessions` | 服务端分页会话账本 |
 | `GET /api/model-registry` | 模型与价格治理注册表 |
 | `GET /api/pricing/status` | 价格源、新鲜度、未计价模型 |
@@ -183,9 +185,12 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `ledger.start_workload`
 - `ledger.close_workload`
 - `ledger.record_artifact`
+- `ledger.record_event`
 - `ledger.get_policy`
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
+
+Canonical event ingest 支持 workload、run、model call、tool call、context ref、artifact、evaluation、policy decision 事件。Payload 只允许元数据；如果出现 raw prompt/content 相关键会直接失败，不会静默持久化。
 
 ## 安全模型
 
@@ -214,7 +219,7 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . &
 
 ## Roadmap
 
-已落地基础：canonical workload schema、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload 命令、CLI run wrapper 和本地 MCP stdio tools。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event 命令、CLI run wrapper 和本地 MCP stdio tools。
 
 后续路线：A2A task telemetry、OpenTelemetry GenAI mapping、可选 provider/API gateway、Postgres 团队模式、signed offline bundle import、OIDC/SSO、更完整的 MCP resources/prompts、企业策略审批流。
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -142,6 +143,70 @@ func (s *Server) handleModelRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, rows)
+}
+
+func (s *Server) handleCanonicalEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
+		return
+	}
+	raw := bytes.Buffer{}
+	if _, err := raw.ReadFrom(http.MaxBytesReader(w, r.Body, 4<<20)); err != nil {
+		badRequest(w, err)
+		return
+	}
+	events, err := decodeCanonicalEventRequest(raw.Bytes())
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	if len(events) == 0 {
+		badRequest(w, fmt.Errorf("at least one event is required"))
+		return
+	}
+	if len(events) > 500 {
+		badRequest(w, fmt.Errorf("too many events: max 500"))
+		return
+	}
+	results := make([]*storage.CanonicalEventResult, 0, len(events))
+	for _, event := range events {
+		result, err := s.db.IngestCanonicalEvent(event)
+		if err != nil {
+			badRequest(w, err)
+			return
+		}
+		results = append(results, result)
+	}
+	_ = s.db.AppendAuditLog("local", s.roleFor(r), "canonical_event.ingest", fmt.Sprintf("%d", len(results)), map[string]string{"events": fmt.Sprintf("%d", len(results))})
+	writeJSON(w, map[string]interface{}{"ok": true, "results": results})
+}
+
+func decodeCanonicalEventRequest(raw []byte) ([]storage.CanonicalEvent, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("empty request body")
+	}
+	if trimmed[0] == '[' {
+		var events []storage.CanonicalEvent
+		if err := json.Unmarshal(trimmed, &events); err != nil {
+			return nil, err
+		}
+		return events, nil
+	}
+	var envelope struct {
+		Events []storage.CanonicalEvent `json:"events"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err == nil && len(envelope.Events) > 0 {
+		return envelope.Events, nil
+	}
+	var event storage.CanonicalEvent
+	if err := json.Unmarshal(trimmed, &event); err != nil {
+		return nil, err
+	}
+	return []storage.CanonicalEvent{event}, nil
 }
 
 func (s *Server) handlePolicyDecisions(w http.ResponseWriter, r *http.Request) {

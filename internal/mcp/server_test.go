@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.get_policy") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.record_event") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -118,6 +118,25 @@ func TestMCPPolicyDisabledDoesNotEvaluateRules(t *testing.T) {
 	decisions := payload["decisions"].([]interface{})
 	if len(decisions) != 0 {
 		t.Fatalf("disabled policy returned decisions: %#v", decisions)
+	}
+}
+
+func TestMCPRecordEvent(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+
+	resp := serveLines(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.record_event","arguments":{"event_id":"evt-mcp-record","source":"codex","event_type":"workload.started","payload":{"goal":"mcp event bridge","project":"agent-ledger"}}}}`)[0]
+	payload := toolTextPayload(t, resp)
+	if payload["status"] != "inserted" || payload["workload_id"] == "" {
+		t.Fatalf("unexpected record event payload: %#v", payload)
+	}
+	detail, err := db.GetWorkloadDetail(payload["workload_id"].(string))
+	if err != nil {
+		t.Fatalf("detail: %v", err)
+	}
+	if detail.Summary.Goal != "mcp event bridge" {
+		t.Fatalf("summary=%#v", detail.Summary)
 	}
 }
 

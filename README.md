@@ -49,6 +49,7 @@ CLI:
 ./agent-ledger workload list
 ./agent-ledger workload create --goal "review strategy engine" --source codex --project quant
 ./agent-ledger run --goal "debug ingestion" --agent codex -- codex
+./agent-ledger event ingest --file event.json
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -156,6 +157,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `POST /api/workloads/close` | Close a workload with status/outcome |
 | `GET /api/workload-detail` | Workload runs, model calls, tools, sessions, policies |
 | `GET /api/workload-graph` | Compact workload graph |
+| `POST /api/events` | Ingest metadata-only canonical events |
 | `GET /api/sessions` | Server-side paginated session ledger |
 | `GET /api/model-registry` | Pricing and model governance registry |
 | `GET /api/pricing/status` | Pricing freshness, source state, unpriced models |
@@ -183,9 +185,12 @@ Current tools:
 - `ledger.start_workload`
 - `ledger.close_workload`
 - `ledger.record_artifact`
+- `ledger.record_event`
 - `ledger.get_policy`
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
+
+Canonical event ingest supports workload, run, model-call, tool-call, context-ref, artifact, evaluation, and policy-decision events. Payloads are metadata-only; raw prompt/content keys are rejected instead of silently persisted.
 
 ## Security Model
 
@@ -214,7 +219,7 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . &
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, legacy session backfill, workload API, workload CSV export, CLI workload commands, CLI run wrapper, and local MCP stdio tools.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, legacy session backfill, workload API, workload CSV export, CLI workload/event commands, CLI run wrapper, and local MCP stdio tools.
 
 Planned integrations: A2A task telemetry, OpenTelemetry GenAI mapping, optional provider/API gateway, Postgres team mode, signed offline bundle import, OIDC/SSO, richer MCP resources/prompts, and enterprise policy approval flows.
 

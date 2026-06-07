@@ -150,6 +150,20 @@ func tools() []map[string]interface{} {
 			"sha256":        stringSchema(),
 			"metadata":      objectSchema(),
 		}),
+		tool("ledger.record_event", "Ingest one canonical metadata-only event into the workload ledger.", map[string]interface{}{
+			"source":          requiredStringSchema(),
+			"event_type":      requiredStringSchema(),
+			"event_id":        stringSchema(),
+			"source_event_id": stringSchema(),
+			"workload_id":     stringSchema(),
+			"agent_run_id":    stringSchema(),
+			"session_id":      stringSchema(),
+			"model":           stringSchema(),
+			"project":         stringSchema(),
+			"git_branch":      stringSchema(),
+			"timestamp":       stringSchema(),
+			"payload":         objectSchema(),
+		}),
 		tool("ledger.get_policy", "Evaluate local advisory policy rules for a proposed agent action.", map[string]interface{}{
 			"workload_id": stringSchema(),
 			"run_id":      stringSchema(),
@@ -219,6 +233,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolCloseWorkload(args)
 	case "ledger.record_artifact":
 		return s.toolRecordArtifact(args)
+	case "ledger.record_event":
+		return s.toolRecordEvent(args)
 	case "ledger.get_policy":
 		return s.toolGetPolicy(args)
 	case "ledger.explain_cost":
@@ -348,6 +364,14 @@ func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{"artifact_id": id, "workload_id": in.WorkloadID}, nil
+}
+
+func (s *Server) toolRecordEvent(args json.RawMessage) (interface{}, error) {
+	var event storage.CanonicalEvent
+	if err := json.Unmarshal(args, &event); err != nil {
+		return nil, err
+	}
+	return s.db.IngestCanonicalEvent(event)
 }
 
 func (s *Server) toolGetPolicy(args json.RawMessage) (interface{}, error) {

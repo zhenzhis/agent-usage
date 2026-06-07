@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -386,12 +387,74 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runWorkloadCLI(args[1:], db)
 	case "run":
 		return runWrappedCLI(args[1:], db)
+	case "event":
+		return runEventCLI(args[1:], db)
 	case "mcp":
 		return mcp.New(db, cfg).Serve(os.Stdin, os.Stdout)
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func runEventCLI(args []string, db *storage.DB) error {
+	if len(args) == 0 || args[0] != "ingest" {
+		return fmt.Errorf("usage: agent-ledger event ingest [--file event.json]")
+	}
+	var raw []byte
+	var err error
+	if path := cliValue(args[1:], "--file"); path != "" {
+		raw, err = os.ReadFile(path)
+	} else {
+		raw, err = io.ReadAll(io.LimitReader(os.Stdin, 4<<20))
+	}
+	if err != nil {
+		return err
+	}
+	events, err := decodeCLIEvents(raw)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("at least one event is required")
+	}
+	if len(events) > 500 {
+		return fmt.Errorf("too many events: max 500")
+	}
+	results := make([]*storage.CanonicalEventResult, 0, len(events))
+	for _, event := range events {
+		result, err := db.IngestCanonicalEvent(event)
+		if err != nil {
+			return err
+		}
+		results = append(results, result)
+	}
+	return json.NewEncoder(os.Stdout).Encode(results)
+}
+
+func decodeCLIEvents(raw []byte) ([]storage.CanonicalEvent, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return nil, fmt.Errorf("empty event input")
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var events []storage.CanonicalEvent
+		if err := json.Unmarshal([]byte(trimmed), &events); err != nil {
+			return nil, err
+		}
+		return events, nil
+	}
+	var envelope struct {
+		Events []storage.CanonicalEvent `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &envelope); err == nil && len(envelope.Events) > 0 {
+		return envelope.Events, nil
+	}
+	var event storage.CanonicalEvent
+	if err := json.Unmarshal([]byte(trimmed), &event); err != nil {
+		return nil, err
+	}
+	return []storage.CanonicalEvent{event}, nil
 }
 
 func runWorkloadCLI(args []string, db *storage.DB) error {

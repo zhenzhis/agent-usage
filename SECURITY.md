@@ -24,6 +24,8 @@ Agent Ledger runs locally and reads local agent usage files. The default deploym
 
 Agent Ledger should not store prompt content, secrets, API keys, webhook URLs, private keys, or raw secret-bearing logs. Audit logs should record operation metadata, not raw prompt or file content.
 
+Canonical event ingest accepts metadata only and rejects obvious raw prompt/content payload keys. Integrations should send hashes, IDs, counts, timings, and status instead of raw prompts, transcripts, or model output.
+
 Use privacy presets before sharing screenshots, reports, evidence bundles, or CSV exports from sensitive workspaces.
 
 ## Network Exposure
