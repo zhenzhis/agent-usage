@@ -17,6 +17,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger otel convert/ingest         # map OpenTelemetry GenAI JSON spans to canonical events
 ./agent-ledger a2a convert/ingest          # map A2A task snapshots/events to canonical events
 ./agent-ledger provider convert/ingest     # map provider usage envelopes to canonical events
+./agent-ledger projection quality/repair   # diagnose and repair canonical-to-usage projection drift
 ./agent-ledger reconcile import/status     # import provider CSV/JSON bills for local reconciliation
 ./agent-ledger router simulate --to-model gpt-5-mini --ratio 0.5  # local what-if model routing estimate
 ./agent-ledger replay --source codex --session-id <id>  # per-call session token/cost replay

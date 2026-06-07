@@ -187,6 +187,96 @@ func TestProjectionQualityDetectsMissingAndCostMismatch(t *testing.T) {
 	}
 }
 
+func TestRepairUsageProjectionsBackfillsAndRealigns(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ts := time.Date(2026, 6, 7, 13, 0, 0, 0, time.UTC)
+	for _, item := range []struct {
+		eventID   string
+		sessionID string
+		callID    string
+		cost      float64
+		cacheRead int64
+	}{
+		{"evt-repair-missing", "sess-repair-missing", "call-repair-missing", 2.5, 11},
+		{"evt-repair-loose", "sess-repair-loose", "call-repair-loose", 3.5, 17},
+	} {
+		if _, err := db.IngestCanonicalEvent(CanonicalEvent{
+			EventID:   item.eventID,
+			Source:    "gateway",
+			EventType: "model.call",
+			SessionID: item.sessionID,
+			Model:     "gpt-5",
+			Project:   "agent-ledger",
+			Timestamp: ts,
+			Payload: rawJSON(t, map[string]interface{}{
+				"goal":                    "repair projection",
+				"call_id":                 item.callID,
+				"input_tokens":            100,
+				"cache_read_input_tokens": item.cacheRead,
+				"output_tokens":           20,
+				"cost_usd":                item.cost,
+				"pricing_source":          "openai-official",
+				"pricing_confidence":      "official",
+				"model_alias":             "gpt-5",
+			}),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.db.Exec(`DELETE FROM usage_records WHERE source='gateway' AND session_id='sess-repair-missing'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE usage_records SET cache_read_input_tokens=0, cost_usd=0, pricing_source='', pricing_confidence='stale'
+		WHERE source='gateway' AND session_id='sess-repair-loose'`); err != nil {
+		t.Fatal(err)
+	}
+	before, err := db.GetProjectionQuality(ts.Add(-time.Hour), ts.Add(time.Hour), "gateway", "gpt-5", "agent-ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.MissingUsageProjection != 2 {
+		t.Fatalf("expected two projection issues before repair, got %+v", before)
+	}
+	result, err := db.RepairUsageProjections(ts.Add(-time.Hour), ts.Add(time.Hour), "gateway", "gpt-5", "agent-ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Inserted != 1 || result.Updated != 1 {
+		t.Fatalf("unexpected repair result: %+v", result)
+	}
+	if result.After.MissingUsageProjection != 0 || result.After.CostMismatchRecords != 0 || result.After.Confidence != 1 {
+		t.Fatalf("projection still degraded after repair: %+v", result.After)
+	}
+	var cacheRead int64
+	var cost float64
+	var note string
+	if err := db.db.QueryRow(`SELECT cache_read_input_tokens,cost_usd,pricing_note FROM usage_records
+		WHERE source='gateway' AND session_id='sess-repair-loose'`).Scan(&cacheRead, &cost, &note); err != nil {
+		t.Fatal(err)
+	}
+	if cacheRead != 17 || cost != 3.5 || note != "canonical model.call projection repaired" {
+		t.Fatalf("loose projection was not realigned: cache=%d cost=%f note=%q", cacheRead, cost, note)
+	}
+	rows, err := db.GetModelCalls(ts.Add(-time.Hour), ts.Add(time.Hour), "gateway", "gpt-5", "agent-ledger", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Calls != 2 || rows[0].CostUSD != 6 {
+		t.Fatalf("aggregates/model analytics not refreshed: %+v", rows)
+	}
+	again, err := db.RepairUsageProjections(ts.Add(-time.Hour), ts.Add(time.Hour), "gateway", "gpt-5", "agent-ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Inserted != 0 || again.Updated != 0 {
+		t.Fatalf("repair should be idempotent, got %+v", again)
+	}
+}
+
 func TestApprovalRequestLifecycle(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

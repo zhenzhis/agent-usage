@@ -102,6 +102,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/health/ingestion", s.handleIngestionHealth)
 	mux.HandleFunc("/api/scan", s.handleScan)
 	mux.HandleFunc("/api/recalculate-costs", s.handleRecalculateCosts)
+	mux.HandleFunc("/api/projections/repair", s.handleRepairProjections)
 	mux.HandleFunc("/api/pricing/status", s.handlePricingStatus)
 	mux.HandleFunc("/api/pricing/sync", s.handlePricingSync)
 	mux.HandleFunc("/api/pricing/recalculate", s.handlePricingRecalculate)

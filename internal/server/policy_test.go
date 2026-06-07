@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
@@ -93,6 +94,66 @@ func TestExportPolicyRequireApprovalCreatesRequestAndApprovedRequestAllows(t *te
 	srv.handleExport(retryRR, retry)
 	if retryRR.Code != http.StatusOK {
 		t.Fatalf("approved retry status=%d body=%s", retryRR.Code, retryRR.Body.String())
+	}
+}
+
+func TestRepairProjectionAPI(t *testing.T) {
+	db := testServerDB(t)
+	ts := time.Date(2026, 6, 7, 13, 30, 0, 0, time.UTC)
+	payload, err := json.Marshal(map[string]interface{}{
+		"goal":                    "api repair projection",
+		"call_id":                 "call-api-repair",
+		"input_tokens":            20,
+		"cache_read_input_tokens": 7,
+		"output_tokens":           5,
+		"cost_usd":                1.25,
+		"pricing_source":          "openai-official",
+		"pricing_confidence":      "official",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.IngestCanonicalEvent(storage.CanonicalEvent{
+		EventID:   "evt-api-repair",
+		Source:    "gateway",
+		EventType: "model.call",
+		SessionID: "sess-api-repair",
+		Model:     "gpt-5",
+		Project:   "agent-ledger",
+		Timestamp: ts,
+		Payload:   payload,
+	}); err != nil {
+		t.Fatalf("IngestCanonicalEvent: %v", err)
+	}
+	srv := New(db, "", Options{})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/projections/repair?from=2026-06-07&to=2026-06-07&source=gateway&model=gpt-5&project=agent-ledger", nil)
+	rr := httptest.NewRecorder()
+	srv.handleRepairProjections(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("repair status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		OK     bool                           `json:"ok"`
+		Result storage.ProjectionRepairResult `json:"result"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, rr.Body.String())
+	}
+	if !body.OK || body.Result.After.MissingUsageProjection != 0 {
+		t.Fatalf("unexpected repair response: %+v", body)
+	}
+	events, err := db.GetAuditLog(10)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	found := false
+	for _, event := range events {
+		if event.Action == "projections.repair" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("repair audit event missing: %+v", events)
 	}
 }
 

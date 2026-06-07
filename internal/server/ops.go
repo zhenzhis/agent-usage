@@ -81,6 +81,34 @@ func (s *Server) handleRecalculateCosts(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]interface{}{"ok": true, "mode": mode})
 }
 
+func (s *Server) handleRepairProjections(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "admin") {
+		return
+	}
+	from, to, _, err := s.parseTimeRange(r)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	source := r.URL.Query().Get("source")
+	model := r.URL.Query().Get("model")
+	project := r.URL.Query().Get("project")
+	result, err := s.db.RepairUsageProjections(from, to, source, model, project)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	_ = s.db.AppendAuditLog("local", s.roleFor(r), "projections.repair", source, map[string]string{
+		"from": from.Format(time.RFC3339), "to": to.Format(time.RFC3339), "source": source, "model": model, "project": project,
+		"inserted": fmt.Sprint(result.Inserted), "updated": fmt.Sprint(result.Updated),
+	})
+	writeJSON(w, map[string]interface{}{"ok": true, "result": result})
+}
+
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	from, to, tzOffset, err := s.parseTimeRange(r)
 	if err != nil {

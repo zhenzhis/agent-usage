@@ -423,6 +423,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runA2ACLI(args[1:], db)
 	case "provider":
 		return runProviderCLI(args[1:], db)
+	case "projection":
+		return runProjectionCLI(args[1:], db)
 	case "mcp":
 		return mcp.New(db, cfg).Serve(os.Stdin, os.Stdout)
 	default:
@@ -764,6 +766,35 @@ func runProviderCLI(args []string, db *storage.DB) error {
 		results = append(results, result)
 	}
 	return json.NewEncoder(os.Stdout).Encode(results)
+}
+
+func runProjectionCLI(args []string, db *storage.DB) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: agent-ledger projection quality|repair [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--source s] [--model m] [--project p]")
+	}
+	from, to, err := cliDateRange(args[1:], time.Now())
+	if err != nil {
+		return err
+	}
+	source := cliValue(args[1:], "--source")
+	model := cliValue(args[1:], "--model")
+	project := cliValue(args[1:], "--project")
+	switch args[0] {
+	case "quality":
+		report, err := db.GetProjectionQuality(from, to, source, model, project)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(report)
+	case "repair":
+		result, err := db.RepairUsageProjections(from, to, source, model, project)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	default:
+		return fmt.Errorf("unknown projection command %q", args[0])
+	}
 }
 
 func runA2ACLI(args []string, db *storage.DB) error {

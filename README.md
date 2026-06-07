@@ -58,6 +58,8 @@ CLI:
 ./agent-ledger a2a ingest --file task.json
 ./agent-ledger provider convert --file response.json
 ./agent-ledger provider ingest --file response.json
+./agent-ledger projection quality
+./agent-ledger projection repair --source gateway --from 2026-06-07 --to 2026-06-07
 ./agent-ledger reconcile parse --file provider-bill.csv --format csv
 ./agent-ledger reconcile import --file provider-bill.csv --format csv --provider openai
 ./agent-ledger reconcile status
@@ -221,6 +223,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/pricing/status` | Pricing freshness, source state, unpriced models |
 | `POST /api/pricing/sync` | Sync pricing |
 | `POST /api/pricing/recalculate?mode=zero|all` | Recalculate costs |
+| `POST /api/projections/repair` | Repair canonical `model_calls` to `usage_records` projection drift and rebuild aggregates |
 | `GET /api/cost-intelligence` | Expensive session explanations |
 | `GET /api/cache/doctor` | Cache hit/write/read diagnostics |
 | `GET /api/doctor?format=markdown` | One-click local diagnostics for usage, ingestion, pricing, and data quality |
@@ -293,6 +296,7 @@ If KPI totals and charts disagree:
 
 - The web UI uses `GET /api/dashboard` for KPI, token, cost, and model panels so they are read from one storage window.
 - Run `POST /api/recalculate-costs?mode=zero` after pricing changes.
+- If Doctor reports canonical-to-usage projection drift, run `agent-ledger projection repair` or `POST /api/projections/repair` with the same `from`/`to`/`source`/`model`/`project` scope. The repair is idempotent, backfills missing projected usage rows, realigns cache/cost metadata, and rebuilds aggregates.
 - Run `agent-ledger doctor --format markdown` and inspect projection, dashboard consistency, or pricing warnings if a mismatch persists.
 
 If costs differ from a provider invoice:
@@ -335,7 +339,7 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, canonical-to-usage projection, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional non-streaming local OpenAI-compatible gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, CLI workload/event/policy/router/replay/badge/preflight commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional non-streaming local OpenAI-compatible gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
 
 Planned integrations: OTLP protobuf/gRPC conformance, streaming gateway capture, provider-native gateway adapters, Postgres team mode, OIDC/SSO, richer MCP subscriptions, and multi-actor approval notifications.
 

@@ -58,6 +58,8 @@ CLI：
 ./agent-ledger a2a ingest --file task.json
 ./agent-ledger provider convert --file response.json
 ./agent-ledger provider ingest --file response.json
+./agent-ledger projection quality
+./agent-ledger projection repair --source gateway --from 2026-06-07 --to 2026-06-07
 ./agent-ledger reconcile parse --file provider-bill.csv --format csv
 ./agent-ledger reconcile import --file provider-bill.csv --format csv --provider openai
 ./agent-ledger reconcile status
@@ -221,6 +223,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/pricing/status` | 价格源、新鲜度、未计价模型 |
 | `POST /api/pricing/sync` | 同步价格 |
 | `POST /api/pricing/recalculate?mode=zero|all` | 重算费用 |
+| `POST /api/projections/repair` | 修复 canonical `model_calls` 到 `usage_records` 的投影漂移，并重建 aggregates |
 | `GET /api/cost-intelligence` | 昂贵会话解释 |
 | `GET /api/cache/doctor` | cache 命中、写入、读取诊断 |
 | `GET /api/doctor?format=markdown` | 一键本地诊断 usage、采集、价格与数据质量 |
@@ -293,6 +296,7 @@ agent-ledger doctor --format markdown
 
 - Web UI 使用 `GET /api/dashboard` 作为 KPI、token、费用、模型面板的一致性读取入口。
 - 价格变更后执行 `POST /api/recalculate-costs?mode=zero`。
+- 如果 Doctor 报告 canonical-to-usage projection 漂移，使用相同 `from`/`to`/`source`/`model`/`project` 范围运行 `agent-ledger projection repair` 或 `POST /api/projections/repair`。该修复是幂等的，会补回缺失投影、对齐 cache/cost 元数据，并重建 aggregates。
 - 如果差异持续，运行 `agent-ledger doctor --format markdown`，查看 projection、dashboard consistency 或 pricing warning。
 
 如果费用与 provider 账单不一致：
@@ -335,7 +339,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、canonical-to-usage projection、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选非流式本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选非流式本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
 
 后续路线：OTLP protobuf/gRPC conformance、streaming gateway capture、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、多操作者审批通知。
 

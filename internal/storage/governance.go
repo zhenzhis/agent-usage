@@ -53,6 +53,20 @@ type ProjectionQuality struct {
 	Message                string  `json:"message"`
 }
 
+// ProjectionRepairResult summarizes a canonical model-call projection repair.
+type ProjectionRepairResult struct {
+	Before         *ProjectionQuality `json:"before"`
+	After          *ProjectionQuality `json:"after"`
+	Inserted       int64              `json:"inserted"`
+	Updated        int64              `json:"updated"`
+	From           string             `json:"from"`
+	To             string             `json:"to"`
+	Source         string             `json:"source,omitempty"`
+	Model          string             `json:"model,omitempty"`
+	Project        string             `json:"project,omitempty"`
+	AggregatesNote string             `json:"aggregates_note"`
+}
+
 // ModelCallRow summarizes model call counts and cost.
 type ModelCallRow struct {
 	Source        string  `json:"source"`
@@ -418,6 +432,149 @@ func (d *DB) GetProjectionQuality(from, to time.Time, source, model, project str
 	q.Confidence = projectionConfidence(q)
 	q.Message = projectionMessage(q)
 	return q, nil
+}
+
+// RepairUsageProjections backfills and realigns usage_records derived from
+// canonical model_calls. It is idempotent and scoped by the same filters used by
+// GetProjectionQuality.
+func (d *DB) RepairUsageProjections(from, to time.Time, source, model, project string) (*ProjectionRepairResult, error) {
+	if to.IsZero() {
+		to = time.Now().UTC().AddDate(10, 0, 0)
+	}
+	before, err := d.GetProjectionQuality(from, to, source, model, project)
+	if err != nil {
+		return nil, err
+	}
+	where, args := projectionScopeWhere(from, to, source, model, project)
+
+	d.mu.Lock()
+	tx, err := d.db.Begin()
+	if err != nil {
+		d.mu.Unlock()
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+			d.mu.Unlock()
+		}
+	}()
+
+	updateSQL := `WITH candidates AS (
+		SELECT u.id AS usage_id,
+			mc.cache_creation_input_tokens,
+			mc.cache_read_input_tokens,
+			mc.reasoning_output_tokens,
+			mc.cost_usd,
+			CASE WHEN COALESCE(w.project,'')!='' THEN w.project ELSE u.project END AS project,
+			CASE WHEN COALESCE(w.git_branch,'')!='' THEN w.git_branch ELSE u.git_branch END AS git_branch,
+			mc.pricing_source,
+			mc.model_alias,
+			mc.pricing_confidence
+		FROM model_calls mc
+		LEFT JOIN workloads w ON w.workload_id=mc.workload_id
+		JOIN usage_records u ON u.source=mc.source
+			AND u.session_id=mc.session_id
+			AND u.model=mc.model
+			AND u.timestamp=mc.timestamp
+			AND u.input_tokens=mc.input_tokens
+			AND u.output_tokens=mc.output_tokens
+		WHERE ` + where + `
+			AND (
+				COALESCE(u.cache_creation_input_tokens,0)<>COALESCE(mc.cache_creation_input_tokens,0)
+				OR COALESCE(u.cache_read_input_tokens,0)<>COALESCE(mc.cache_read_input_tokens,0)
+				OR COALESCE(u.reasoning_output_tokens,0)<>COALESCE(mc.reasoning_output_tokens,0)
+				OR ABS(COALESCE(u.cost_usd,0)-COALESCE(mc.cost_usd,0)) > 0.000001
+				OR COALESCE(u.pricing_source,'')<>COALESCE(mc.pricing_source,'')
+				OR COALESCE(u.pricing_confidence,'')<>COALESCE(mc.pricing_confidence,'')
+			)
+	)
+	UPDATE usage_records
+	SET cache_creation_input_tokens=(SELECT cache_creation_input_tokens FROM candidates WHERE usage_id=usage_records.id),
+		cache_read_input_tokens=(SELECT cache_read_input_tokens FROM candidates WHERE usage_id=usage_records.id),
+		reasoning_output_tokens=(SELECT reasoning_output_tokens FROM candidates WHERE usage_id=usage_records.id),
+		cost_usd=(SELECT cost_usd FROM candidates WHERE usage_id=usage_records.id),
+		project=(SELECT project FROM candidates WHERE usage_id=usage_records.id),
+		git_branch=(SELECT git_branch FROM candidates WHERE usage_id=usage_records.id),
+		pricing_source=(SELECT pricing_source FROM candidates WHERE usage_id=usage_records.id),
+		pricing_model=(SELECT model_alias FROM candidates WHERE usage_id=usage_records.id),
+		pricing_confidence=(SELECT pricing_confidence FROM candidates WHERE usage_id=usage_records.id),
+		pricing_note='canonical model.call projection repaired'
+	WHERE id IN (SELECT usage_id FROM candidates)`
+	updateRes, err := tx.Exec(updateSQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	updated, _ := updateRes.RowsAffected()
+
+	insertSQL := `INSERT OR IGNORE INTO usage_records(source,session_id,model,input_tokens,output_tokens,
+		cache_creation_input_tokens,cache_read_input_tokens,reasoning_output_tokens,cost_usd,timestamp,project,git_branch,
+		pricing_source,pricing_model,pricing_confidence,pricing_note)
+	SELECT mc.source,mc.session_id,mc.model,mc.input_tokens,mc.output_tokens,
+		mc.cache_creation_input_tokens,mc.cache_read_input_tokens,mc.reasoning_output_tokens,mc.cost_usd,mc.timestamp,
+		COALESCE(NULLIF(w.project,''),''),COALESCE(NULLIF(w.git_branch,''),'unknown'),
+		mc.pricing_source,mc.model_alias,mc.pricing_confidence,'canonical model.call projection repaired'
+	FROM model_calls mc
+	LEFT JOIN workloads w ON w.workload_id=mc.workload_id
+	LEFT JOIN usage_records u ON u.source=mc.source
+		AND u.session_id=mc.session_id
+		AND u.model=mc.model
+		AND u.timestamp=mc.timestamp
+		AND u.input_tokens=mc.input_tokens
+		AND u.output_tokens=mc.output_tokens
+	WHERE ` + where + ` AND u.id IS NULL`
+	insertRes, err := tx.Exec(insertSQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	inserted, _ := insertRes.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	committed = true
+	d.mu.Unlock()
+
+	if err := d.RebuildUsageAggregates(); err != nil {
+		return nil, err
+	}
+	if err := d.BackfillWorkloadsFromUsage(from, to); err != nil {
+		return nil, err
+	}
+	after, err := d.GetProjectionQuality(from, to, source, model, project)
+	if err != nil {
+		return nil, err
+	}
+	return &ProjectionRepairResult{
+		Before:         before,
+		After:          after,
+		Inserted:       inserted,
+		Updated:        updated,
+		From:           from.Format(time.RFC3339),
+		To:             to.Format(time.RFC3339),
+		Source:         source,
+		Model:          model,
+		Project:        project,
+		AggregatesNote: "usage aggregates rebuilt after projection repair",
+	}, nil
+}
+
+func projectionScopeWhere(from, to time.Time, source, model, project string) (string, []interface{}) {
+	where := []string{"mc.timestamp >= ?", "mc.timestamp < ?"}
+	args := []interface{}{from, to}
+	if source != "" {
+		where = append(where, "mc.source=?")
+		args = append(args, source)
+	}
+	if model != "" {
+		where = append(where, "mc.model=?")
+		args = append(args, model)
+	}
+	if project != "" {
+		where = append(where, "COALESCE(w.project,'')=?")
+		args = append(args, project)
+	}
+	return strings.Join(where, " AND "), args
 }
 
 func projectionConfidence(q *ProjectionQuality) float64 {
