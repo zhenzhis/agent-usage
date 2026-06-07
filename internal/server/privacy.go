@@ -72,7 +72,13 @@ func applyWrappedPrivacy(report *storage.WrappedReport, privacy config.PrivacyCo
 }
 
 func applyDoctorPrivacy(report *storage.DoctorReport, privacy config.PrivacyConfig) {
-	if report == nil || !(privacy.RedactPaths || privacy.ScreenshotMode) {
+	if report == nil {
+		return
+	}
+	for i := range report.WorkloadStates {
+		applyWorkloadStatePrivacy(&report.WorkloadStates[i], privacy)
+	}
+	if !(privacy.RedactPaths || privacy.ScreenshotMode) {
 		return
 	}
 	for i := range report.Ingestion {

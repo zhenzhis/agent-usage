@@ -242,7 +242,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `POST /api/projections/repair` | Repair canonical `model_calls` to `usage_records` projection drift and rebuild aggregates |
 | `GET /api/cost-intelligence` | Expensive session explanations |
 | `GET /api/cache/doctor` | Cache hit/write/read diagnostics |
-| `GET /api/doctor?format=markdown` | One-click local diagnostics for usage, ingestion, pricing, and data quality |
+| `GET /api/doctor?format=markdown` | One-click local diagnostics for usage, ingestion, pricing, data quality, and workload state |
 | `GET /api/data-quality` | Trust and completeness report |
 | `GET /api/model-calls` | Calls by model/source/project |
 | `GET /api/quota/status` | Local quota and burn-rate estimates |
@@ -309,7 +309,7 @@ Start with the one-click doctor:
 agent-ledger doctor --format markdown
 ```
 
-Or open `GET /api/doctor?format=markdown&privacy=1`. The report checks the selected time range, collector health, path existence/readability, last scan errors, pricing freshness, unpriced models, empty usage windows, and canonical-to-usage projection consistency.
+Or open `GET /api/doctor?format=markdown&privacy=1`. The report checks the selected time range, collector health, path existence/readability, last scan errors, pricing freshness, unpriced models, empty usage windows, canonical-to-usage projection consistency, and workload terminal-state issues such as stale runs or blocked policy decisions.
 
 If Codex, OpenCode, or another source shows no data:
 

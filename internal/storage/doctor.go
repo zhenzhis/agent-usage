@@ -25,6 +25,7 @@ type DoctorReport struct {
 	Ingestion      []IngestionHealth     `json:"ingestion"`
 	Quality        *DataQualityReport    `json:"quality"`
 	Projection     *ProjectionQuality    `json:"projection"`
+	WorkloadStates []WorkloadState       `json:"workload_states,omitempty"`
 	PricingSources []PricingSourceStatus `json:"pricing_sources"`
 	Checks         []DoctorCheck         `json:"checks"`
 	Summary        string                `json:"summary"`
@@ -52,6 +53,10 @@ func (d *DB) GetDoctorReport(from, to time.Time, staleAfter time.Duration, sourc
 	if err != nil {
 		return nil, err
 	}
+	workloadStates, err := d.GetWorkloadStates(from, to, source, model, project, 20, 10*time.Minute)
+	if err != nil {
+		return nil, err
+	}
 	report := &DoctorReport{
 		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
 		From:           from.Format(time.RFC3339),
@@ -60,12 +65,14 @@ func (d *DB) GetDoctorReport(from, to time.Time, staleAfter time.Duration, sourc
 		Ingestion:      health,
 		Quality:        quality,
 		Projection:     projection,
+		WorkloadStates: workloadStates,
 		PricingSources: pricingSources,
 	}
 	report.Checks = append(report.Checks, usageDoctorChecks(*stats, source, model, project)...)
 	report.Checks = append(report.Checks, ingestionDoctorChecks(health, source)...)
 	report.Checks = append(report.Checks, pricingDoctorChecks(pricingSources, quality)...)
 	report.Checks = append(report.Checks, projectionDoctorChecks(projection)...)
+	report.Checks = append(report.Checks, workloadStateDoctorChecks(workloadStates)...)
 	report.Summary = doctorSummary(report.Checks)
 	if len(report.Checks) == 0 {
 		report.Checks = append(report.Checks, DoctorCheck{
@@ -76,6 +83,46 @@ func (d *DB) GetDoctorReport(from, to time.Time, staleAfter time.Duration, sourc
 		report.Summary = "ok"
 	}
 	return report, nil
+}
+
+func workloadStateDoctorChecks(states []WorkloadState) []DoctorCheck {
+	var checks []DoctorCheck
+	for _, state := range states {
+		switch state.Phase {
+		case "stale":
+			checks = append(checks, DoctorCheck{
+				Name: "workload.stale", Status: "warning", Severity: "warning",
+				Message: fmt.Sprintf("%s has %d stale active runs", state.WorkloadID, state.StaleRuns),
+				Action:  "inspect workload state, run liveness, and recent heartbeat events",
+			})
+		case "blocked":
+			checks = append(checks, DoctorCheck{
+				Name: "workload.blocked", Status: "critical", Severity: "critical",
+				Message: fmt.Sprintf("%s has %d blocking policy decisions", state.WorkloadID, state.PolicyBlocks),
+				Action:  "resolve the local policy decision before continuing the workload",
+			})
+		case "needs_approval":
+			checks = append(checks, DoctorCheck{
+				Name: "workload.needs_approval", Status: "warning", Severity: "warning",
+				Message: fmt.Sprintf("%s has %d approval-required policy decisions", state.WorkloadID, state.PolicyApprovalsRequired),
+				Action:  "approve, reject, or revise the guarded action",
+			})
+		case "needs_evaluation":
+			checks = append(checks, DoctorCheck{
+				Name: "workload.needs_evaluation", Status: "info", Severity: "info",
+				Message: fmt.Sprintf("%s has artifacts but no evaluation signal", state.WorkloadID),
+				Action:  "record a test, review, quality, or acceptance signal",
+			})
+		}
+		if state.EstimatedBudgetExhausted {
+			checks = append(checks, DoctorCheck{
+				Name: "workload.budget_exhausted", Status: "warning", Severity: "warning",
+				Message: fmt.Sprintf("%s estimated cost $%.4f reached budget $%.4f", state.WorkloadID, state.CostUSD, state.BudgetUSD),
+				Action:  "review budget policy before starting additional runs",
+			})
+		}
+	}
+	return checks
 }
 
 func projectionDoctorChecks(projection *ProjectionQuality) []DoctorCheck {
@@ -217,6 +264,14 @@ func FormatDoctorMarkdown(report *DoctorReport) string {
 	b.WriteString(fmt.Sprintf("- Calls: `%d`\n- Tokens: `%d`\n- Cost: `$%.4f`\n\n", report.Stats.TotalCalls, report.Stats.TotalTokens, report.Stats.TotalCost))
 	if report.Projection != nil {
 		b.WriteString(fmt.Sprintf("- Projection: `%s` (`%.2f` confidence)\n\n", sanitizeMarkdownCell(report.Projection.Message), report.Projection.Confidence))
+	}
+	if len(report.WorkloadStates) > 0 {
+		b.WriteString("## Workload States\n\n| Workload | Phase | Readiness | Progress | Next Action |\n|---|---|---:|---:|---|\n")
+		for _, state := range report.WorkloadStates {
+			b.WriteString(fmt.Sprintf("| %s | %s | %.0f%% | %.0f%% | %s |\n",
+				shortID(state.WorkloadID), sanitizeMarkdownCell(state.Phase), state.ReadinessScore*100, state.Progress*100, sanitizeMarkdownCell(state.NextAction)))
+		}
+		b.WriteString("\n")
 	}
 	b.WriteString("## Checks\n\n| Severity | Check | Source | Message | Action |\n|---|---|---|---|---|\n")
 	for _, check := range report.Checks {

@@ -186,6 +186,37 @@ func TestWorkloadStateAPIPrivacy(t *testing.T) {
 	}
 }
 
+func TestEvidenceBundleIncludesRedactedWorkloadState(t *testing.T) {
+	db := testServerDB(t)
+	now := time.Now().UTC()
+	workloadID, err := db.CreateWorkload("private evidence goal", "codex", "private-project", "zhenzhis/private-project", "feature/private", "", "research", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	if _, err := db.StartAgentRun(workloadID, "codex", "codex", "codex", "C:/private/workspace"); err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	srv := New(db, "", Options{})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/evidence-bundle?from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.Format("2006-01-02"), nil)
+	rr := httptest.NewRecorder()
+	srv.handleEvidenceBundle(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("evidence status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var bundle map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &bundle); err != nil {
+		t.Fatalf("decode bundle: %v", err)
+	}
+	rows, ok := bundle["workload_states"].([]interface{})
+	if !ok || len(rows) != 1 {
+		t.Fatalf("missing workload states: %#v", bundle["workload_states"])
+	}
+	row := rows[0].(map[string]interface{})
+	if row["goal"] != "<redacted>" || row["project"] != "<redacted>" || row["repo"] != "<redacted>" || row["git_branch"] != "<redacted>" || row["team"] != "<redacted>" {
+		t.Fatalf("workload state privacy failed: %#v", row)
+	}
+}
+
 func TestWorkloadDetailPrivacyRedactsContextRefs(t *testing.T) {
 	detail := &storage.WorkloadDetail{
 		Summary: storage.WorkloadSummary{

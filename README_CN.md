@@ -242,7 +242,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `POST /api/projections/repair` | 修复 canonical `model_calls` 到 `usage_records` 的投影漂移，并重建 aggregates |
 | `GET /api/cost-intelligence` | 昂贵会话解释 |
 | `GET /api/cache/doctor` | cache 命中、写入、读取诊断 |
-| `GET /api/doctor?format=markdown` | 一键本地诊断 usage、采集、价格与数据质量 |
+| `GET /api/doctor?format=markdown` | 一键本地诊断 usage、采集、价格、数据质量与 workload 状态 |
 | `GET /api/data-quality` | 数据可信度报告 |
 | `GET /api/model-calls` | 模型调用次数 |
 | `GET /api/quota/status` | 本地 quota 和 burn-rate 估算 |
@@ -309,7 +309,7 @@ Canonical event ingest 支持 workload、run、run heartbeat、model call、tool
 agent-ledger doctor --format markdown
 ```
 
-也可以打开 `GET /api/doctor?format=markdown&privacy=1`。诊断报告会检查当前时间窗口、collector health、路径是否存在/可读、最近扫描错误、价格新鲜度、未计价模型、空 usage 窗口，以及 canonical-to-usage projection 一致性。
+也可以打开 `GET /api/doctor?format=markdown&privacy=1`。诊断报告会检查当前时间窗口、collector health、路径是否存在/可读、最近扫描错误、价格新鲜度、未计价模型、空 usage 窗口、canonical-to-usage projection 一致性，以及 stale run、policy block 等 workload terminal-state 问题。
 
 如果 Codex、OpenCode 或其他来源没有数据：
 

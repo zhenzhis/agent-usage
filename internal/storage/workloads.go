@@ -893,6 +893,29 @@ func (d *DB) GetWorkloadState(workloadID string, staleAfter time.Duration) (*Wor
 	return state, nil
 }
 
+// GetWorkloadStates returns bounded terminal-state snapshots for workloads in a window.
+func (d *DB) GetWorkloadStates(from, to time.Time, source, model, project string, limit int, staleAfter time.Duration) ([]WorkloadState, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	page, err := d.GetWorkloadsPage(from, to, source, model, project, "", "", limit, 0)
+	if err != nil {
+		return nil, err
+	}
+	states := make([]WorkloadState, 0, len(page.Rows))
+	for _, row := range page.Rows {
+		state, err := d.GetWorkloadState(row.WorkloadID, staleAfter)
+		if err != nil {
+			return nil, err
+		}
+		states = append(states, *state)
+	}
+	if states == nil {
+		states = []WorkloadState{}
+	}
+	return states, nil
+}
+
 // GetWorkloadGraph returns a compact workload graph.
 func (d *DB) GetWorkloadGraph(workloadID string) (*WorkloadGraph, error) {
 	detail, err := d.GetWorkloadDetail(workloadID)

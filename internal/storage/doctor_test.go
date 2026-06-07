@@ -102,6 +102,36 @@ func TestGetDoctorReportProjectionIssues(t *testing.T) {
 	}
 }
 
+func TestGetDoctorReportIncludesWorkloadStateIssues(t *testing.T) {
+	db := tempDB(t)
+	now := time.Now().UTC()
+	id, err := db.CreateWorkload("stale doctor workload", "codex", "agent-ledger", "agent-ledger", "main", "", "", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(id, "codex", "codex", "codex", "/tmp/agent-ledger")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	if _, err := db.RecordAgentRunHeartbeat("evt-doctor-state", runID, "working", "testing", "waiting", 0.4, nil, now.Add(-20*time.Minute), 1); err != nil {
+		t.Fatalf("RecordAgentRunHeartbeat: %v", err)
+	}
+	report, err := db.GetDoctorReport(now.Add(-time.Hour), now.Add(time.Hour), time.Hour, "codex", "", "agent-ledger")
+	if err != nil {
+		t.Fatalf("GetDoctorReport: %v", err)
+	}
+	if len(report.WorkloadStates) != 1 || report.WorkloadStates[0].Phase != "stale" {
+		t.Fatalf("missing workload state: %+v", report.WorkloadStates)
+	}
+	if !hasDoctorCheck(report.Checks, "workload.stale") {
+		t.Fatalf("missing workload stale check: %+v", report.Checks)
+	}
+	md := FormatDoctorMarkdown(report)
+	if !strings.Contains(md, "Workload States") || !strings.Contains(md, "workload.stale") {
+		t.Fatalf("markdown missing workload states: %s", md)
+	}
+}
+
 func hasDoctorCheck(checks []DoctorCheck, name string) bool {
 	for _, check := range checks {
 		if check.Name == name {

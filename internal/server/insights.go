@@ -635,6 +635,15 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 	health, _ := s.db.GetIngestionHealth()
 	pricingRows, _ := s.db.GetPricingAudit(500)
 	insights, _ := s.db.GetCostIntelligence(from, to, source, model, project, 20)
+	workloadStates, _ := s.db.GetWorkloadStates(from, to, source, model, project, 20, 10*time.Minute)
+	privacy := s.privacyFor(r)
+	privacy.RedactPaths = true
+	privacy.HashSessionIDs = true
+	privacy.HideProjectNames = true
+	privacy.ScreenshotMode = true
+	for i := range workloadStates {
+		applyWorkloadStatePrivacy(&workloadStates[i], privacy)
+	}
 	bundle := map[string]interface{}{
 		"product":           "Agent Ledger",
 		"generated_at":      time.Now().UTC().Format(time.RFC3339),
@@ -644,6 +653,7 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 		"ingestion_health":  health,
 		"pricing_audit":     pricingRows,
 		"cost_intelligence": insights,
+		"workload_states":   workloadStates,
 	}
 	raw, _ := json.Marshal(bundle)
 	_ = s.db.RecordOfflineBundle(fmt.Sprintf("evidence-%d", time.Now().Unix()), raw, "json")
