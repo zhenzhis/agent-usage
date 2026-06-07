@@ -583,6 +583,12 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err)
 		return
 	}
+	source := r.URL.Query().Get("source")
+	model := r.URL.Query().Get("model")
+	project := r.URL.Query().Get("project")
+	if !s.evaluateOperationPolicy(w, r, "export", source, model, project, "evidence-bundle") {
+		return
+	}
 	quality, err := s.db.GetDataQuality(s.options.Pricing.StaleAfter)
 	if err != nil {
 		serverError(w, err)
@@ -590,7 +596,7 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 	}
 	health, _ := s.db.GetIngestionHealth()
 	pricingRows, _ := s.db.GetPricingAudit(500)
-	insights, _ := s.db.GetCostIntelligence(from, to, r.URL.Query().Get("source"), r.URL.Query().Get("model"), r.URL.Query().Get("project"), 20)
+	insights, _ := s.db.GetCostIntelligence(from, to, source, model, project, 20)
 	bundle := map[string]interface{}{
 		"product":           "Agent Ledger",
 		"generated_at":      time.Now().UTC().Format(time.RFC3339),
@@ -603,6 +609,7 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, _ := json.Marshal(bundle)
 	_ = s.db.RecordOfflineBundle(fmt.Sprintf("evidence-%d", time.Now().Unix()), raw, "json")
+	_ = s.db.AppendAuditLog("local", s.roleFor(r), "export", "evidence-bundle", map[string]string{"privacy": "redacted", "source": source, "model": model, "project": project})
 	w.Header().Set("Content-Disposition", "attachment; filename=agent-ledger-evidence.json")
 	writeJSON(w, bundle)
 }

@@ -51,3 +51,34 @@ func (s *Server) handlePolicyEvaluate(w http.ResponseWriter, r *http.Request) {
 	})
 	writeJSON(w, result)
 }
+
+func (s *Server) evaluateOperationPolicy(w http.ResponseWriter, r *http.Request, action, source, model, project, target string) bool {
+	result := ledgerpolicy.Evaluate(s.options.Policies, ledgerpolicy.Request{
+		Source:  source,
+		Model:   model,
+		Project: project,
+		Action:  action,
+		Role:    s.roleFor(r),
+	})
+	if result.Enabled && len(result.Decisions) > 0 {
+		raw, _ := json.Marshal(result.Decisions)
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.evaluate", target, map[string]string{
+			"action":           action,
+			"effective_action": result.Action,
+			"source":           source,
+			"model":            model,
+			"project":          project,
+			"decisions":        string(raw),
+		})
+	}
+	switch ledgerpolicy.NormalizeAction(result.Action) {
+	case "block":
+		http.Error(w, "blocked by policy", http.StatusForbidden)
+		return false
+	case "require_approval":
+		http.Error(w, "operation requires approval by policy", http.StatusForbidden)
+		return false
+	default:
+		return true
+	}
+}

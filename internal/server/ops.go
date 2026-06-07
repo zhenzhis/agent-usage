@@ -98,6 +98,9 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	source := r.URL.Query().Get("source")
 	model := r.URL.Query().Get("model")
 	project := r.URL.Query().Get("project")
+	if !s.evaluateOperationPolicy(w, r, "export", source, model, project, exportType) {
+		return
+	}
 	privacy := s.privacyFor(r)
 	if s.options.Policies.RequirePrivacyExport && !privacy.ScreenshotMode && r.URL.Query().Get("privacy") != "1" && r.URL.Query().Get("privacy") != "true" {
 		badRequest(w, fmt.Errorf("policy requires privacy=1 for exports"))
@@ -169,6 +172,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	switch format {
 	case "json":
 		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "export", exportType, map[string]string{"format": format, "privacy": fmt.Sprint(r.URL.Query().Get("privacy"))})
 		writeJSON(w, payload)
 	case "csv":
 		body, err := csvFor(exportType, payload)
@@ -178,6 +182,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "export", exportType, map[string]string{"format": format, "privacy": fmt.Sprint(r.URL.Query().Get("privacy"))})
 		_, _ = w.Write(body)
 	default:
 		badRequest(w, fmt.Errorf("unsupported export format %q", format))
@@ -193,6 +198,9 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	source := r.URL.Query().Get("source")
 	model := r.URL.Query().Get("model")
 	project := r.URL.Query().Get("project")
+	if !s.evaluateOperationPolicy(w, r, "report", source, model, project, "markdown") {
+		return
+	}
 	stats, err := s.db.GetDashboardStatsFiltered(from, to, source, model, project)
 	if err != nil {
 		serverError(w, err)
@@ -226,6 +234,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	_ = s.db.AppendAuditLog("local", s.roleFor(r), "report", "markdown", map[string]string{"source": source, "model": model, "project": project})
 	_, _ = w.Write([]byte(b.String()))
 }
 
@@ -240,6 +249,12 @@ func (s *Server) handleOfflineBundleExport(w http.ResponseWriter, r *http.Reques
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
+		return
+	}
+	source := r.URL.Query().Get("source")
+	model := r.URL.Query().Get("model")
+	project := r.URL.Query().Get("project")
+	if !s.evaluateOperationPolicy(w, r, "export", source, model, project, "offline-bundle") {
 		return
 	}
 	privacyLabel := "metadata-only"
@@ -258,9 +273,9 @@ func (s *Server) handleOfflineBundleExport(w http.ResponseWriter, r *http.Reques
 	}
 	bundle, raw, err := s.db.BuildOfflineBundle(
 		from, to,
-		r.URL.Query().Get("source"),
-		r.URL.Query().Get("model"),
-		r.URL.Query().Get("project"),
+		source,
+		model,
+		project,
 		privacyLabel,
 		signingKey,
 		r.URL.Query().Get("key_id"),
