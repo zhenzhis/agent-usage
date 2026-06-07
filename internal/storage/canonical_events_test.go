@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -241,6 +242,48 @@ func TestIngestCanonicalEventRejectsPromptContent(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected prompt content rejection")
+	}
+}
+
+func TestIngestCanonicalRunRedactsCommandSecrets(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	start, err := db.IngestCanonicalEvent(CanonicalEvent{
+		EventID:   "evt-secret-run-workload",
+		Source:    "codex",
+		EventType: "workload.started",
+		Payload:   rawJSON(t, map[string]interface{}{"goal": "secret run", "project": "agent-ledger"}),
+	})
+	if err != nil {
+		t.Fatalf("workload start: %v", err)
+	}
+	if _, err := db.IngestCanonicalEvent(CanonicalEvent{
+		EventID:    "evt-secret-run",
+		Source:     "codex",
+		EventType:  "agent.run.started",
+		WorkloadID: start.WorkloadID,
+		Payload: rawJSON(t, map[string]interface{}{
+			"run_id":  "run-secret-command",
+			"command": "ANTHROPIC_API_KEY=sk-ant-test codex --api-key=sk-openai --secret secret-value",
+		}),
+	}); err != nil {
+		t.Fatalf("run start: %v", err)
+	}
+	detail, err := db.GetWorkloadDetail(start.WorkloadID)
+	if err != nil {
+		t.Fatalf("detail: %v", err)
+	}
+	if len(detail.Runs) != 1 {
+		t.Fatalf("runs=%#v", detail.Runs)
+	}
+	command := detail.Runs[0].Command
+	for _, leaked := range []string{"sk-ant-test", "sk-openai", "secret-value"} {
+		if strings.Contains(command, leaked) {
+			t.Fatalf("command leaked %q: %s", leaked, command)
+		}
 	}
 }
 

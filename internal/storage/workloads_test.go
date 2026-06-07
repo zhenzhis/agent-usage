@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -113,6 +114,34 @@ func TestStartAgentRunRejectsClosedWorkload(t *testing.T) {
 	}
 	if _, err := db.StartAgentRun(id, "codex", "codex", "codex exec", "/home/user/repo-a"); err == nil {
 		t.Fatal("expected closed workload to reject new run")
+	}
+}
+
+func TestStartAgentRunRedactsCommandSecrets(t *testing.T) {
+	db := tempDB(t)
+	id, err := db.CreateWorkload("secret command", "codex", "repo-a", "repo-a", "main", "", "", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(id, "codex", "codex", "OPENAI_API_KEY=sk-test codex --token secret-value --password='hidden' -m gpt-5 -H 'Authorization: Bearer abc123'", "/home/user/repo-a")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	detail, err := db.GetWorkloadDetail(id)
+	if err != nil {
+		t.Fatalf("GetWorkloadDetail: %v", err)
+	}
+	if len(detail.Runs) != 1 || detail.Runs[0].RunID != runID {
+		t.Fatalf("run detail missing: %+v", detail.Runs)
+	}
+	command := detail.Runs[0].Command
+	for _, leaked := range []string{"sk-test", "secret-value", "hidden", "Bearer abc123"} {
+		if strings.Contains(command, leaked) {
+			t.Fatalf("command leaked %q: %s", leaked, command)
+		}
+	}
+	if !strings.Contains(command, "<redacted>") {
+		t.Fatalf("expected redacted marker in command: %s", command)
 	}
 }
 

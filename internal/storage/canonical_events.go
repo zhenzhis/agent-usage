@@ -345,7 +345,7 @@ func (d *DB) applyCanonicalEvent(tx *sql.Tx, event *CanonicalEvent, payload map[
 		_, err := tx.Exec(`INSERT OR IGNORE INTO agent_runs(run_id,workload_id,parent_run_id,source,agent_name,agent_version,command,cwd,status,started_at,confidence)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?)`, event.AgentRunID, event.WorkloadID, payloadString(payload, "parent_run_id"), event.Source,
 			firstNonEmptyStorage(payloadString(payload, "agent_name"), event.Source), payloadString(payload, "agent_version"),
-			payloadString(payload, "command"), payloadString(payload, "cwd"), firstNonEmptyStorage(payloadString(payload, "status"), "running"), event.Timestamp, event.Confidence)
+			redactCommandSecrets(payloadString(payload, "command")), payloadString(payload, "cwd"), firstNonEmptyStorage(payloadString(payload, "status"), "running"), event.Timestamp, event.Confidence)
 		if err != nil {
 			return nil, err
 		}

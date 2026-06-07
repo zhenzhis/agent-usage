@@ -326,6 +326,7 @@ If costs differ from a provider invoice:
 - Optional RBAC supports `viewer`, `operator`, and `admin` tokens.
 - Policy approval requests are local metadata records. They authorize only matching action/target retries and do not include prompt content.
 - The optional provider gateway is disabled by default. It forwards prompt content only to the configured upstream in memory, reads API keys from environment variables, and stores usage metadata rather than message content.
+- Run commands are stored as metadata, but common command-line secret patterns such as `API_KEY=...`, `--token ...`, `--api-key=...`, and `Bearer ...` are best-effort redacted before persistence. Prefer environment variables or a secret manager instead of durable command arguments.
 - Privacy presets can hide paths, project names, branches, machine names, and session IDs.
 - Webhooks are disabled by default and should only send redacted summaries.
 - Offline bundles are local JSON exports. Set `AGENT_LEDGER_BUNDLE_KEY` and pass `signed=1` / `--signed` to add an HMAC-SHA256 signature; use `verify=1` / `--verify` on import to require signature verification.

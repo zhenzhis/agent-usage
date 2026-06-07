@@ -7,9 +7,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var commandSecretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(\b[A-Z0-9_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|ACCESS_KEY|PRIVATE_KEY)[A-Z0-9_]*=)("[^"]*"|'[^']*'|\S+)`),
+	regexp.MustCompile(`(?i)(--(?:api[-_]?key|token|password|secret|access[-_]?token|auth[-_]?token|private[-_]?key)(?:=|\s+))("[^"]*"|'[^']*'|\S+)`),
+	regexp.MustCompile(`(?i)(\bBearer\s+)[A-Za-z0-9._~+/\-=]+`),
+}
 
 // WorkloadSummary is the canonical goal-level ledger row exposed by the API.
 type WorkloadSummary struct {
@@ -398,7 +405,7 @@ func (d *DB) StartAgentRun(workloadID, source, agentName, command, cwd string) (
 	id := generatedID("run")
 	now := time.Now().UTC()
 	if _, err := d.db.Exec(`INSERT INTO agent_runs(run_id,workload_id,source,agent_name,command,cwd,status,started_at,confidence)
-		VALUES(?,?,?,?,?,?,?,?,?)`, id, workloadID, source, agentName, command, cwd, "running", now, 1.0); err != nil {
+		VALUES(?,?,?,?,?,?,?,?,?)`, id, workloadID, source, agentName, redactCommandSecrets(command), cwd, "running", now, 1.0); err != nil {
 		return "", err
 	}
 	_, _ = d.db.Exec(`UPDATE workloads SET updated_at=? WHERE workload_id=?`, now, workloadID)
@@ -1148,6 +1155,17 @@ func runHeartbeatMetricsJSON(metrics map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("heartbeat metrics are too large: max 16 KiB")
 	}
 	return string(raw), nil
+}
+
+func redactCommandSecrets(command string) string {
+	if strings.TrimSpace(command) == "" {
+		return command
+	}
+	out := command
+	for _, pattern := range commandSecretPatterns {
+		out = pattern.ReplaceAllString(out, `${1}<redacted>`)
+	}
+	return out
 }
 
 func getAgentRunEventTx(tx *sql.Tx, eventID string) (*AgentRunEventRow, error) {
