@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -64,7 +64,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("missing resource/prompt capabilities: %#v", caps)
 	}
 	resources := out[1]["result"].(map[string]interface{})["resources"].([]interface{})
-	if !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://budget/current") {
+	if !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/feed") {
 		t.Fatalf("expected core resources, got %#v", resources)
 	}
 	resourceText := resourceTextPayload(t, out[2])
@@ -117,6 +117,42 @@ func TestMCPRecentWorkloadsResourceIncludesState(t *testing.T) {
 	}
 	if payload["stale_after_seconds"] == nil {
 		t.Fatalf("resource missing stale threshold: %#v", payload)
+	}
+}
+
+func TestMCPWorkloadFeedToolAndResource(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+	if _, err := db.CreateWorkload("feed workload", "codex", "agent-ledger", "zhenzhis/agent-ledger", "main", "", "infra", 0); err != nil {
+		t.Fatalf("create workload: %v", err)
+	}
+
+	out := serveLines(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.workload_feed","arguments":{"limit":10,"severity":"info"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"agent-ledger://workloads/feed"}}`,
+	)
+	payload := toolTextPayload(t, out[0])
+	rows, ok := payload["rows"].([]interface{})
+	if !ok || len(rows) == 0 {
+		t.Fatalf("tool feed missing rows: %#v", payload)
+	}
+	if !strings.HasPrefix(payload["cursor"].(string), "sha256:") || payload["generated_at"] == "" {
+		t.Fatalf("tool feed missing cursor metadata: %#v", payload)
+	}
+	row := rows[0].(map[string]interface{})
+	if row["event_type"] != "workload.state.planned" || row["source"] != "codex" {
+		t.Fatalf("unexpected feed row: %#v", row)
+	}
+
+	var resourcePayload map[string]interface{}
+	text := resourceTextPayload(t, out[1])
+	if err := json.Unmarshal([]byte(text), &resourcePayload); err != nil {
+		t.Fatalf("decode feed resource: %v\n%s", err, text)
+	}
+	resourceRows, ok := resourcePayload["rows"].([]interface{})
+	if !ok || len(resourceRows) == 0 || !strings.HasPrefix(resourcePayload["cursor"].(string), "sha256:") {
+		t.Fatalf("resource feed missing rows/cursor: %#v", resourcePayload)
 	}
 }
 

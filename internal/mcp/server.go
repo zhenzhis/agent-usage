@@ -208,6 +208,17 @@ func tools() []map[string]interface{} {
 			"workload_id": requiredStringSchema(),
 			"max_age":     stringSchema(),
 		}),
+		tool("ledger.workload_feed", "Return a cursor-stable metadata-only workload state feed for local monitors and agent routers.", map[string]interface{}{
+			"from":        stringSchema(),
+			"to":          stringSchema(),
+			"source":      stringSchema(),
+			"model":       stringSchema(),
+			"project":     stringSchema(),
+			"phase":       stringSchema(),
+			"severity":    stringSchema(),
+			"limit":       integerSchema(),
+			"stale_after": stringSchema(),
+		}),
 		tool("ledger.record_tool_call", "Record metadata-only tool execution such as shell, file, browser, MCP, or custom agent actions.", map[string]interface{}{
 			"workload_id":  requiredStringSchema(),
 			"run_id":       stringSchema(),
@@ -398,6 +409,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://integrations/adapter-contract", "Adapter Contract", "Machine-readable contract for writing privacy-safe Agent Ledger adapters.", "application/json"),
 		resource("agent-ledger://budget/current", "Current Budget Windows", "Local quota and budget estimate for 5h/day/week/month windows.", "application/json"),
 		resource("agent-ledger://workloads/recent", "Recent Workloads", "Recent workload summaries and terminal-state snapshots from the local ledger.", "application/json"),
+		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers.", "application/json"),
 		resource("agent-ledger://policies/status", "Policy Status", "Local policy configuration summary without prompt or secret content.", "application/json"),
 	}
 }
@@ -459,6 +471,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolWorkloadTimeline(args)
 	case "ledger.workload_state":
 		return s.toolWorkloadState(args)
+	case "ledger.workload_feed":
+		return s.toolWorkloadFeed(args)
 	case "ledger.record_tool_call":
 		return s.toolRecordToolCall(args)
 	case "ledger.record_artifact":
@@ -563,6 +577,12 @@ func (s *Server) readResource(uri string) (interface{}, error) {
 			"states":              states,
 			"stale_after_seconds": int64(staleAfter / time.Second),
 		}
+	case "agent-ledger://workloads/feed":
+		feed, err := s.defaultWorkloadFeed()
+		if err != nil {
+			return nil, err
+		}
+		payload = feed
 	case "agent-ledger://policies/status":
 		payload = map[string]interface{}{
 			"enabled":                s.cfg.Policies.Enabled,
@@ -866,6 +886,43 @@ func (s *Server) toolWorkloadState(args json.RawMessage) (interface{}, error) {
 		maxAge = parsed
 	}
 	return s.db.GetWorkloadState(in.WorkloadID, maxAge)
+}
+
+func (s *Server) toolWorkloadFeed(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		From       string `json:"from"`
+		To         string `json:"to"`
+		Source     string `json:"source"`
+		Model      string `json:"model"`
+		Project    string `json:"project"`
+		Phase      string `json:"phase"`
+		Severity   string `json:"severity"`
+		Limit      int    `json:"limit"`
+		StaleAfter string `json:"stale_after"`
+	}
+	_ = json.Unmarshal(args, &in)
+	now := s.now()
+	from, to, err := parseDateRange(in.From, in.To, now)
+	if err != nil {
+		return nil, err
+	}
+	staleAfter := 10 * time.Minute
+	if in.StaleAfter != "" {
+		parsed, err := time.ParseDuration(in.StaleAfter)
+		if err != nil {
+			return nil, err
+		}
+		if parsed <= 0 {
+			return nil, fmt.Errorf("stale_after must be positive")
+		}
+		staleAfter = parsed
+	}
+	return s.db.GetWorkloadEventFeed(from, to, in.Source, in.Model, in.Project, in.Phase, in.Severity, in.Limit, staleAfter)
+}
+
+func (s *Server) defaultWorkloadFeed() (*storage.WorkloadEventFeed, error) {
+	now := s.now()
+	return s.db.GetWorkloadEventFeed(now.AddDate(0, 0, -30), now.AddDate(0, 0, 1), "", "", "", "", "", 50, 10*time.Minute)
 }
 
 func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {
