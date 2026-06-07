@@ -159,6 +159,59 @@ func TestPolicyAuditAPIReportsAndRedactsMatches(t *testing.T) {
 	}
 }
 
+func TestPolicyEnforcementAPIReportsAndRedactsEvidence(t *testing.T) {
+	db := testServerDB(t)
+	workloadID, err := db.CreateWorkload("private policy evidence", "codex", "private-project", "zhenzhis/private-project", "feature/private", "", "research", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	decisionID, err := db.RecordPolicyDecision(workloadID, "", "review-export", "require_approval", "private reason", "operator")
+	if err != nil {
+		t.Fatalf("RecordPolicyDecision: %v", err)
+	}
+	if _, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		PolicyDecisionID: decisionID,
+		WorkloadID:       workloadID,
+		Source:           "codex",
+		Project:          "private-project",
+		Action:           "export",
+		Target:           "sessions",
+		ActorRole:        "operator",
+		Status:           "pending",
+		Reason:           "private approval reason",
+		RequestPayload:   `{"private":"payload"}`,
+	}); err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	if err := db.AppendAuditLog("local", "operator", "policy.evaluate", "sessions", map[string]string{"project": "private-project"}); err != nil {
+		t.Fatalf("AppendAuditLog: %v", err)
+	}
+	srv := New(db, "", Options{Privacy: config.PrivacyConfig{ScreenshotMode: true}})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/policy/enforcement?privacy=1", nil)
+	rr := httptest.NewRecorder()
+	srv.handlePolicyEnforcement(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enforcement status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var report storage.PolicyEnforcementReport
+	if err := json.Unmarshal(rr.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if report.Summary.ApprovalsRequired != 1 || report.Summary.PendingApprovals != 1 || len(report.Decisions) != 1 || len(report.ApprovalRequests) != 1 || len(report.AuditEvents) != 1 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if report.Decisions[0].DecisionID == decisionID || report.Decisions[0].WorkloadID == workloadID || report.Decisions[0].Reason != "<redacted>" {
+		t.Fatalf("decision redaction failed: %+v", report.Decisions[0])
+	}
+	approval := report.ApprovalRequests[0]
+	if approval.WorkloadID == workloadID || approval.Project != "<redacted>" || approval.Target != "<redacted>" || approval.Reason != "<redacted>" || approval.RequestPayload != "<redacted>" {
+		t.Fatalf("approval redaction failed: %+v", approval)
+	}
+	if report.AuditEvents[0].Target == "sessions" || report.AuditEvents[0].Params != "<redacted>" {
+		t.Fatalf("audit redaction failed: %+v", report.AuditEvents[0])
+	}
+}
+
 func TestRepairProjectionAPI(t *testing.T) {
 	db := testServerDB(t)
 	ts := time.Date(2026, 6, 7, 13, 30, 0, 0, time.UTC)

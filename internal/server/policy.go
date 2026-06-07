@@ -79,6 +79,19 @@ func (s *Server) handlePolicyAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, report)
 }
 
+func (s *Server) handlePolicyEnforcement(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	report, err := s.db.GetPolicyEnforcementReport(parseLimit(r, 200))
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	applyPolicyEnforcementPrivacy(report, s.privacyFor(r))
+	writeJSON(w, report)
+}
+
 func (s *Server) evaluateOperationPolicy(w http.ResponseWriter, r *http.Request, action, source, model, project, target string) bool {
 	result := ledgerpolicy.Evaluate(s.options.Policies, ledgerpolicy.Request{
 		Source:  source,
@@ -151,6 +164,42 @@ func applyPolicyAuditPrivacy(report *ledgerpolicy.AuditReport, privacy config.Pr
 			report.Rows[i].Evidence = "<redacted>"
 		}
 	}
+}
+
+func applyPolicyEnforcementPrivacy(report *storage.PolicyEnforcementReport, privacy config.PrivacyConfig) {
+	if report == nil {
+		return
+	}
+	if privacy.HashSessionIDs || privacy.ScreenshotMode {
+		for i := range report.Decisions {
+			report.Decisions[i].DecisionID = hashValue(report.Decisions[i].DecisionID)
+			report.Decisions[i].WorkloadID = hashValue(report.Decisions[i].WorkloadID)
+			report.Decisions[i].RunID = hashValue(report.Decisions[i].RunID)
+		}
+		for i := range report.ApprovalRequests {
+			report.ApprovalRequests[i].RequestID = hashValue(report.ApprovalRequests[i].RequestID)
+			report.ApprovalRequests[i].PolicyDecisionID = hashValue(report.ApprovalRequests[i].PolicyDecisionID)
+			report.ApprovalRequests[i].WorkloadID = hashValue(report.ApprovalRequests[i].WorkloadID)
+			report.ApprovalRequests[i].RunID = hashValue(report.ApprovalRequests[i].RunID)
+		}
+	}
+	if privacy.HideProjectNames || privacy.RedactPaths || privacy.ScreenshotMode {
+		for i := range report.ApprovalRequests {
+			report.ApprovalRequests[i].Project = "<redacted>"
+		}
+	}
+	if privacy.ScreenshotMode {
+		for i := range report.Decisions {
+			report.Decisions[i].Reason = "<redacted>"
+		}
+		for i := range report.ApprovalRequests {
+			report.ApprovalRequests[i].Target = "<redacted>"
+			report.ApprovalRequests[i].Reason = "<redacted>"
+			report.ApprovalRequests[i].RequestPayload = "<redacted>"
+			report.ApprovalRequests[i].DecisionNote = "<redacted>"
+		}
+	}
+	applyAuditEventPrivacy(report.AuditEvents, privacy)
 }
 
 func (s *Server) createPolicyApprovalRequest(r *http.Request, result ledgerpolicy.Result, action, source, model, project, target string) (string, error) {

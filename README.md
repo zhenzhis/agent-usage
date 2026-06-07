@@ -79,6 +79,7 @@ CLI:
 ./agent-ledger bundle import --file usage-bundle.json --verify
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ./agent-ledger policy approvals
+./agent-ledger policy enforcement --privacy
 ./agent-ledger policy resolve --id apr_... --status approved
 ./agent-ledger audit --action pricing --role operator --format markdown --privacy
 ./agent-ledger pricing sync
@@ -244,6 +245,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/wrapped?period=monthly&format=markdown` | Monthly/weekly/yearly Agent Wrapped summary without prompt analysis |
 | `POST /api/policy/evaluate` | Evaluate local advisory policy rules and optionally record decisions |
 | `GET /api/policy/audit` | Audit historical usage, tool calls, and workloads against local policy rules |
+| `GET /api/policy/enforcement` | Local policy enforcement evidence across decisions, approvals, and audit events |
 | `GET /api/policy/approvals?status=pending` | List local pending, approved, rejected, or all policy approval requests |
 | `POST /api/policy/approvals` | Approve or reject a local policy approval request |
 | `GET /api/audit-log?action=pricing&role=operator` | Filter local operational audit events; supports `from`, `to`, `actor`, `role`, `action`, `target`, `limit`, and privacy mode |
@@ -382,7 +384,7 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed, explicit workload evaluation signals, disabled-by-default redacted webhook notifications, privacy-safe discovery manifest, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional JSON/SSE local OpenAI-compatible gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed, explicit workload evaluation signals, disabled-by-default redacted webhook notifications, privacy-safe discovery manifest, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP/JSON traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional JSON/SSE local OpenAI-compatible gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/prompts.
 
 Planned integrations: OTLP protobuf/gRPC conformance, provider-native gateway adapters, Postgres team mode, OIDC/SSO, richer MCP subscriptions, and multi-actor approval notifications.
 

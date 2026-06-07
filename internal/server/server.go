@@ -140,6 +140,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/policies/status", s.handlePolicyStatus)
 	mux.HandleFunc("/api/policy/evaluate", s.handlePolicyEvaluate)
 	mux.HandleFunc("/api/policy/audit", s.handlePolicyAudit)
+	mux.HandleFunc("/api/policy/enforcement", s.handlePolicyEnforcement)
 	mux.HandleFunc("/api/policy/decisions", s.handlePolicyDecisions)
 	mux.HandleFunc("/api/policy/approvals", s.handlePolicyApprovals)
 	mux.HandleFunc("/api/export", s.handleExport)

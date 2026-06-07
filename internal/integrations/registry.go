@@ -180,8 +180,8 @@ func Registry(opts Options) Catalog {
 			Maturity:  "local-preview",
 			Enabled:   opts.PoliciesEnabled,
 			Privacy:   "records rule metadata only; enforcement is delegated to wrappers or gateways",
-			Endpoints: []string{"GET /api/policies/status", "POST /api/policy/evaluate", "GET /api/policy/decisions", "GET/POST /api/policy/approvals"},
-			Commands:  []string{"agent-ledger policy evaluate --model gpt-5.5 --action model.call", "agent-ledger policy approvals", "agent-ledger policy resolve --id apr_... --status approved"},
+			Endpoints: []string{"GET /api/policies/status", "POST /api/policy/evaluate", "GET /api/policy/audit", "GET /api/policy/enforcement", "GET /api/policy/decisions", "GET/POST /api/policy/approvals"},
+			Commands:  []string{"agent-ledger policy evaluate --model gpt-5.5 --action model.call", "agent-ledger policy audit", "agent-ledger policy enforcement --privacy", "agent-ledger policy approvals", "agent-ledger policy resolve --id apr_... --status approved"},
 		},
 		{
 			ID:          "notification.redacted_webhook",

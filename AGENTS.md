@@ -34,6 +34,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger wrapped --period month --format markdown # private period summary
 ./agent-ledger bundle export/import        # offline JSON bundle for air-gapped aggregation
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call  # local advisory policy evaluation
+./agent-ledger policy enforcement --privacy # local policy enforcement evidence
 ./agent-ledger mcp                         # local stdio JSON-RPC tool surface
 ```
 

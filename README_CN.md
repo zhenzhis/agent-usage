@@ -79,6 +79,7 @@ CLI：
 ./agent-ledger bundle import --file usage-bundle.json --verify
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ./agent-ledger policy approvals
+./agent-ledger policy enforcement --privacy
 ./agent-ledger policy resolve --id apr_... --status approved
 ./agent-ledger audit --action pricing --role operator --format markdown --privacy
 ./agent-ledger pricing sync
@@ -244,6 +245,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/wrapped?period=monthly&format=markdown` | 月度/周度/年度 Agent Wrapped 摘要，不分析 prompt 内容 |
 | `POST /api/policy/evaluate` | 评估本地 advisory policy，并可选择写入 policy decision |
 | `GET /api/policy/audit` | 使用本地 policy rules 审计历史 usage、tool call 和 workload |
+| `GET /api/policy/enforcement` | 汇总本地 policy decision、approval request 与 audit event 的执行证据 |
 | `GET /api/policy/approvals?status=pending` | 查看本地 pending、approved、rejected 或全部策略审批请求 |
 | `POST /api/policy/approvals` | 批准或拒绝本地策略审批请求 |
 | `GET /api/audit-log?action=pricing&role=operator` | 过滤本地操作审计事件；支持 `from`、`to`、`actor`、`role`、`action`、`target`、`limit` 与隐私模式 |
@@ -382,7 +384,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed、显式 workload evaluation 信号、默认关闭的脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed、显式 workload evaluation 信号、默认关闭的脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
 
 后续路线：OTLP protobuf/gRPC conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、多操作者审批通知。
 

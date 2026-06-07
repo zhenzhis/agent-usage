@@ -41,6 +41,7 @@
 - Policy rules can now match AgentOps dimensions including target, repo, git branch, and team, while preserving existing source/model/project/action/role rules.
 - Policy-aware export/report governance, recording policy decisions for export/report/evidence/offline-bundle operations and blocking configured `block` or `require_approval` actions.
 - Historical policy audit through `GET /api/policy/audit`, `agent-ledger policy audit`, and MCP `ledger.policy_audit`, applying the same local evaluator to usage sessions, tool calls, and workloads.
+- Policy enforcement evidence through `GET /api/policy/enforcement` and `agent-ledger policy enforcement`, combining recent policy decisions, approval requests, and policy audit events with privacy redaction.
 - Policy audit summary in the Data Quality panel so matched warnings, approvals, and blocks are visible during normal dashboard review.
 - Filterable operational audit log through `GET /api/audit-log`, `agent-ledger audit`, MCP `ledger.audit_log`, privacy-aware audit export, and a dashboard Audit Log panel.
 - Local policy approval requests with `GET/POST /api/policy/approvals`, `agent-ledger policy approvals`, and `agent-ledger policy resolve`, allowing approved action/target retries by `approval_id`.
@@ -59,7 +60,7 @@
 - Local MCP stdio JSON-RPC tools for budget lookup, workload lifecycle, run start/heartbeat/liveness, privacy-safe artifacts, advisory policy decisions, cost explanation, and similar workload search.
 - Local MCP resources and prompts for metadata-only schema/catalog/budget/workload/policy context plus workload, cost-review, and incident-evidence templates.
 - Hourly and daily usage aggregate tables with dashboard aggregate fallback.
-- CLI commands: `today`, `top`, `doctor`, `battery`, `discovery`, `notify webhook`, `workload list/create/show/timeline/state/feed/close/start-run/heartbeat/liveness/tool/context/evaluation`, `run --goal ... -- <command>`, `export`, `pricing sync`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
+- CLI commands: `today`, `top`, `doctor`, `battery`, `discovery`, `notify webhook`, `workload list/create/show/timeline/state/feed/close/start-run/heartbeat/liveness/tool/context/evaluation`, `run --goal ... -- <command>`, `export`, `pricing sync`, `policy enforcement`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
 - Cursor-compatible session pagination via `next_cursor`.
 - Black/white/gray data-dense dashboard panels for workloads, pricing, quota, quality, model calls, cache, watchdog, and cost intelligence.
 
