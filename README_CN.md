@@ -170,6 +170,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 | Endpoint | 用途 |
 |---|---|
+| `GET /api/dashboard` | Web dashboard 的一致性 KPI、token、费用与模型数据包 |
 | `GET /api/stats` | 总览 |
 | `GET /api/workloads` | 服务端分页工作负载账本 |
 | `POST /api/workloads` | 创建本地 workload |

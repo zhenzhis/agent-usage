@@ -170,6 +170,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 
 | Endpoint | Purpose |
 |---|---|
+| `GET /api/dashboard` | Consistent KPI, token, cost, and model bundle for the web dashboard |
 | `GET /api/stats` | Summary stats |
 | `GET /api/workloads` | Server-side paginated workload ledger |
 | `POST /api/workloads` | Create a local workload |

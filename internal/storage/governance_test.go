@@ -116,6 +116,70 @@ func TestDashboardStatsUseRawForNonUTCDayAlignedRange(t *testing.T) {
 	}
 }
 
+func TestDashboardBundleCoreModulesAreConsistent(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ts := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	if err := db.InsertUsageBatch([]*UsageRecord{
+		{Source: "codex", SessionID: "s1", Model: "gpt-5", InputTokens: 100, OutputTokens: 50, CacheReadInputTokens: 10, CacheCreationInputTokens: 20, CostUSD: 1.25, Timestamp: ts, Project: "p"},
+		{Source: "codex", SessionID: "s2", Model: "gpt-5-mini", InputTokens: 200, OutputTokens: 60, CostUSD: 2.75, Timestamp: ts.Add(30 * time.Minute), Project: "p"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := db.GetDashboardBundleFiltered(ts.Add(-time.Hour), ts.Add(time.Hour), "1h", "codex", "", "p", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Stats.TotalTokens != 440 || !near(bundle.Stats.TotalCost, 4, 0.000001) {
+		t.Fatalf("unexpected bundle stats: %+v", bundle.Stats)
+	}
+	if len(bundle.Consistency) != 0 {
+		t.Fatalf("expected consistent dashboard bundle, got %+v", bundle.Consistency)
+	}
+}
+
+func TestDashboardBundleIgnoresStaleDailyAggregate(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ts := time.Date(2026, 6, 6, 10, 0, 0, 0, time.UTC)
+	if err := db.InsertUsage(&UsageRecord{
+		Source: "codex", SessionID: "s1", Model: "gpt-5", InputTokens: 100, CostUSD: 1, Timestamp: ts,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RebuildUsageAggregates(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertUsage(&UsageRecord{
+		Source: "codex", SessionID: "s2", Model: "gpt-5", InputTokens: 200, CostUSD: 2, Timestamp: ts.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := db.GetDashboardStatsFiltered(time.Date(2026, 6, 6, 0, 0, 0, 0, time.UTC), time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalTokens != 100 {
+		t.Fatalf("expected compatibility stats endpoint to use stale aggregate in this setup, got %+v", stats)
+	}
+	bundle, err := db.GetDashboardBundleFiltered(time.Date(2026, 6, 6, 0, 0, 0, 0, time.UTC), time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC), "1h", "", "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Stats.TotalTokens != 300 || !near(bundle.Stats.TotalCost, 3, 0.000001) {
+		t.Fatalf("expected raw authoritative bundle stats, got %+v", bundle.Stats)
+	}
+	if len(bundle.Consistency) != 0 {
+		t.Fatalf("expected bundle modules to stay internally consistent, got %+v", bundle.Consistency)
+	}
+}
+
 func TestInsertReconciliationImportDetailed(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

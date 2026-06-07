@@ -1125,10 +1125,7 @@ async function refresh(options = {}) {
     };
     if (state.ledgerQuery) workloadParams.q = state.ledgerQuery;
     const requests = {
-      stats: api("stats"),
-      costModel: api("cost-by-model", { skipModel: true }),
-      costTime: api("cost-over-time"),
-      tokensTime: api("tokens-over-time"),
+      dashboard: api("dashboard"),
       workloads: api("workloads", { extra: workloadParams }),
       sessions: api("sessions", { extra: sessionParams }),
       health: api("health/ingestion"),
@@ -1146,6 +1143,7 @@ async function refresh(options = {}) {
     const settled = await Promise.allSettled(Object.entries(requests).map(async ([key, promise]) => [key, await promise]));
     const data = {};
     const errors = [];
+    let consistencyWarnings = 0;
     settled.forEach((result) => {
       if (result.status === "fulfilled") {
         data[result.value[0]] = result.value[1];
@@ -1153,6 +1151,19 @@ async function refresh(options = {}) {
         errors.push(result.reason && result.reason.message ? result.reason.message : String(result.reason));
       }
     });
+
+    if (data.dashboard) {
+      data.stats = data.dashboard.stats;
+      data.costModel = data.dashboard.cost_by_model || [];
+      data.costTime = data.dashboard.cost_over_time || [];
+      data.tokensTime = data.dashboard.tokens_over_time || [];
+      const consistency = data.dashboard.consistency || [];
+      consistencyWarnings = consistency.length;
+      if (consistencyWarnings > 0 && !options.silent) {
+        console.warn("Agent Ledger dashboard consistency warnings", consistency);
+        showStatus(`${consistencyWarnings} dashboard consistency warning(s)`, "error");
+      }
+    }
 
     const costModel = data.costModel || [];
     if (data.costModel) updateModelFilter(costModel);
@@ -1187,7 +1198,7 @@ async function refresh(options = {}) {
     }
     if (errors.length > 0) {
       showStatus(`${t("partialRefreshFailed")}: ${errors.slice(0, 2).join("; ")}`, "error");
-    } else if (!options.silent) {
+    } else if (!options.silent && consistencyWarnings === 0) {
       showStatus(`${t("updated")} ${new Date().toLocaleTimeString()}`);
     }
   } catch (err) {

@@ -76,6 +76,7 @@ func (s *Server) Start() error {
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 
 	mux.HandleFunc("/api/stats", s.handleStats)
+	mux.HandleFunc("/api/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/cost-by-model", s.handleCostByModel)
 	mux.HandleFunc("/api/cost-over-time", s.handleCostOverTime)
 	mux.HandleFunc("/api/tokens-over-time", s.handleTokensOverTime)
@@ -325,6 +326,24 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, stats)
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	from, to, tzOffset, err := s.parseTimeRange(r)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	source := r.URL.Query().Get("source")
+	model := r.URL.Query().Get("model")
+	project := r.URL.Query().Get("project")
+	granularity := r.URL.Query().Get("granularity")
+	data, err := s.db.GetDashboardBundleFiltered(from, to, granularity, source, model, project, tzOffset)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, data)
 }
 
 func (s *Server) handleCostByModel(w http.ResponseWriter, r *http.Request) {

@@ -92,6 +92,32 @@ type DashboardStats struct {
 	CacheHitRate  float64 `json:"cache_hit_rate"`
 }
 
+// DashboardConsistencyIssue explains a mismatch between dashboard modules.
+type DashboardConsistencyIssue struct {
+	Metric   string  `json:"metric"`
+	Expected float64 `json:"expected"`
+	Actual   float64 `json:"actual"`
+	Delta    float64 `json:"delta"`
+	Severity string  `json:"severity"`
+	Message  string  `json:"message"`
+}
+
+// DashboardBundle returns the core dashboard modules from one consistent read window.
+type DashboardBundle struct {
+	GeneratedAt    string                      `json:"generated_at"`
+	From           string                      `json:"from"`
+	To             string                      `json:"to"`
+	Granularity    string                      `json:"granularity"`
+	Source         string                      `json:"source,omitempty"`
+	Model          string                      `json:"model,omitempty"`
+	Project        string                      `json:"project,omitempty"`
+	Stats          *DashboardStats             `json:"stats"`
+	CostByModel    []CostByModel               `json:"cost_by_model"`
+	CostOverTime   []TimeSeriesPoint           `json:"cost_over_time"`
+	TokensOverTime []TokenTimeSeriesPoint      `json:"tokens_over_time"`
+	Consistency    []DashboardConsistencyIssue `json:"consistency"`
+}
+
 // CostByModel represents total cost for a single model.
 type CostByModel struct {
 	Model string  `json:"model"`
@@ -145,12 +171,16 @@ func (d *DB) GetDashboardStats(from, to time.Time, source, model string) (*Dashb
 
 // GetDashboardStatsFiltered returns aggregate stats with optional project filtering.
 func (d *DB) GetDashboardStatsFiltered(from, to time.Time, source, model, project string) (*DashboardStats, error) {
+	return d.getDashboardStatsFiltered(from, to, source, model, project, true)
+}
+
+func (d *DB) getDashboardStatsFiltered(from, to time.Time, source, model, project string, useAggregate bool) (*DashboardStats, error) {
 	s := &DashboardStats{}
 	filter, fa := buildUsageFilter(source, model, project)
 	args := append([]interface{}{from, to}, fa...)
 	var cacheRead, totalInput int64
 	usedAggregate := false
-	if to.Sub(from) >= 24*time.Hour && isUTCDayAligned(from) && isUTCDayAligned(to) {
+	if useAggregate && to.Sub(from) >= 24*time.Hour && isUTCDayAligned(from) && isUTCDayAligned(to) {
 		aggFilter, aggArgs := buildUsageFilter(source, model, project)
 		aggArgs = append([]interface{}{from.Format("2006-01-02"), to.Format("2006-01-02")}, aggArgs...)
 		var rowsSeen int
@@ -188,6 +218,99 @@ func (d *DB) GetDashboardStatsFiltered(from, to time.Time, source, model, projec
 func isUTCDayAligned(t time.Time) bool {
 	t = t.UTC()
 	return t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0
+}
+
+// GetDashboardBundleFiltered reads KPI and core chart data while holding the
+// storage mutex, so concurrent scans or cost rebuilds cannot make the visible
+// dashboard modules disagree with each other.
+func (d *DB) GetDashboardBundleFiltered(from, to time.Time, granularity, source, model, project string, tzOffset int) (*DashboardBundle, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	stats, err := d.getDashboardStatsFiltered(from, to, source, model, project, false)
+	if err != nil {
+		return nil, err
+	}
+	costByModel, err := d.GetCostByModelFiltered(from, to, source, project)
+	if err != nil {
+		return nil, err
+	}
+	costOverTime, err := d.GetCostOverTimeFiltered(from, to, granularity, source, model, project, tzOffset)
+	if err != nil {
+		return nil, err
+	}
+	tokensOverTime, err := d.GetTokensOverTimeFiltered(from, to, granularity, source, model, project, tzOffset)
+	if err != nil {
+		return nil, err
+	}
+	bundle := &DashboardBundle{
+		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
+		From:           from.Format(time.RFC3339),
+		To:             to.Format(time.RFC3339),
+		Granularity:    granularity,
+		Source:         source,
+		Model:          model,
+		Project:        project,
+		Stats:          stats,
+		CostByModel:    costByModel,
+		CostOverTime:   costOverTime,
+		TokensOverTime: tokensOverTime,
+	}
+	bundle.Consistency = dashboardConsistency(stats, costByModel, costOverTime, tokensOverTime)
+	return bundle, nil
+}
+
+func dashboardConsistency(stats *DashboardStats, costByModel []CostByModel, costOverTime []TimeSeriesPoint, tokensOverTime []TokenTimeSeriesPoint) []DashboardConsistencyIssue {
+	if stats == nil {
+		return []DashboardConsistencyIssue{{
+			Metric: "stats", Severity: "critical",
+			Message: "dashboard stats are missing",
+		}}
+	}
+	var tokenTotal int64
+	for _, row := range tokensOverTime {
+		tokenTotal += row.InputTokens + row.OutputTokens + row.CacheRead + row.CacheCreate
+	}
+	var costTimeTotal float64
+	for _, row := range costOverTime {
+		costTimeTotal += row.Value
+	}
+	var costModelTotal float64
+	for _, row := range costByModel {
+		costModelTotal += row.Cost
+	}
+	var issues []DashboardConsistencyIssue
+	if delta := float64(tokenTotal - stats.TotalTokens); delta != 0 {
+		issues = append(issues, DashboardConsistencyIssue{
+			Metric: "tokens", Expected: float64(stats.TotalTokens), Actual: float64(tokenTotal), Delta: delta, Severity: "warning",
+			Message: "token chart total does not match KPI total; rebuild aggregates or rerun scan if this persists",
+		})
+	}
+	if issue, ok := costConsistencyIssue("cost_over_time", stats.TotalCost, costTimeTotal); ok {
+		issues = append(issues, issue)
+	}
+	if issue, ok := costConsistencyIssue("cost_by_model", stats.TotalCost, costModelTotal); ok {
+		issues = append(issues, issue)
+	}
+	return issues
+}
+
+func costConsistencyIssue(metric string, expected, actual float64) (DashboardConsistencyIssue, bool) {
+	delta := actual - expected
+	if delta < 0 {
+		delta = -delta
+	}
+	tolerance := 0.000001
+	if expected > 1 {
+		tolerance = expected * 0.000001
+	}
+	if delta <= tolerance {
+		return DashboardConsistencyIssue{}, false
+	}
+	return DashboardConsistencyIssue{
+		Metric: metric, Expected: expected, Actual: actual, Delta: actual - expected, Severity: "warning",
+		Message: "cost chart total does not match KPI total; rebuild costs or aggregates if this persists",
+	}, true
 }
 
 // GetCostByModel returns total cost grouped by model within the given time range.
