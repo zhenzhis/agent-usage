@@ -184,7 +184,7 @@ func Registry(opts Options) Catalog {
 			Endpoints:      []string{"POST /api/otel/genai"},
 			Commands:       []string{"agent-ledger otel convert --file spans.json", "agent-ledger otel ingest --file spans.json"},
 			Limitations:    []string{"local JSON mapper, not a full OTLP collector", "prompt and completion message attributes are intentionally not persisted"},
-			NextMilestones: []string{"support trace_id/span_id context references", "add OTLP receiver mode behind explicit config", "expand fixture-based conformance tests"},
+			NextMilestones: []string{"add OTLP receiver mode behind explicit config", "expand fixture-based conformance tests"},
 		},
 		{
 			ID:             "protocol.a2a",

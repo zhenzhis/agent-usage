@@ -2,6 +2,8 @@ package integrations
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -79,6 +81,11 @@ func ConvertOTelGenAISpans(spans []OTelSpan) ([]storage.CanonicalEvent, error) {
 		reasoning := intAttr(attrs, "gen_ai.usage.reasoning.output_tokens", "gen_ai.usage.reasoning_output_tokens")
 		model := stringAttr(attrs, "agent_ledger.model", "gen_ai.response.model", "gen_ai.request.model", "llm.request.model")
 		provider := stringAttr(attrs, "gen_ai.provider.name", "gen_ai.system", "llm.system")
+		goal := stringAttr(attrs, "agent_ledger.goal", "agent.goal", "workload.goal")
+		workloadID := stringAttr(attrs, "agent_ledger.workload_id")
+		if workloadID == "" && goal != "" {
+			workloadID = deterministicLedgerID("wl", "otel-workload:"+goal+":"+span.TraceID)
+		}
 		payload := map[string]interface{}{
 			"call_id":                     firstNonEmpty(span.SpanID, span.TraceID),
 			"trace_id":                    span.TraceID,
@@ -100,19 +107,19 @@ func ConvertOTelGenAISpans(spans []OTelSpan) ([]storage.CanonicalEvent, error) {
 			"otel_span_name":              span.Name,
 			"otel_convention":             span.SourceConvention,
 		}
-		if goal := stringAttr(attrs, "agent_ledger.goal", "agent.goal", "workload.goal"); goal != "" {
+		if goal != "" {
 			payload["goal"] = goal
 		}
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			return nil, err
 		}
-		events = append(events, storage.CanonicalEvent{
+		modelEvent := storage.CanonicalEvent{
 			EventID:       firstNonEmpty(stringAttr(attrs, "agent_ledger.event_id"), "otel:"+span.TraceID+":"+span.SpanID),
 			Source:        firstNonEmpty(stringAttr(attrs, "agent_ledger.source"), "opentelemetry"),
 			EventType:     "model.call",
 			SourceEventID: firstNonEmpty(stringAttr(attrs, "agent_ledger.source_event_id"), span.TraceID+":"+span.SpanID),
-			WorkloadID:    stringAttr(attrs, "agent_ledger.workload_id"),
+			WorkloadID:    workloadID,
 			AgentRunID:    stringAttr(attrs, "agent_ledger.agent_run_id"),
 			SessionID:     stringAttr(attrs, "agent_ledger.session_id", "session.id"),
 			Model:         model,
@@ -121,7 +128,41 @@ func ConvertOTelGenAISpans(spans []OTelSpan) ([]storage.CanonicalEvent, error) {
 			Timestamp:     firstTime(span.StartTime, time.Now().UTC()),
 			Payload:       payloadJSON,
 			Confidence:    otelConfidence(model, inputTotal, output),
-		})
+		}
+		events = append(events, modelEvent)
+		if span.TraceID != "" || span.SpanID != "" {
+			contextPayload := map[string]interface{}{
+				"context_ref_id": "otelctx:" + span.TraceID + ":" + span.SpanID,
+				"ref_type":       "otel_span",
+				"ref_hash":       hashRef("otel:" + span.TraceID + ":" + span.SpanID),
+				"label":          firstNonEmpty(span.Name, "OpenTelemetry GenAI span"),
+				"repo":           stringAttr(attrs, "agent_ledger.repo", "code.repository"),
+				"git_branch":     stringAttr(attrs, "agent_ledger.git_branch", "git.branch"),
+				"privacy_label":  "local",
+			}
+			if goal != "" {
+				contextPayload["goal"] = goal
+			}
+			contextJSON, err := json.Marshal(contextPayload)
+			if err != nil {
+				return nil, err
+			}
+			events = append(events, storage.CanonicalEvent{
+				EventID:       "otelctx:" + span.TraceID + ":" + span.SpanID,
+				Source:        modelEvent.Source,
+				EventType:     "context.ref",
+				SourceEventID: "otelctx:" + span.TraceID + ":" + span.SpanID,
+				WorkloadID:    modelEvent.WorkloadID,
+				AgentRunID:    modelEvent.AgentRunID,
+				SessionID:     modelEvent.SessionID,
+				Model:         modelEvent.Model,
+				Project:       modelEvent.Project,
+				GitBranch:     modelEvent.GitBranch,
+				Timestamp:     modelEvent.Timestamp,
+				Payload:       contextJSON,
+				Confidence:    modelEvent.Confidence,
+			})
+		}
 	}
 	return events, nil
 }
@@ -395,6 +436,16 @@ func otelConfidence(model string, inputTokens, outputTokens int) float64 {
 		return 0.7
 	}
 	return 0.55
+}
+
+func hashRef(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func deterministicLedgerID(prefix, value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return prefix + "_" + hex.EncodeToString(sum[:16])
 }
 
 func firstNonEmpty(values ...string) string {

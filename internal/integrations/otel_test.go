@@ -3,6 +3,8 @@ package integrations
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
 func TestConvertOTelGenAISpanToCanonicalModelCall(t *testing.T) {
@@ -33,10 +35,10 @@ func TestConvertOTelGenAISpanToCanonicalModelCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("convert: %v", err)
 	}
-	if len(events) != 1 {
+	if len(events) != 2 {
 		t.Fatalf("events=%d", len(events))
 	}
-	event := events[0]
+	event := findEvent(t, events, "model.call")
 	if event.EventType != "model.call" || event.Source != "opentelemetry" || event.Model != "gpt-5.5" || event.Project != "agent-ledger" {
 		t.Fatalf("unexpected event: %#v", event)
 	}
@@ -49,6 +51,17 @@ func TestConvertOTelGenAISpanToCanonicalModelCall(t *testing.T) {
 	}
 	if _, ok := payload["gen_ai.input.messages"]; ok {
 		t.Fatalf("sensitive OTel message leaked: %#v", payload)
+	}
+	contextEvent := findEvent(t, events, "context.ref")
+	if event.WorkloadID == "" || contextEvent.WorkloadID != event.WorkloadID {
+		t.Fatalf("events must share deterministic workload: model=%s context=%s", event.WorkloadID, contextEvent.WorkloadID)
+	}
+	var contextPayload map[string]interface{}
+	if err := json.Unmarshal(contextEvent.Payload, &contextPayload); err != nil {
+		t.Fatalf("context payload: %v", err)
+	}
+	if contextPayload["ref_type"] != "otel_span" || contextPayload["ref_hash"] == "" {
+		t.Fatalf("unexpected context payload: %#v", contextPayload)
 	}
 }
 
@@ -80,7 +93,19 @@ func TestDecodeOTLPResourceSpans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("convert: %v", err)
 	}
-	if len(events) != 1 || events[0].Project != "quant" || events[0].Confidence < 0.8 {
+	modelEvent := findEvent(t, events, "model.call")
+	if len(events) != 2 || modelEvent.Project != "quant" || modelEvent.Confidence < 0.8 {
 		t.Fatalf("unexpected events: %#v", events)
 	}
+}
+
+func findEvent(t *testing.T, events []storage.CanonicalEvent, eventType string) storage.CanonicalEvent {
+	t.Helper()
+	for _, event := range events {
+		if event.EventType == eventType {
+			return event
+		}
+	}
+	t.Fatalf("event type %s missing in %#v", eventType, events)
+	return storage.CanonicalEvent{}
 }
