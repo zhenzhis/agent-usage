@@ -100,6 +100,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/workload-events/stream", s.handleWorkloadEventsStream)
 	mux.HandleFunc("/api/fleet-attribution", s.handleFleetAttribution)
 	mux.HandleFunc("/api/integrations", s.handleIntegrations)
+	mux.HandleFunc("/api/runtime/status", s.handleRuntimeStatus)
 	mux.HandleFunc("/api/event-schema", s.handleCanonicalEventSchema)
 	mux.HandleFunc("/api/events", s.handleCanonicalEvents)
 	mux.HandleFunc("/api/otel/genai", s.handleOTelGenAI)
@@ -297,7 +298,13 @@ func (s *Server) appendAuditLog(actor, role, action, target string, params map[s
 }
 
 func (s *Server) runtimeStatus() *storage.RuntimeStatus {
-	if s.options.RBAC.ReadOnly {
+	return RuntimeStatusFromRBAC(s.options.RBAC)
+}
+
+// RuntimeStatusFromRBAC returns the process-level runtime mode that can be
+// safely exposed through REST, CLI, discovery, Doctor, and UI surfaces.
+func RuntimeStatusFromRBAC(rbac config.RBACConfig) *storage.RuntimeStatus {
+	if rbac.ReadOnly {
 		return &storage.RuntimeStatus{
 			Mode:             "observer",
 			ReadOnly:         true,

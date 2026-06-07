@@ -59,6 +59,7 @@ CLI:
 ./agent-ledger event ingest --file event.json
 ./agent-ledger discovery
 ./agent-ledger integrations
+./agent-ledger runtime
 ./agent-ledger notify webhook --dry-run --severity warning
 ./agent-ledger otel convert --file spans.json
 ./agent-ledger otel ingest --file spans.json
@@ -217,6 +218,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 |---|---|
 | `GET /.well-known/agent-ledger.json` | Privacy-safe local discovery manifest for agents, wrappers, and routers |
 | `GET /api/discovery` | Same discovery manifest under the API namespace |
+| `GET /api/runtime/status` | Runtime mode, read-only state, background task, and write-operation status |
 | `GET /api/dashboard` | Consistent KPI, token, cost, and model bundle for the web dashboard |
 | `GET /api/stats` | Summary stats |
 | `GET /api/workloads` | Server-side paginated workload ledger |
@@ -285,7 +287,7 @@ When a policy returns `require_approval`, Agent Ledger records a local pending a
 
 `agent-ledger mcp` starts a local stdio JSON-RPC tool server for agent frameworks and wrappers. The implementation is intentionally local and privacy-preserving: tools can create or close workloads, start runs on existing workloads, append run heartbeats, check run liveness and terminal-state snapshots, record tool-call metadata, context refs, hashed artifacts, and quality/evaluation signals, ask for advisory policy decisions, query local budget state, explain cost, and find similar workloads. Resources expose metadata-only schema, integration, budget, workload, terminal-state, and policy context; prompts provide reusable workload/cost-review/evidence templates. It does not read prompt content and does not send data to a remote MCP host by itself. MCP, REST, and CLI policy evaluation share the same local evaluator so advisory decisions are consistent across integrations.
 
-`GET /api/integrations`, `GET /.well-known/agent-ledger.json`, `agent-ledger integrations`, and MCP `ledger.integrations` expose runtime capability fields: `writes_local_state`, `available_in_read_only`, and `runtime_status`. Agent routers and wrappers should use these fields instead of hardcoding endpoint assumptions, especially when `rbac.read_only` is enabled.
+`GET /api/integrations`, `GET /.well-known/agent-ledger.json`, `agent-ledger integrations`, and MCP `ledger.integrations` expose runtime capability fields: `writes_local_state`, `available_in_read_only`, and `runtime_status`. `GET /api/runtime/status` and `agent-ledger runtime` provide the same process-level observer/control-plane status for lightweight probes. Agent routers and wrappers should use these fields instead of hardcoding endpoint assumptions, especially when `rbac.read_only` is enabled.
 
 Current tools:
 

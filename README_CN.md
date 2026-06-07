@@ -59,6 +59,7 @@ CLI：
 ./agent-ledger event ingest --file event.json
 ./agent-ledger discovery
 ./agent-ledger integrations
+./agent-ledger runtime
 ./agent-ledger notify webhook --dry-run --severity warning
 ./agent-ledger otel convert --file spans.json
 ./agent-ledger otel ingest --file spans.json
@@ -217,6 +218,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 |---|---|
 | `GET /.well-known/agent-ledger.json` | 面向 agent、wrapper、router 的隐私安全本地 discovery manifest |
 | `GET /api/discovery` | API 命名空间下的同一 discovery manifest |
+| `GET /api/runtime/status` | 运行模式、只读状态、后台任务与写操作状态 |
 | `GET /api/dashboard` | Web dashboard 的一致性 KPI、token、费用与模型数据包 |
 | `GET /api/stats` | 总览 |
 | `GET /api/workloads` | 服务端分页工作负载账本 |
@@ -285,7 +287,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 `agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、在已有 workload 下启动 run、写入 run heartbeat、查询 run liveness 与 terminal-state 快照、记录 tool-call 元数据、context ref、hash 后的 artifact 与质量/evaluation 信号、查询本地策略建议、查询预算状态、解释成本、查找相似 workload。Resources 提供 metadata-only 的 schema、integration、budget、workload、terminal-state、policy 上下文；prompts 提供可复用的 workload、成本复盘、证据包模板。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
 
-`GET /api/integrations`、`GET /.well-known/agent-ledger.json`、`agent-ledger integrations` 和 MCP `ledger.integrations` 会暴露运行时能力字段：`writes_local_state`、`available_in_read_only`、`runtime_status`。Agent router 和 wrapper 应读取这些字段，而不是硬编码 endpoint 假设，尤其是在启用 `rbac.read_only` 时。
+`GET /api/integrations`、`GET /.well-known/agent-ledger.json`、`agent-ledger integrations` 和 MCP `ledger.integrations` 会暴露运行时能力字段：`writes_local_state`、`available_in_read_only`、`runtime_status`。`GET /api/runtime/status` 与 `agent-ledger runtime` 提供同一个进程级 observer/control-plane 状态，适合轻量探针使用。Agent router 和 wrapper 应读取这些字段，而不是硬编码 endpoint 假设，尤其是在启用 `rbac.read_only` 时。
 
 当前工具：
 

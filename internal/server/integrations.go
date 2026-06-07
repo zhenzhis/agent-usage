@@ -22,6 +22,14 @@ func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, integrations.Discovery(s.integrationOptions()))
 }
 
+func (s *Server) handleRuntimeStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, s.runtimeStatus())
+}
+
 func (s *Server) integrationOptions() integrations.Options {
 	sources := make([]integrations.Source, 0, len(s.options.Sources))
 	for _, source := range s.options.Sources {

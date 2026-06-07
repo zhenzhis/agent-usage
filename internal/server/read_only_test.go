@@ -100,6 +100,20 @@ func TestReadOnlyRuntimeVisibleInDashboardAndDoctor(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{RBAC: config.RBACConfig{ReadOnly: true}})
 
+	runtimeReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/runtime/status", nil)
+	runtimeRR := httptest.NewRecorder()
+	srv.handleRuntimeStatus(runtimeRR, runtimeReq)
+	if runtimeRR.Code != http.StatusOK {
+		t.Fatalf("runtime status=%d body=%s", runtimeRR.Code, runtimeRR.Body.String())
+	}
+	var runtimeStatus storage.RuntimeStatus
+	if err := json.Unmarshal(runtimeRR.Body.Bytes(), &runtimeStatus); err != nil {
+		t.Fatalf("decode runtime: %v", err)
+	}
+	if !runtimeStatus.ReadOnly || runtimeStatus.Mode != "observer" || runtimeStatus.BackgroundTasks != "disabled" {
+		t.Fatalf("unexpected runtime endpoint status: %+v", runtimeStatus)
+	}
+
 	dashboardReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/dashboard?from=2026-06-07&to=2026-06-07", nil)
 	dashboardRR := httptest.NewRecorder()
 	srv.handleDashboard(dashboardRR, dashboardReq)
