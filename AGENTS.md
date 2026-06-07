@@ -19,6 +19,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger provider convert/ingest     # map provider usage envelopes to canonical events
 ./agent-ledger reconcile import/status     # import provider CSV/JSON bills for local reconciliation
 ./agent-ledger router simulate --to-model gpt-5-mini --ratio 0.5  # local what-if model routing estimate
+./agent-ledger replay --source codex --session-id <id>  # per-call session token/cost replay
 ./agent-ledger bundle export/import        # offline JSON bundle for air-gapped aggregation
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call  # local advisory policy evaluation
 ./agent-ledger mcp                         # local stdio JSON-RPC tool surface

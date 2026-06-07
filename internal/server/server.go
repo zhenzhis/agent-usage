@@ -81,6 +81,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/tokens-over-time", s.handleTokensOverTime)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("/api/session-detail", s.handleSessionDetail)
+	mux.HandleFunc("/api/session-replay", s.handleSessionReplay)
 	mux.HandleFunc("/api/workloads", s.handleWorkloads)
 	mux.HandleFunc("/api/workloads/close", s.handleWorkloadClose)
 	mux.HandleFunc("/api/workload-detail", s.handleWorkloadDetail)
@@ -414,6 +415,28 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		badRequest(w, err)
 		return
+	}
+	writeJSON(w, data)
+}
+
+func (s *Server) handleSessionReplay(w http.ResponseWriter, r *http.Request) {
+	sid := r.URL.Query().Get("session_id")
+	if sid == "" {
+		http.Error(w, "session_id required", 400)
+		return
+	}
+	source := r.URL.Query().Get("source")
+	data, err := s.db.GetSessionReplay(source, sid, parseLimit(r, 1000))
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	privacy := s.privacyFor(r)
+	if privacy.HashSessionIDs || privacy.ScreenshotMode {
+		data.SessionID = hashValue(data.SessionID)
+		for i := range data.Points {
+			data.Points[i].SessionID = hashValue(data.Points[i].SessionID)
+		}
 	}
 	writeJSON(w, data)
 }

@@ -62,6 +62,7 @@ CLI:
 ./agent-ledger reconcile import --file provider-bill.csv --format csv --provider openai
 ./agent-ledger reconcile status
 ./agent-ledger router simulate --to-model gpt-5-mini --from-model gpt-5 --ratio 0.5
+./agent-ledger replay --source codex --session-id <id>
 ./agent-ledger bundle export --privacy --signed --out usage-bundle.json
 ./agent-ledger bundle import --file usage-bundle.json --verify
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
@@ -184,6 +185,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/router/simulate?to_model=gpt-5-mini&ratio=0.5` | Simulate cost impact of model-routing changes without mutating the ledger |
 | `POST /api/policy/evaluate` | Evaluate local advisory policy rules and optionally record decisions |
 | `GET /api/sessions` | Server-side paginated session ledger |
+| `GET /api/session-replay?source=codex&session_id=...` | Chronological per-call token/cost replay for one session |
 | `GET /api/model-registry` | Pricing and model governance registry |
 | `GET /api/pricing/status` | Pricing freshness, source state, unpriced models |
 | `POST /api/pricing/sync` | Sync pricing |
@@ -249,7 +251,7 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . &
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, OpenTelemetry GenAI JSON span mapping, A2A task telemetry mapping, provider usage envelope mapping, provider bill reconciliation import, model router simulation, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, CLI workload/event/policy/router commands, CLI run wrapper, and local MCP stdio tools.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, OpenTelemetry GenAI JSON span mapping, A2A task telemetry mapping, provider usage envelope mapping, provider bill reconciliation import, model router simulation, session cost replay, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, CLI workload/event/policy/router/replay commands, CLI run wrapper, and local MCP stdio tools.
 
 Planned integrations: full OTLP receiver mode, live provider/API gateway mode, Postgres team mode, OIDC/SSO, richer MCP resources/prompts, and enterprise policy approval flows.
 

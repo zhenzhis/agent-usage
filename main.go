@@ -400,6 +400,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runReconcileCLI(args[1:], db)
 	case "router":
 		return runRouterCLI(args[1:], db)
+	case "replay":
+		return runReplayCLI(args[1:], db)
 	case "integrations":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "otel":
@@ -512,6 +514,26 @@ func runRouterCLI(args []string, db *storage.DB) error {
 	report, err := db.SimulateModelRouting(from, to, cliValue(args[1:], "--source"),
 		firstNonEmptyCLI(cliValue(args[1:], "--from-model"), cliValue(args[1:], "--model")),
 		toModel, cliValue(args[1:], "--project"), ratio, 200)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(report)
+}
+
+func runReplayCLI(args []string, db *storage.DB) error {
+	sessionID := firstNonEmptyCLI(cliValue(args, "--session-id"), cliValue(args, "--session_id"), cliValue(args, "--id"))
+	if sessionID == "" {
+		return fmt.Errorf("usage: agent-ledger replay --session-id id [--source s] [--limit n]")
+	}
+	limit := 1000
+	if raw := cliValue(args, "--limit"); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err != nil {
+			return fmt.Errorf("invalid --limit %q: %w", raw, err)
+		}
+		limit = parsed
+	}
+	report, err := db.GetSessionReplay(cliValue(args, "--source"), sessionID, limit)
 	if err != nil {
 		return err
 	}
