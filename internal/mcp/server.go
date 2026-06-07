@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
@@ -166,6 +167,7 @@ func tools() []map[string]interface{} {
 			"payload":         objectSchema(),
 		}),
 		tool("ledger.event_schema", "Return the canonical metadata-only event schema and supported event types.", map[string]interface{}{}),
+		tool("ledger.integrations", "Return the Agent Ledger integration capability catalog.", map[string]interface{}{}),
 		tool("ledger.get_policy", "Evaluate local advisory policy rules for a proposed agent action.", map[string]interface{}{
 			"workload_id": stringSchema(),
 			"run_id":      stringSchema(),
@@ -239,6 +241,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolRecordEvent(args)
 	case "ledger.event_schema":
 		return storage.CanonicalEventSchema(), nil
+	case "ledger.integrations":
+		return integrations.Registry(integrations.OptionsFromConfig(s.cfg)), nil
 	case "ledger.get_policy":
 		return s.toolGetPolicy(args)
 	case "ledger.explain_cost":

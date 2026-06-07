@@ -14,6 +14,7 @@ import (
 
 	"github.com/zhenzhis/agent-ledger/internal/collector"
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	"github.com/zhenzhis/agent-ledger/internal/mcp"
 	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
 	"github.com/zhenzhis/agent-ledger/internal/pricing"
@@ -394,6 +395,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runBundleCLI(args[1:], db)
 	case "policy":
 		return runPolicyCLI(args[1:], cfg, db)
+	case "integrations":
+		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "mcp":
 		return mcp.New(db, cfg).Serve(os.Stdin, os.Stdout)
 	default:
