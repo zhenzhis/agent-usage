@@ -17,6 +17,7 @@ printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | ./agent-ledger mcp
 printf '{"source":"local","event_type":"workload.started","payload":{"goal":"release smoke"}}\n' | ./agent-ledger event ingest
 AGENT_LEDGER_BUNDLE_KEY=test-key ./agent-ledger bundle export --signed --privacy > /tmp/agent-ledger-bundle.json
 AGENT_LEDGER_BUNDLE_KEY=test-key ./agent-ledger bundle import --verify < /tmp/agent-ledger-bundle.json
+./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ```
 
 If available, also run:

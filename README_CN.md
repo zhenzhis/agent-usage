@@ -53,6 +53,7 @@ CLI：
 ./agent-ledger event ingest --file event.json
 ./agent-ledger bundle export --privacy --signed --out usage-bundle.json
 ./agent-ledger bundle import --file usage-bundle.json --verify
+./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -162,6 +163,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/workload-graph` | workload 图谱 |
 | `GET /api/event-schema` | Canonical event schema 与支持的事件类型 |
 | `POST /api/events` | 写入 metadata-only canonical events |
+| `POST /api/policy/evaluate` | 评估本地 advisory policy，并可选择写入 policy decision |
 | `GET /api/sessions` | 服务端分页会话账本 |
 | `GET /api/model-registry` | 模型与价格治理注册表 |
 | `GET /api/pricing/status` | 价格源、新鲜度、未计价模型 |
@@ -183,7 +185,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 ## MCP 工具接口
 
-`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、记录 hash 后的 artifact、查询本地策略建议、查询预算状态、解释成本、查找相似 workload。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。
+`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、记录 hash 后的 artifact、查询本地策略建议、查询预算状态、解释成本、查找相似 workload。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
 
 当前工具：
 
@@ -227,9 +229,9 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . &
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event 命令、CLI run wrapper 和本地 MCP stdio tools。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy 命令、CLI run wrapper 和本地 MCP stdio tools。
 
-后续路线：A2A task telemetry、OpenTelemetry GenAI mapping、可选 provider/API gateway、Postgres 团队模式、signed offline bundle import、OIDC/SSO、更完整的 MCP resources/prompts、企业策略审批流。
+后续路线：A2A task telemetry、OpenTelemetry GenAI mapping、可选 provider/API gateway、Postgres 团队模式、OIDC/SSO、更完整的 MCP resources/prompts、企业策略审批流。
 
 ## License
 

@@ -17,6 +17,7 @@ Agent Ledger runs locally and reads local agent usage files. The default deploym
 - Pricing sync is the expected outbound request.
 - Manual scan, reset, pricing sync, import, and recalculation are localhost-only unless auth is configured.
 - `agent-ledger mcp` is a local stdio tool surface. Treat the launching agent as the operator and do not connect it to untrusted hosts without sandboxing and policy review.
+- Local policy evaluation is advisory unless your wrapper or gateway enforces it. Policy decisions record rule metadata, role, workload ID, and action, but must not record prompt text, secrets, or raw tool output.
 - Webhooks are disabled by default.
 - Usage data, prompts, local paths, and session IDs are not uploaded by default.
 

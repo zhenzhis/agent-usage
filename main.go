@@ -15,6 +15,7 @@ import (
 	"github.com/zhenzhis/agent-ledger/internal/collector"
 	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/mcp"
+	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
 	"github.com/zhenzhis/agent-ledger/internal/pricing"
 	"github.com/zhenzhis/agent-ledger/internal/server"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
@@ -391,12 +392,43 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runEventCLI(args[1:], db)
 	case "bundle":
 		return runBundleCLI(args[1:], db)
+	case "policy":
+		return runPolicyCLI(args[1:], cfg, db)
 	case "mcp":
 		return mcp.New(db, cfg).Serve(os.Stdin, os.Stdout)
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
+	if len(args) == 0 || args[0] != "evaluate" {
+		return fmt.Errorf("usage: agent-ledger policy evaluate [--source s] [--model m] [--project p] [--action a] [--workload-id id] [--run-id id] [--role role] [--record]")
+	}
+	req := ledgerpolicy.Request{
+		WorkloadID: firstNonEmptyCLI(cliValue(args[1:], "--workload-id"), cliValue(args[1:], "--workload_id")),
+		RunID:      firstNonEmptyCLI(cliValue(args[1:], "--run-id"), cliValue(args[1:], "--run_id")),
+		Source:     cliValue(args[1:], "--source"),
+		Model:      cliValue(args[1:], "--model"),
+		Project:    cliValue(args[1:], "--project"),
+		Action:     cliValue(args[1:], "--action"),
+		Role:       firstNonEmptyCLI(cliValue(args[1:], "--role"), "operator"),
+	}
+	result := ledgerpolicy.Evaluate(cfg.Policies, req)
+	if cliBool(args[1:], "--record") && len(result.Decisions) > 0 {
+		if req.WorkloadID == "" {
+			return fmt.Errorf("--record requires --workload-id")
+		}
+		for i := range result.Decisions {
+			id, err := db.RecordPolicyDecision(req.WorkloadID, req.RunID, result.Decisions[i].Rule, result.Decisions[i].Action, result.Decisions[i].Message, req.Role)
+			if err != nil {
+				return err
+			}
+			result.Decisions[i].DecisionID = id
+		}
+	}
+	return json.NewEncoder(os.Stdout).Encode(result)
 }
 
 func runBundleCLI(args []string, db *storage.DB) error {

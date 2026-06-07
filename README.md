@@ -53,6 +53,7 @@ CLI:
 ./agent-ledger event ingest --file event.json
 ./agent-ledger bundle export --privacy --signed --out usage-bundle.json
 ./agent-ledger bundle import --file usage-bundle.json --verify
+./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -162,6 +163,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/workload-graph` | Compact workload graph |
 | `GET /api/event-schema` | Canonical event schema and supported event types |
 | `POST /api/events` | Ingest metadata-only canonical events |
+| `POST /api/policy/evaluate` | Evaluate local advisory policy rules and optionally record decisions |
 | `GET /api/sessions` | Server-side paginated session ledger |
 | `GET /api/model-registry` | Pricing and model governance registry |
 | `GET /api/pricing/status` | Pricing freshness, source state, unpriced models |
@@ -183,7 +185,7 @@ Manual scan, reset, pricing sync, imports, and recalculation require localhost a
 
 ## MCP Tool Surface
 
-`agent-ledger mcp` starts a local stdio JSON-RPC tool server for agent frameworks and wrappers. The first implementation is intentionally local and privacy-preserving: tools can create or close workloads, record hashed artifacts, ask for advisory policy decisions, query local budget state, explain cost, and find similar workloads. It does not read prompt content and does not send data to a remote MCP host by itself.
+`agent-ledger mcp` starts a local stdio JSON-RPC tool server for agent frameworks and wrappers. The first implementation is intentionally local and privacy-preserving: tools can create or close workloads, record hashed artifacts, ask for advisory policy decisions, query local budget state, explain cost, and find similar workloads. It does not read prompt content and does not send data to a remote MCP host by itself. MCP, REST, and CLI policy evaluation share the same local evaluator so advisory decisions are consistent across integrations.
 
 Current tools:
 
@@ -227,9 +229,9 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . &
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, legacy session backfill, workload API, workload CSV export, CLI workload/event commands, CLI run wrapper, and local MCP stdio tools.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, CLI workload/event/policy commands, CLI run wrapper, and local MCP stdio tools.
 
-Planned integrations: A2A task telemetry, OpenTelemetry GenAI mapping, optional provider/API gateway, Postgres team mode, signed offline bundle import, OIDC/SSO, richer MCP resources/prompts, and enterprise policy approval flows.
+Planned integrations: A2A task telemetry, OpenTelemetry GenAI mapping, optional provider/API gateway, Postgres team mode, OIDC/SSO, richer MCP resources/prompts, and enterprise policy approval flows.
 
 ## License
 

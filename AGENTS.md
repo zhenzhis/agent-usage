@@ -14,6 +14,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger event schema                # print canonical event schema
 ./agent-ledger event ingest < event.json   # ingest metadata-only canonical event(s)
 ./agent-ledger bundle export/import        # offline JSON bundle for air-gapped aggregation
+./agent-ledger policy evaluate --model gpt-5.5 --action model.call  # local advisory policy evaluation
 ./agent-ledger mcp                         # local stdio JSON-RPC tool surface
 ```
 
@@ -43,7 +44,7 @@ Container runs as UID 1000 by default; adjust `user:` in docker-compose.yml if y
 
 Single-binary Go application that collects AI coding agent token usage from local session files and local agent databases, stores it in SQLite, and serves a web dashboard plus CLI.
 
-**Data flow:** Collectors scan session dirs → parse usage rows → write to SQLite (with dedup) → pricing governance syncs official seeds + LiteLLM fallback + local overrides → costs calculated → aggregate tables rebuilt → served via REST API + embedded web UI + CLI + local MCP tools.
+**Data flow:** Collectors scan session dirs → parse usage rows → write to SQLite (with dedup) → pricing governance syncs official seeds + LiteLLM fallback + local overrides → costs calculated → aggregate tables rebuilt → advisory policies evaluated from a shared local evaluator → served via REST API + embedded web UI + CLI + local MCP tools.
 
 ### Key packages
 

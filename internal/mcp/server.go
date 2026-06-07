@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
@@ -388,49 +389,25 @@ func (s *Server) toolGetPolicy(args json.RawMessage) (interface{}, error) {
 		Role       string `json:"role"`
 	}
 	_ = json.Unmarshal(args, &in)
-	if !s.cfg.Policies.Enabled {
-		return map[string]interface{}{
-			"enabled":        false,
-			"action":         "allow",
-			"decisions":      []map[string]string{},
-			"webhooks":       "disabled-by-default",
-			"privacy_export": s.cfg.Policies.RequirePrivacyExport,
-		}, nil
-	}
-	decisions := []map[string]string{}
-	finalAction := "allow"
-	for _, rule := range s.cfg.Policies.Rules {
-		if !policyMatches(rule, in.Source, in.Model, in.Project, in.Action) {
-			continue
-		}
-		action := normalizedPolicyAction(rule.Action)
-		if policyRank(action) > policyRank(finalAction) {
-			finalAction = action
-		}
-		decisionID := ""
+	result := ledgerpolicy.Evaluate(s.cfg.Policies, ledgerpolicy.Request{
+		WorkloadID: in.WorkloadID,
+		RunID:      in.RunID,
+		Source:     in.Source,
+		Model:      in.Model,
+		Project:    in.Project,
+		Action:     in.Action,
+		Role:       in.Role,
+	})
+	for i := range result.Decisions {
 		if in.WorkloadID != "" {
-			id, err := s.db.RecordPolicyDecision(in.WorkloadID, in.RunID, rule.Name, action, rule.Message, firstNonEmpty(in.Role, "agent"))
+			id, err := s.db.RecordPolicyDecision(in.WorkloadID, in.RunID, result.Decisions[i].Rule, result.Decisions[i].Action, result.Decisions[i].Message, firstNonEmpty(in.Role, "agent"))
 			if err != nil {
 				return nil, err
 			}
-			decisionID = id
+			result.Decisions[i].DecisionID = id
 		}
-		decisions = append(decisions, map[string]string{
-			"decision_id": decisionID,
-			"rule":        rule.Name,
-			"scope":       rule.Scope,
-			"match":       rule.Match,
-			"action":      action,
-			"message":     rule.Message,
-		})
 	}
-	return map[string]interface{}{
-		"enabled":        s.cfg.Policies.Enabled,
-		"action":         finalAction,
-		"decisions":      decisions,
-		"webhooks":       "disabled-by-default",
-		"privacy_export": s.cfg.Policies.RequirePrivacyExport,
-	}, nil
+	return result, nil
 }
 
 func (s *Server) toolExplainCost(args json.RawMessage) (interface{}, error) {
@@ -524,52 +501,6 @@ func parseDateRange(fromRaw, toRaw string, now time.Time) (time.Time, time.Time,
 		return time.Time{}, time.Time{}, err
 	}
 	return from, to.AddDate(0, 0, 1), nil
-}
-
-func policyMatches(rule config.PolicyRule, source, model, project, action string) bool {
-	scope := strings.ToLower(rule.Scope)
-	match := strings.ToLower(strings.TrimSpace(rule.Match))
-	if match == "" || match == "*" {
-		return true
-	}
-	switch scope {
-	case "source":
-		return strings.EqualFold(source, rule.Match)
-	case "model":
-		return strings.EqualFold(model, rule.Match)
-	case "project":
-		return strings.Contains(strings.ToLower(project), match)
-	case "action":
-		return strings.EqualFold(action, rule.Match)
-	default:
-		return true
-	}
-}
-
-func normalizedPolicyAction(action string) string {
-	switch strings.ToLower(action) {
-	case "block", "deny":
-		return "block"
-	case "approval", "require_approval", "approve":
-		return "require_approval"
-	case "warn", "warning":
-		return "warn"
-	default:
-		return "allow"
-	}
-}
-
-func policyRank(action string) int {
-	switch action {
-	case "block":
-		return 3
-	case "require_approval":
-		return 2
-	case "warn":
-		return 1
-	default:
-		return 0
-	}
 }
 
 func firstNonEmpty(values ...string) string {
