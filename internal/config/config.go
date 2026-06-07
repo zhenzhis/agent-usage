@@ -181,12 +181,13 @@ type IntegrationsConfig struct {
 
 // GatewayConfig controls the optional local provider gateway.
 type GatewayConfig struct {
-	Enabled          bool          `yaml:"enabled"`
-	UpstreamBaseURL  string        `yaml:"upstream_base_url"`
-	APIKeyEnv        string        `yaml:"api_key_env"`
-	MaxBodyBytes     int64         `yaml:"max_body_bytes"`
-	MaxResponseBytes int64         `yaml:"max_response_bytes"`
-	Timeout          time.Duration `yaml:"timeout"`
+	Enabled            bool          `yaml:"enabled"`
+	UpstreamBaseURL    string        `yaml:"upstream_base_url"`
+	APIKeyEnv          string        `yaml:"api_key_env"`
+	IncludeStreamUsage bool          `yaml:"include_stream_usage"`
+	MaxBodyBytes       int64         `yaml:"max_body_bytes"`
+	MaxResponseBytes   int64         `yaml:"max_response_bytes"`
+	Timeout            time.Duration `yaml:"timeout"`
 }
 
 // OTLPReceiverConfig controls the local OTLP HTTP/JSON traces receiver.
@@ -262,12 +263,13 @@ func DefaultConfig() *Config {
 			OTLPReceiver: OTLPReceiverConfig{Enabled: false, MaxBodyBytes: 4 << 20, MaxSpans: 1000},
 		},
 		Gateway: GatewayConfig{
-			Enabled:          false,
-			UpstreamBaseURL:  "https://api.openai.com",
-			APIKeyEnv:        "OPENAI_API_KEY",
-			MaxBodyBytes:     4 << 20,
-			MaxResponseBytes: 32 << 20,
-			Timeout:          120 * time.Second,
+			Enabled:            false,
+			UpstreamBaseURL:    "https://api.openai.com",
+			APIKeyEnv:          "OPENAI_API_KEY",
+			IncludeStreamUsage: true,
+			MaxBodyBytes:       4 << 20,
+			MaxResponseBytes:   32 << 20,
+			Timeout:            120 * time.Second,
 		},
 	}
 }

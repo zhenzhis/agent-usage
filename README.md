@@ -118,6 +118,7 @@ gateway:
   enabled: false
   upstream_base_url: "https://api.openai.com"
   api_key_env: "OPENAI_API_KEY"
+  include_stream_usage: true
   max_body_bytes: 4194304
   max_response_bytes: 33554432
   timeout: 120s
@@ -125,7 +126,7 @@ gateway:
 
 Use `pricing.overrides` for enterprise contracts, relay pricing, regional multipliers, or provider-specific discounts.
 
-The optional gateway is a local OpenAI-compatible Chat Completions proxy. It is disabled by default, supports JSON responses and SSE streaming, reads the upstream API key from the configured environment variable, and records token usage plus audit metadata without storing request messages or response content. Streaming usage is recorded when the upstream emits a final `usage` chunk, such as OpenAI `stream_options.include_usage`.
+The optional gateway is a local OpenAI-compatible Chat Completions proxy. It is disabled by default, supports JSON responses and SSE streaming, reads the upstream API key from the configured environment variable, and records token usage plus audit metadata without storing request messages or response content. For streaming calls, `include_stream_usage: true` asks compatible upstreams for a final usage chunk when the client did not explicitly set `stream_options.include_usage`; set it to `false` for relays that reject that option.
 
 Gateway requests can attach ledger context through query parameters or request `metadata`: `agent_ledger.project`, `agent_ledger.goal`, `agent_ledger.workload_id`, `agent_ledger.agent_run_id`, `agent_ledger.session_id`, and `agent_ledger.git_branch`. This lets wrappers, MCP tools, and async agents bind live model calls to an existing workload/run without exposing prompt content.
 

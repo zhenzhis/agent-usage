@@ -67,6 +67,11 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	if !s.evaluateOperationPolicy(w, r, "model.call", "gateway", model, ledgerCtx.Project, "openai-chat-completions") {
 		return
 	}
+	upstreamBody, streamUsageRequested, err := prepareOpenAIChatGatewayBody(raw, payload, cfg)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
 	apiKey := strings.TrimSpace(os.Getenv(cfg.APIKeyEnv))
 	if apiKey == "" {
 		http.Error(w, "gateway upstream API key env var is not set", http.StatusServiceUnavailable)
@@ -74,7 +79,7 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	upstreamURL := strings.TrimRight(cfg.UpstreamBaseURL, "/") + "/v1/chat/completions"
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(raw))
+	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
 	if err != nil {
 		serverError(w, err)
 		return
@@ -93,7 +98,7 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	}
 	defer resp.Body.Close()
 	if payload.Stream {
-		s.handleOpenAIChatGatewayStream(w, resp, cfg, model, ledgerCtx, started)
+		s.handleOpenAIChatGatewayStream(w, resp, cfg, model, ledgerCtx, started, streamUsageRequested)
 		return
 	}
 
@@ -120,9 +125,41 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", firstNonEmpty(resp.Header.Get("Content-Type"), "application/json"))
 	w.Header().Set("X-Agent-Ledger-Usage-Recorded", fmt.Sprint(recorded))
 	w.Header().Set("X-Agent-Ledger-Usage-Events", fmt.Sprint(eventCount))
+	w.Header().Set("X-Agent-Ledger-Stream-Usage-Requested", fmt.Sprint(streamUsageRequested))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(respBody)
+}
+
+func prepareOpenAIChatGatewayBody(raw []byte, payload openAIChatGatewayRequest, cfg config.GatewayConfig) ([]byte, bool, error) {
+	if !payload.Stream || !cfg.IncludeStreamUsage {
+		return raw, false, nil
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, false, err
+	}
+	var streamOptions map[string]interface{}
+	if rawOptions, exists := obj["stream_options"]; exists && rawOptions != nil {
+		typedOptions, ok := rawOptions.(map[string]interface{})
+		if !ok {
+			return raw, false, nil
+		}
+		streamOptions = typedOptions
+	}
+	if streamOptions == nil {
+		streamOptions = map[string]interface{}{}
+	}
+	if _, ok := streamOptions["include_usage"]; ok {
+		return raw, false, nil
+	}
+	streamOptions["include_usage"] = true
+	obj["stream_options"] = streamOptions
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
 }
 
 func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model string, ledgerCtx gatewayLedgerContext, started time.Time) (bool, int) {
@@ -185,7 +222,7 @@ func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model string, ledgerCt
 	return len(events) > 0, len(events)
 }
 
-func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time) {
+func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time, streamUsageRequested bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming is not supported by this response writer", http.StatusInternalServerError)
@@ -195,6 +232,7 @@ func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", firstNonEmpty(resp.Header.Get("Cache-Control"), "no-cache"))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
+	w.Header().Set("X-Agent-Ledger-Stream-Usage-Requested", fmt.Sprint(streamUsageRequested))
 	w.Header().Set("Trailer", "X-Agent-Ledger-Usage-Recorded, X-Agent-Ledger-Usage-Events")
 	w.WriteHeader(resp.StatusCode)
 

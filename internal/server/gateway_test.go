@@ -27,6 +27,14 @@ func TestGatewayStreamsAndRecordsUsage(t *testing.T) {
 	db := testServerDB(t)
 	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var upstreamBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&upstreamBody); err != nil {
+			t.Fatalf("decode upstream body: %v", err)
+		}
+		streamOptions, ok := upstreamBody["stream_options"].(map[string]interface{})
+		if !ok || streamOptions["include_usage"] != true {
+			t.Fatalf("gateway did not request final stream usage chunk: %+v", upstreamBody["stream_options"])
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_stream_test\",\"model\":\"gpt-5.5\",\"choices\":[{\"delta\":{\"content\":\"secret streamed response must not persist\"}}],\"usage\":null}\n\n"))
 		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_stream_test\",\"model\":\"gpt-5.5\",\"choices\":[],\"usage\":{\"prompt_tokens\":30,\"completion_tokens\":7,\"prompt_tokens_details\":{\"cached_tokens\":5}}}\n\n"))
@@ -58,6 +66,91 @@ func TestGatewayStreamsAndRecordsUsage(t *testing.T) {
 	rawAudit, _ := json.Marshal(audit)
 	if strings.Contains(string(rawAudit), "secret streamed prompt") || strings.Contains(string(rawAudit), "secret streamed response") || strings.Contains(string(rawAudit), "sk-test") {
 		t.Fatalf("sensitive streamed gateway data leaked into audit log: %s", string(rawAudit))
+	}
+}
+
+func TestPrepareOpenAIChatGatewayBodyStreamUsage(t *testing.T) {
+	baseConfig := testGatewayConfig("http://127.0.0.1")
+	tests := []struct {
+		name      string
+		raw       string
+		cfg       config.GatewayConfig
+		requested bool
+		wantUsage interface{}
+	}{
+		{
+			name:      "injects when streaming and absent",
+			raw:       `{"model":"gpt-5.5","stream":true,"messages":[]}`,
+			cfg:       baseConfig,
+			requested: true,
+			wantUsage: true,
+		},
+		{
+			name:      "preserves explicit false",
+			raw:       `{"model":"gpt-5.5","stream":true,"stream_options":{"include_usage":false},"messages":[]}`,
+			cfg:       baseConfig,
+			requested: false,
+			wantUsage: false,
+		},
+		{
+			name:      "preserves explicit true",
+			raw:       `{"model":"gpt-5.5","stream":true,"stream_options":{"include_usage":true},"messages":[]}`,
+			cfg:       baseConfig,
+			requested: false,
+			wantUsage: true,
+		},
+		{
+			name: "does not inject when config disabled",
+			raw:  `{"model":"gpt-5.5","stream":true,"messages":[]}`,
+			cfg: func() config.GatewayConfig {
+				cfg := baseConfig
+				cfg.IncludeStreamUsage = false
+				return cfg
+			}(),
+			requested: false,
+			wantUsage: nil,
+		},
+		{
+			name:      "does not inject for non-streaming",
+			raw:       `{"model":"gpt-5.5","messages":[]}`,
+			cfg:       baseConfig,
+			requested: false,
+			wantUsage: nil,
+		},
+		{
+			name:      "preserves non-object stream options",
+			raw:       `{"model":"gpt-5.5","stream":true,"stream_options":"custom","messages":[]}`,
+			cfg:       baseConfig,
+			requested: false,
+			wantUsage: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var payload openAIChatGatewayRequest
+			if err := json.Unmarshal([]byte(tc.raw), &payload); err != nil {
+				t.Fatalf("unmarshal payload: %v", err)
+			}
+			out, requested, err := prepareOpenAIChatGatewayBody([]byte(tc.raw), payload, tc.cfg)
+			if err != nil {
+				t.Fatalf("prepare body: %v", err)
+			}
+			if requested != tc.requested {
+				t.Fatalf("requested=%v want %v", requested, tc.requested)
+			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(out, &body); err != nil {
+				t.Fatalf("unmarshal output: %v", err)
+			}
+			streamOptions, _ := body["stream_options"].(map[string]interface{})
+			var got interface{}
+			if streamOptions != nil {
+				got = streamOptions["include_usage"]
+			}
+			if got != tc.wantUsage {
+				t.Fatalf("include_usage=%v want %v body=%s", got, tc.wantUsage, string(out))
+			}
+		})
 	}
 }
 
@@ -188,11 +281,12 @@ func TestGatewayPolicyApprovalRequired(t *testing.T) {
 
 func testGatewayConfig(upstream string) config.GatewayConfig {
 	return config.GatewayConfig{
-		Enabled:          true,
-		UpstreamBaseURL:  upstream,
-		APIKeyEnv:        "AGENT_LEDGER_TEST_OPENAI_KEY",
-		MaxBodyBytes:     1 << 20,
-		MaxResponseBytes: 1 << 20,
-		Timeout:          time.Second,
+		Enabled:            true,
+		UpstreamBaseURL:    upstream,
+		APIKeyEnv:          "AGENT_LEDGER_TEST_OPENAI_KEY",
+		IncludeStreamUsage: true,
+		MaxBodyBytes:       1 << 20,
+		MaxResponseBytes:   1 << 20,
+		Timeout:            time.Second,
 	}
 }

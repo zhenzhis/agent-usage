@@ -253,7 +253,7 @@ func Registry(opts Options) Catalog {
 			Privacy:        "forwards prompt content only in-memory to the configured upstream; ledger writes usage metadata only; API keys are read from env and not persisted",
 			EventTypes:     []string{"model.call", "policy.decision", "context.ref"},
 			Endpoints:      []string{"POST /gateway/openai/v1/chat/completions"},
-			Limitations:    []string{"disabled by default", "streaming usage is recorded only when the upstream emits a final usage chunk", "OpenAI-compatible chat completions MVP", "does not persist prompt or response content"},
+			Limitations:    []string{"disabled by default", "streaming usage requires upstream final usage chunks; gateway requests them by default when compatible", "OpenAI-compatible chat completions MVP", "does not persist prompt or response content"},
 			NextMilestones: []string{"provider-native adapters", "budget-aware routing decisions", "streaming conformance fixtures for more providers"},
 		},
 		{

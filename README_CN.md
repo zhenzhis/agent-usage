@@ -118,6 +118,7 @@ gateway:
   enabled: false
   upstream_base_url: "https://api.openai.com"
   api_key_env: "OPENAI_API_KEY"
+  include_stream_usage: true
   max_body_bytes: 4194304
   max_response_bytes: 33554432
   timeout: 120s
@@ -125,7 +126,7 @@ gateway:
 
 企业合同价、三方中转价、地区倍率和内部折扣请通过 `pricing.overrides` 配置。
 
-可选 gateway 是本地 OpenAI-compatible Chat Completions 代理。它默认关闭，支持 JSON 响应和 SSE streaming，只从配置的环境变量读取上游 API key，并只记录 token usage 与审计元数据，不保存 request messages 或 response content。streaming 记账依赖上游返回最终 `usage` chunk，例如 OpenAI `stream_options.include_usage`。
+可选 gateway 是本地 OpenAI-compatible Chat Completions 代理。它默认关闭，支持 JSON 响应和 SSE streaming，只从配置的环境变量读取上游 API key，并只记录 token usage 与审计元数据，不保存 request messages 或 response content。对 streaming 请求，`include_stream_usage: true` 会在客户端没有显式设置 `stream_options.include_usage` 时请求兼容上游返回最终 usage chunk；如果三方中转拒绝该选项，可设为 `false`。
 
 Gateway 请求可以通过 query 参数或 request `metadata` 附加账本上下文：`agent_ledger.project`、`agent_ledger.goal`、`agent_ledger.workload_id`、`agent_ledger.agent_run_id`、`agent_ledger.session_id`、`agent_ledger.git_branch`。这样 wrapper、MCP 工具和异步 agent 可以把实时模型调用绑定到已有 workload/run，而无需暴露 prompt 内容。
 
