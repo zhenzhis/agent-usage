@@ -69,6 +69,7 @@ const I18N = {
     cacheDoctor: "Cache Doctor",
     dataQuality: "Data Quality",
     watchdog: "Watchdog",
+    fleetAttribution: "Fleet Attribution",
     reconciliation: "Reconciliation",
     teamShowback: "Team Showback",
     team: "Team",
@@ -164,6 +165,7 @@ const I18N = {
     unitMin: "min",
     unitSec: "sec",
     noIssues: "No issues detected",
+    noFleet: "No fleet runs",
     noReconciliation: "No provider statements imported",
     noChargeback: "No showback rows",
     providerBill: "provider bill",
@@ -212,6 +214,7 @@ const I18N = {
     cacheDoctor: "Cache Doctor",
     dataQuality: "数据质量",
     watchdog: "Watchdog",
+    fleetAttribution: "Fleet Attribution",
     reconciliation: "对账",
     teamShowback: "团队 Showback",
     team: "团队",
@@ -307,6 +310,7 @@ const I18N = {
     unitMin: "分钟",
     unitSec: "秒",
     noIssues: "未发现问题",
+    noFleet: "暂无 Fleet 归因数据",
     noReconciliation: "尚未导入 provider 账单",
     noChargeback: "暂无团队归因数据",
     providerBill: "provider 账单",
@@ -837,6 +841,27 @@ function renderWatchdog(rows) {
   list.replaceChildren(fragment);
 }
 
+function renderFleetAttribution(report) {
+  const list = $("fleet-list");
+  if (!list) return;
+  const fragment = document.createDocumentFragment();
+  const rows = (report && report.rows) || [];
+  if (rows.length === 0) {
+    fragment.appendChild(createMessage(t("noFleet"), "ops-empty"));
+    setText("fleet-meta", "0");
+    list.replaceChildren(fragment);
+    return;
+  }
+  rows.slice(0, 8).forEach((row) => {
+    const label = row.attribution || "run";
+    const detail = `${row.source || "-"} · ${row.agent_name || "-"} · ${fmt(row.model_calls || 0)} ${t("calls")} · ${fmt(row.concurrent_runs || 1)}x`;
+    const severity = row.attribution === "sub-agent" || Number(row.concurrent_runs || 1) > 1 ? "warning" : "ok";
+    addOpsRow(fragment, `${label} · ${row.project || row.repo || row.workload_id || "-"}`, detail, `${fmt(row.tokens || 0)} · ${fmtCost(row.cost_usd || 0)}`, severity);
+  });
+  setText("fleet-meta", `${report.runs || rows.length} ${t("runs")} · max ${report.max_concurrent_runs || 1}x · ${fmtCost(report.cost_usd || 0)}`);
+  list.replaceChildren(fragment);
+}
+
 function renderReconciliation(rows) {
   const list = $("reconciliation-list");
   if (!list) return;
@@ -1137,6 +1162,7 @@ async function refresh(options = {}) {
       costIntel: api("cost-intelligence"),
       cacheDoctor: api("cache/doctor"),
       watchdog: api("watchdog/events", { skipModel: true }),
+      fleet: api("fleet-attribution", { extra: { limit: 50 } }),
       reconciliation: api("reconciliation/status", { skipModel: true, extra: { limit: 20 } }),
       chargeback: api("chargeback", { extra: { limit: 50 } }),
     };
@@ -1184,6 +1210,7 @@ async function refresh(options = {}) {
     if (data.costIntel) renderCostIntelligence(data.costIntel);
     if (data.cacheDoctor) renderCacheDoctor(data.cacheDoctor);
     if (data.watchdog) renderWatchdog(data.watchdog);
+    if (data.fleet) renderFleetAttribution(data.fleet);
     if (data.reconciliation) renderReconciliation(data.reconciliation);
     if (data.chargeback) renderChargeback(data.chargeback);
     if (data.workloads) {

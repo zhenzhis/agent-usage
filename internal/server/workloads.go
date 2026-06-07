@@ -136,6 +136,28 @@ func (s *Server) handleWorkloadGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, graph)
 }
 
+func (s *Server) handleFleetAttribution(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	from, to, _, err := s.parseTimeRange(r)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	report, err := s.db.GetFleetAttribution(from, to,
+		r.URL.Query().Get("source"),
+		r.URL.Query().Get("model"),
+		r.URL.Query().Get("project"),
+		parseLimit(r, 100))
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	applyFleetPrivacy(report, s.privacyFor(r))
+	writeJSON(w, report)
+}
+
 func (s *Server) handleModelRegistry(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.GetModelRegistry(s.options.Pricing.StaleAfter, parseLimit(r, 1000))
 	if err != nil {
@@ -266,5 +288,22 @@ func applyWorkloadPrivacy(row *storage.WorkloadSummary, privacy config.PrivacyCo
 		row.GitBranch = "<redacted>"
 		row.Owner = "<redacted>"
 		row.Team = "<redacted>"
+	}
+}
+
+func applyFleetPrivacy(report *storage.FleetAttributionReport, privacy config.PrivacyConfig) {
+	if report == nil {
+		return
+	}
+	for i := range report.Rows {
+		if privacy.ScreenshotMode {
+			report.Rows[i].Goal = "<redacted>"
+		}
+		if privacy.HideProjectNames || privacy.ScreenshotMode {
+			report.Rows[i].Project = "<redacted>"
+			report.Rows[i].Repo = "<redacted>"
+			report.Rows[i].GitBranch = "<redacted>"
+			report.Rows[i].Team = "<redacted>"
+		}
 	}
 }

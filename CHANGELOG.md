@@ -17,6 +17,7 @@
 - Model Router Simulator through `GET /api/router/simulate` and `agent-ledger router simulate`, estimating target-model routing savings from existing token components and pricing governance metadata without mutating ledger records.
 - Preflight Cost Estimate through `GET /api/preflight/estimate` and `agent-ledger preflight`, estimating likely task cost/tokens/calls from local historical session medians and task-type multipliers.
 - Team Chargeback/Showback through `GET /api/chargeback`, `GET /api/export?type=chargeback`, and `agent-ledger chargeback`, using raw usage as the authoritative source and canonical model calls only as fallback.
+- Fleet Attribution through `GET /api/fleet-attribution` and `agent-ledger fleet`, reporting explicit sub-agent parent links, overlapping parallel runs, model-call totals, tokens, and costs.
 - Agent Wrapped through `GET /api/wrapped` and `agent-ledger wrapped`, producing monthly/weekly/yearly Markdown or JSON summaries from metadata-only usage signals.
 - One-click Doctor through `GET /api/doctor` and `agent-ledger doctor`, combining usage, ingestion health, pricing freshness, and data-quality checks into actionable JSON/Markdown diagnostics.
 - Consistent dashboard bundle through `GET /api/dashboard`, so KPI, token, cost, and model panels read one storage snapshot and avoid mixed old/new states during scans.

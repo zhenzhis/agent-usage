@@ -188,6 +188,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/router/simulate?to_model=gpt-5-mini&ratio=0.5` | 模拟模型路由调整的费用影响，不修改账本 |
 | `GET /api/preflight/estimate?task=refactor&project=repo-name` | 开始 agent 任务前估算可能费用、token 与调用量 |
 | `GET /api/chargeback` | 团队/项目/source/model showback；优先使用 raw usage，无 raw 时 fallback 到 canonical model calls |
+| `GET /api/fleet-attribution` | sub-agent、parent run 与并行 run 成本归因 |
 | `GET /api/wrapped?period=monthly&format=markdown` | 月度/周度/年度 Agent Wrapped 摘要，不分析 prompt 内容 |
 | `POST /api/policy/evaluate` | 评估本地 advisory policy，并可选择写入 policy decision |
 | `GET /api/sessions` | 服务端分页会话账本 |
