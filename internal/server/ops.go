@@ -213,7 +213,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	switch format {
 	case "json":
 		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
-		_ = s.db.AppendAuditLog("local", s.roleFor(r), "export", exportType, map[string]string{"format": format, "privacy": fmt.Sprint(r.URL.Query().Get("privacy"))})
+		s.appendAuditLog("local", s.roleFor(r), "export", exportType, map[string]string{"format": format, "privacy": fmt.Sprint(r.URL.Query().Get("privacy"))})
 		writeJSON(w, payload)
 	case "csv":
 		body, err := csvFor(exportType, payload)
@@ -223,7 +223,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
-		_ = s.db.AppendAuditLog("local", s.roleFor(r), "export", exportType, map[string]string{"format": format, "privacy": fmt.Sprint(r.URL.Query().Get("privacy"))})
+		s.appendAuditLog("local", s.roleFor(r), "export", exportType, map[string]string{"format": format, "privacy": fmt.Sprint(r.URL.Query().Get("privacy"))})
 		_, _ = w.Write(body)
 	default:
 		badRequest(w, fmt.Errorf("unsupported export format %q", format))
@@ -275,7 +275,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "report", "markdown", map[string]string{"source": source, "model": model, "project": project})
+	s.appendAuditLog("local", s.roleFor(r), "report", "markdown", map[string]string{"source": source, "model": model, "project": project})
 	_, _ = w.Write([]byte(b.String()))
 }
 
@@ -312,7 +312,7 @@ func (s *Server) handleOfflineBundleExport(w http.ResponseWriter, r *http.Reques
 	if signed {
 		signingKey = key
 	}
-	bundle, raw, err := s.db.BuildOfflineBundle(
+	bundle, raw, err := s.db.BuildOfflineBundleWithOptions(
 		from, to,
 		source,
 		model,
@@ -321,12 +321,13 @@ func (s *Server) handleOfflineBundleExport(w http.ResponseWriter, r *http.Reques
 		signingKey,
 		r.URL.Query().Get("key_id"),
 		parseLimit(r, 10000),
+		s.canWriteDerivedData(),
 	)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "offline_bundle.export", bundle.BundleID, map[string]string{"privacy": privacyLabel, "signed": fmt.Sprint(bundle.Integrity.Signature != "")})
+	s.appendAuditLog("local", s.roleFor(r), "offline_bundle.export", bundle.BundleID, map[string]string{"privacy": privacyLabel, "signed": fmt.Sprint(bundle.Integrity.Signature != "")})
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=agent-ledger-"+bundle.BundleID+".json")
 	_, _ = w.Write(raw)
@@ -356,7 +357,7 @@ func (s *Server) handleOfflineBundleImport(w http.ResponseWriter, r *http.Reques
 		badRequest(w, err)
 		return
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "offline_bundle.import", result.BundleID, map[string]string{"events_inserted": fmt.Sprint(result.EventsInserted), "signature_verified": fmt.Sprint(result.SignatureVerified)})
+	s.appendAuditLog("local", s.roleFor(r), "offline_bundle.import", result.BundleID, map[string]string{"events_inserted": fmt.Sprint(result.EventsInserted), "signature_verified": fmt.Sprint(result.SignatureVerified)})
 	writeJSON(w, map[string]interface{}{"ok": true, "result": result})
 }
 

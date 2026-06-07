@@ -118,6 +118,10 @@ privacy:
   hide_project_names: false
   screenshot_mode: false
 
+rbac:
+  enabled: false
+  read_only: false
+
 webhooks:
   enabled: false
   url: ""
@@ -273,7 +277,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/export?type=chargeback&format=csv` | Team showback CSV export |
 | `GET /api/report?format=markdown` | Markdown report |
 
-Manual scan, reset, pricing sync, imports, and recalculation require localhost access unless auth tokens are configured.
+Manual scan, reset, pricing sync, imports, and recalculation require localhost access unless auth tokens are configured. Set `rbac.read_only: true` for observer deployments; Agent Ledger then rejects REST/CLI write operations, disables background scans, pricing sync, cost recalculation, and suppresses derived writebacks from GET endpoints.
 
 When a policy returns `require_approval`, Agent Ledger records a local pending approval request and returns its id. Admins can approve or reject it through `POST /api/policy/approvals` or `agent-ledger policy resolve`; the original operation can then be retried with `approval_id=<id>` or `X-Agent-Ledger-Approval: <id>`.
 
@@ -357,6 +361,7 @@ If costs differ from a provider invoice:
 - Pricing sync is the expected outbound request.
 - Manual operations are localhost-only by default.
 - Optional RBAC supports `viewer`, `operator`, and `admin` tokens.
+- `rbac.read_only: true` turns the process into an observer: POST/PUT-style write APIs are rejected, CLI write commands fail explicitly, automatic collectors and pricing sync do not run, and reports/exports/anomaly views do not append audit, budget, insight, or bundle records.
 - Policy rules can match `global`, `source`, `model`, `project`, `repo`, `git_branch`, `team`, `action`, `target`, and `role`.
 - Policy approval requests are local metadata records. They authorize only matching action/target retries and do not include prompt content.
 - The optional provider gateway is disabled by default. It forwards prompt content only to the configured upstream in memory, reads API keys from environment variables, and stores usage metadata rather than message content.

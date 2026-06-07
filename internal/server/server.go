@@ -269,6 +269,10 @@ func (s *Server) roleFor(r *http.Request) string {
 }
 
 func (s *Server) requireRole(w http.ResponseWriter, r *http.Request, minRole string) bool {
+	if s.options.RBAC.ReadOnly && !isSafeMethod(r.Method) {
+		http.Error(w, "read-only mode: write operations are disabled", http.StatusForbidden)
+		return false
+	}
 	if !s.options.RBAC.Enabled {
 		return true
 	}
@@ -279,6 +283,21 @@ func (s *Server) requireRole(w http.ResponseWriter, r *http.Request, minRole str
 		return false
 	}
 	return true
+}
+
+func (s *Server) canWriteDerivedData() bool {
+	return !s.options.RBAC.ReadOnly
+}
+
+func (s *Server) appendAuditLog(actor, role, action, target string, params map[string]string) {
+	if !s.canWriteDerivedData() {
+		return
+	}
+	_ = s.db.AppendAuditLog(actor, role, action, target, params)
+}
+
+func isSafeMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 }
 
 func (s *Server) requireLocalOrAuth(w http.ResponseWriter, r *http.Request) bool {

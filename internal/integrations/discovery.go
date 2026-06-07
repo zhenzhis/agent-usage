@@ -34,6 +34,7 @@ type DiscoveryManifest struct {
 	CapabilityCatalogURI string              `json:"capability_catalog_uri"`
 	MCPCommand           string              `json:"mcp_command"`
 	Auth                 string              `json:"auth"`
+	ReadOnly             bool                `json:"read_only"`
 	Summary              Summary             `json:"summary"`
 	Protocols            []DiscoveryProtocol `json:"protocols"`
 }
@@ -78,12 +79,16 @@ func Discovery(opts Options) DiscoveryManifest {
 		CapabilityCatalogURI: "/api/integrations",
 		MCPCommand:           "agent-ledger mcp",
 		Auth:                 discoveryAuth(opts),
+		ReadOnly:             opts.ReadOnly,
 		Summary:              catalog.Summary,
 		Protocols:            protocols,
 	}
 }
 
 func discoveryAuth(opts Options) string {
+	if opts.ReadOnly {
+		return "read-only mode; write operations, background scans, pricing sync, and derived writebacks are disabled"
+	}
 	if opts.RBACEnabled {
 		return "rbac tokens configured; viewer/operator/admin roles may apply"
 	}

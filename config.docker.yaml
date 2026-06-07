@@ -80,6 +80,7 @@ watchdog:
 
 rbac:
   enabled: false
+  read_only: false
 
 policies:
   enabled: false

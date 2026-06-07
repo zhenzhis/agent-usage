@@ -125,6 +125,28 @@ func TestMCPUnknownResourceReturnsError(t *testing.T) {
 	}
 }
 
+func TestMCPReadOnlyAllowsReadToolsAndRejectsWriteTools(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	cfg.RBAC.ReadOnly = true
+	srv := New(db, cfg)
+	srv.now = func() time.Time { return time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC) }
+
+	readResponses := serveLines(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.current_budget","arguments":{"window":"day"}}}`,
+	)
+	if toolTextPayload(t, readResponses[0])["method"] != "local-estimate" {
+		t.Fatalf("read-only read tool returned unexpected payload: %#v", readResponses[0])
+	}
+
+	writeResponses := serveRawLines(t, srv,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"blocked","source":"codex"}}}`,
+	)
+	if writeResponses[0]["error"] == nil {
+		t.Fatalf("expected read-only write tool error: %#v", writeResponses[0])
+	}
+}
+
 func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	db := openTestDB(t)
 	cfg := config.DefaultConfig()

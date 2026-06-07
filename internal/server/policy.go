@@ -46,7 +46,7 @@ func (s *Server) handlePolicyEvaluate(w http.ResponseWriter, r *http.Request) {
 			result.Decisions[i].DecisionID = id
 		}
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.evaluate", result.Action, map[string]string{
+	s.appendAuditLog("local", s.roleFor(r), "policy.evaluate", result.Action, map[string]string{
 		"source": payload.Source,
 		"model":  payload.Model,
 		"action": payload.Action,
@@ -101,9 +101,9 @@ func (s *Server) evaluateOperationPolicy(w http.ResponseWriter, r *http.Request,
 		Target:  target,
 		Role:    s.roleFor(r),
 	})
-	if result.Enabled && len(result.Decisions) > 0 {
+	if result.Enabled && len(result.Decisions) > 0 && s.canWriteDerivedData() {
 		raw, _ := json.Marshal(result.Decisions)
-		_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.evaluate", target, map[string]string{
+		s.appendAuditLog("local", s.roleFor(r), "policy.evaluate", target, map[string]string{
 			"action":           action,
 			"target":           target,
 			"effective_action": result.Action,
@@ -128,8 +128,12 @@ func (s *Server) evaluateOperationPolicy(w http.ResponseWriter, r *http.Request,
 			return false
 		}
 		if allowed {
-			_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.approval.used", approvalID, map[string]string{"action": action, "target": target})
+			s.appendAuditLog("local", s.roleFor(r), "policy.approval.used", approvalID, map[string]string{"action": action, "target": target})
 			return true
+		}
+		if !s.canWriteDerivedData() {
+			http.Error(w, "operation requires approval by policy; approval request creation is disabled in read-only mode", http.StatusForbidden)
+			return false
 		}
 		requestID, err := s.createPolicyApprovalRequest(r, result, action, source, model, project, target)
 		if err != nil {
@@ -228,7 +232,7 @@ func (s *Server) createPolicyApprovalRequest(r *http.Request, result ledgerpolic
 	if err != nil {
 		return "", err
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.approval.requested", requestID, map[string]string{"action": action, "target": target, "source": source, "model": model, "project": project})
+	s.appendAuditLog("local", s.roleFor(r), "policy.approval.requested", requestID, map[string]string{"action": action, "target": target, "source": source, "model": model, "project": project})
 	return requestID, nil
 }
 
@@ -268,7 +272,7 @@ func (s *Server) handlePolicyApprovals(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, err)
 			return
 		}
-		_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.approval."+payload.Status, payload.RequestID, map[string]string{"note": payload.Note})
+		s.appendAuditLog("local", s.roleFor(r), "policy.approval."+payload.Status, payload.RequestID, map[string]string{"note": payload.Note})
 		writeJSON(w, map[string]interface{}{"ok": true, "request_id": payload.RequestID, "status": payload.Status})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

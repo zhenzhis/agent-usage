@@ -142,7 +142,8 @@ type WatchdogConfig struct {
 
 // RBACConfig enables coarse local roles for API operations.
 type RBACConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled  bool `yaml:"enabled"`
+	ReadOnly bool `yaml:"read_only"`
 }
 
 // PolicyConfig groups local policy rules.
@@ -257,7 +258,7 @@ func DefaultConfig() *Config {
 		Budgets:  BudgetConfig{Enabled: false},
 		Quota:    QuotaConfig{Enabled: false, Plan: "custom", ResetDay: 1, Window5H: true},
 		Watchdog: WatchdogConfig{Enabled: true, TokenSpikeMultiplier: 4, MinCalls: 8, NightStartHour: 22, NightEndHour: 6},
-		RBAC:     RBACConfig{Enabled: false},
+		RBAC:     RBACConfig{Enabled: false, ReadOnly: false},
 		Policies: PolicyConfig{Enabled: false},
 		Webhooks: WebhookConfig{Enabled: false, Timeout: 10 * time.Second, MaxEvents: 20},
 		Teams:    TeamsConfig{Groups: map[string]string{}},

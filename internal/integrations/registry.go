@@ -20,6 +20,7 @@ type Options struct {
 	PricingMode         string   `json:"pricing_mode"`
 	PoliciesEnabled     bool     `json:"policies_enabled"`
 	RBACEnabled         bool     `json:"rbac_enabled"`
+	ReadOnly            bool     `json:"read_only"`
 	QuotaEnabled        bool     `json:"quota_enabled"`
 	WebhooksEnabled     bool     `json:"webhooks_enabled"`
 	OTLPReceiverEnabled bool     `json:"otlp_receiver_enabled"`
@@ -83,6 +84,7 @@ func OptionsFromConfig(cfg *config.Config) Options {
 		PricingMode:         cfg.Pricing.Mode,
 		PoliciesEnabled:     cfg.Policies.Enabled,
 		RBACEnabled:         cfg.RBAC.Enabled,
+		ReadOnly:            cfg.RBAC.ReadOnly,
 		QuotaEnabled:        cfg.Quota.Enabled,
 		WebhooksEnabled:     cfg.Webhooks.Enabled,
 		OTLPReceiverEnabled: cfg.Integrations.OTLPReceiver.Enabled,

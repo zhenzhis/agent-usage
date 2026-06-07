@@ -56,6 +56,12 @@ type OfflineBundleImportResult struct {
 
 // BuildOfflineBundle builds a privacy-safe offline bundle. signingKey is optional.
 func (d *DB) BuildOfflineBundle(from, to time.Time, source, model, project, privacyLabel, signingKey, keyID string, limit int) (*OfflineBundle, []byte, error) {
+	return d.BuildOfflineBundleWithOptions(from, to, source, model, project, privacyLabel, signingKey, keyID, limit, true)
+}
+
+// BuildOfflineBundleWithOptions builds a privacy-safe offline bundle and can
+// skip recording the bundle digest for read-only control plane deployments.
+func (d *DB) BuildOfflineBundleWithOptions(from, to time.Time, source, model, project, privacyLabel, signingKey, keyID string, limit int, record bool) (*OfflineBundle, []byte, error) {
 	if limit <= 0 {
 		limit = 10000
 	}
@@ -122,8 +128,10 @@ func (d *DB) BuildOfflineBundle(from, to time.Time, source, model, project, priv
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := d.RecordOfflineBundle(bundle.BundleID, raw, "json"); err != nil {
-		return nil, nil, err
+	if record {
+		if err := d.RecordOfflineBundle(bundle.BundleID, raw, "json"); err != nil {
+			return nil, nil, err
+		}
 	}
 	return bundle, raw, nil
 }

@@ -394,6 +394,9 @@ func prompt(name, description string, args []map[string]string) map[string]inter
 }
 
 func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error) {
+	if s.cfg != nil && s.cfg.RBAC.ReadOnly && mcpToolRequiresWrite(name) {
+		return nil, fmt.Errorf("read-only mode: MCP tool %q is disabled because it writes local state", name)
+	}
 	switch name {
 	case "ledger.current_budget":
 		return s.toolCurrentBudget(args)
@@ -437,6 +440,23 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolFindSimilarWorkloads(args)
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)
+	}
+}
+
+func mcpToolRequiresWrite(name string) bool {
+	switch name {
+	case "ledger.start_workload",
+		"ledger.start_run",
+		"ledger.close_workload",
+		"ledger.heartbeat_run",
+		"ledger.record_tool_call",
+		"ledger.record_artifact",
+		"ledger.record_evaluation",
+		"ledger.record_context",
+		"ledger.record_event":
+		return true
+	default:
+		return false
 	}
 }
 

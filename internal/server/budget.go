@@ -93,7 +93,7 @@ func (s *Server) evaluateBudgets(now time.Time) ([]BudgetStatus, error) {
 			PeriodKey: periodKey,
 		}
 		result = append(result, status)
-		if severity != "ok" {
+		if severity != "ok" && s.canWriteDerivedData() {
 			_ = s.db.UpsertBudgetEvent(storage.BudgetEvent{
 				EventKey:  strings.Join([]string{status.Name, status.PeriodKey, status.Scope, status.Match, status.Metric}, "|"),
 				RuleName:  status.Name,

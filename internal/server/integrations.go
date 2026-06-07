@@ -36,6 +36,7 @@ func (s *Server) integrationOptions() integrations.Options {
 		PricingMode:         s.options.Pricing.Mode,
 		PoliciesEnabled:     s.options.Policies.Enabled,
 		RBACEnabled:         s.options.RBAC.Enabled,
+		ReadOnly:            s.options.RBAC.ReadOnly,
 		QuotaEnabled:        s.options.Quota.Enabled,
 		WebhooksEnabled:     s.options.Webhooks.Enabled,
 		OTLPReceiverEnabled: s.options.Integrations.OTLPReceiver.Enabled,

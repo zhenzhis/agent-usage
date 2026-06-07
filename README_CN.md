@@ -118,6 +118,10 @@ privacy:
   hide_project_names: false
   screenshot_mode: false
 
+rbac:
+  enabled: false
+  read_only: false
+
 webhooks:
   enabled: false
   url: ""
@@ -357,6 +361,7 @@ agent-ledger doctor --format markdown
 - pricing sync 是默认唯一出站请求。
 - 副作用操作默认 localhost-only。
 - 可选 RBAC：`viewer`、`operator`、`admin`。
+- `rbac.read_only: true` 会把进程切到观测模式：拒绝 REST/CLI 写操作，关闭后台 collector、pricing sync 和费用重算，并且报告、导出、异常视图等 GET 端点不会追加 audit、budget、insight 或 bundle 记录。
 - Policy rule 可匹配 `global`、`source`、`model`、`project`、`repo`、`git_branch`、`team`、`action`、`target` 和 `role`。
 - 策略审批请求只保存本地 metadata。批准后只授权相同 action/target 的重试，不包含 prompt 内容。
 - 可选 provider gateway 默认关闭。它只在内存中把 prompt content 转发给配置的上游，只从环境变量读取 API key，并只保存 usage 元数据而不是消息内容。

@@ -66,26 +66,30 @@ func main() {
 		return
 	}
 
-	// Check if version changed — if so, reset scan state to force full re-scan
-	// (needed when prompt counting logic or other parsing changes)
-	lastVer, _ := db.GetMeta("version")
-	if lastVer != "" && lastVer != version {
-		log.Printf("version changed (%s -> %s), resetting scan state for full re-scan", lastVer, version)
-		if err := db.ResetScanState(); err != nil {
-			log.Printf("reset scan state: %v", err)
+	if cfg.RBAC.ReadOnly {
+		log.Println("read-only mode enabled: version writes, background scans, pricing sync, and cost recalculation are disabled")
+	} else {
+		// Check if version changed — if so, reset scan state to force full re-scan
+		// (needed when prompt counting logic or other parsing changes)
+		lastVer, _ := db.GetMeta("version")
+		if lastVer != "" && lastVer != version {
+			log.Printf("version changed (%s -> %s), resetting scan state for full re-scan", lastVer, version)
+			if err := db.ResetScanState(); err != nil {
+				log.Printf("reset scan state: %v", err)
+			}
 		}
-	}
-	db.SetMeta("version", version)
+		db.SetMeta("version", version)
 
-	// Sync pricing
-	log.Println("syncing pricing data...")
-	if err := pricing.SyncWithConfig(db, cfg.Pricing); err != nil {
-		log.Printf("pricing sync failed: %v (continuing without pricing)", err)
-	}
+		// Sync pricing
+		log.Println("syncing pricing data...")
+		if err := pricing.SyncWithConfig(db, cfg.Pricing); err != nil {
+			log.Printf("pricing sync failed: %v (continuing without pricing)", err)
+		}
 
-	// Calculate costs for existing records
-	if err := recalcCostsMode(db, "zero"); err != nil {
-		log.Printf("recalc costs: %v", err)
+		// Calculate costs for existing records
+		if err := recalcCostsMode(db, "zero"); err != nil {
+			log.Printf("recalc costs: %v", err)
+		}
 	}
 
 	// Collector loop
@@ -102,12 +106,15 @@ func main() {
 	for _, ce := range collectors {
 		collectorBySource[ce.source] = ce
 		sourceOptions = append(sourceOptions, server.SourceOption{Source: ce.source, Enabled: ce.cfg.Enabled, Paths: ce.cfg.Paths})
-		if !ce.cfg.Enabled {
+		if !ce.cfg.Enabled && !cfg.RBAC.ReadOnly {
 			recordDisabledHealth(db, ce)
 		}
 	}
 	var scanMu sync.Mutex
 	scanSource := func(source string, reset bool) error {
+		if cfg.RBAC.ReadOnly {
+			return fmt.Errorf("read-only mode: scan is disabled")
+		}
 		scanMu.Lock()
 		defer scanMu.Unlock()
 		if source == "" {
@@ -143,50 +150,52 @@ func main() {
 		}
 		return nil
 	}
-	for _, ce := range collectors {
-		if !ce.cfg.Enabled {
-			continue
-		}
-		log.Printf("scanning %s sessions...", ce.name)
-		if err := scanCollector(db, ce, false); err != nil {
-			log.Printf("%s scan: %v", ce.name, err)
-		}
-		if err := recalcCostsMode(db, "zero"); err != nil {
-			log.Printf("recalc costs: %v", err)
+	if !cfg.RBAC.ReadOnly {
+		for _, ce := range collectors {
+			if !ce.cfg.Enabled {
+				continue
+			}
+			log.Printf("scanning %s sessions...", ce.name)
+			if err := scanCollector(db, ce, false); err != nil {
+				log.Printf("%s scan: %v", ce.name, err)
+			}
+			if err := recalcCostsMode(db, "zero"); err != nil {
+				log.Printf("recalc costs: %v", err)
+			}
+
+			go func(ce collectorEntry) {
+				interval := ce.cfg.ScanInterval
+				if interval <= 0 {
+					interval = 60 * time.Second
+				}
+				ticker := time.NewTicker(interval)
+				for range ticker.C {
+					scanMu.Lock()
+					err := scanCollector(db, ce, false)
+					scanMu.Unlock()
+					if err != nil {
+						log.Printf("%s scan: %v", ce.name, err)
+					}
+					if err := recalcCostsMode(db, "zero"); err != nil {
+						log.Printf("recalc costs: %v", err)
+					}
+				}
+			}(ce)
 		}
 
-		go func(ce collectorEntry) {
-			interval := ce.cfg.ScanInterval
-			if interval <= 0 {
-				interval = 60 * time.Second
-			}
-			ticker := time.NewTicker(interval)
+		// Periodic pricing sync
+		go func() {
+			ticker := time.NewTicker(cfg.Pricing.SyncInterval)
 			for range ticker.C {
-				scanMu.Lock()
-				err := scanCollector(db, ce, false)
-				scanMu.Unlock()
-				if err != nil {
-					log.Printf("%s scan: %v", ce.name, err)
+				if err := pricing.SyncWithConfig(db, cfg.Pricing); err != nil {
+					log.Printf("pricing sync failed: %v", err)
 				}
 				if err := recalcCostsMode(db, "zero"); err != nil {
 					log.Printf("recalc costs: %v", err)
 				}
 			}
-		}(ce)
+		}()
 	}
-
-	// Periodic pricing sync
-	go func() {
-		ticker := time.NewTicker(cfg.Pricing.SyncInterval)
-		for range ticker.C {
-			if err := pricing.SyncWithConfig(db, cfg.Pricing); err != nil {
-				log.Printf("pricing sync failed: %v", err)
-			}
-			if err := recalcCostsMode(db, "zero"); err != nil {
-				log.Printf("recalc costs: %v", err)
-			}
-		}
-	}()
 
 	// Start web server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.BindAddress, cfg.Server.Port)
@@ -328,6 +337,9 @@ func maxInt(a, b int) int {
 }
 
 func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
+	if cfg.RBAC.ReadOnly && cliCommandRequiresWrite(args) {
+		return fmt.Errorf("read-only mode: command %q is disabled because it writes local state", strings.Join(args, " "))
+	}
 	cmd := args[0]
 	now := time.Now()
 	dayFrom := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
@@ -400,7 +412,7 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 	case "event":
 		return runEventCLI(args[1:], db)
 	case "bundle":
-		return runBundleCLI(args[1:], db)
+		return runBundleCLI(args[1:], db, !cfg.RBAC.ReadOnly)
 	case "policy":
 		return runPolicyCLI(args[1:], cfg, db)
 	case "audit":
@@ -439,6 +451,50 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func cliCommandRequiresWrite(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	cmd := args[0]
+	sub := ""
+	if len(args) > 1 {
+		sub = args[1]
+	}
+	switch cmd {
+	case "pricing":
+		return sub == "sync"
+	case "event":
+		return sub == "ingest"
+	case "bundle":
+		return sub == "import"
+	case "reconcile":
+		return sub == "import"
+	case "provider", "otel", "a2a":
+		return sub == "ingest"
+	case "projection":
+		return sub == "repair"
+	case "notify", "run":
+		return true
+	case "policy":
+		if sub == "resolve" {
+			return true
+		}
+		if sub != "evaluate" || len(args) <= 2 {
+			return false
+		}
+		return cliBool(args[2:], "--record")
+	case "workload":
+		switch sub {
+		case "", "list", "show", "timeline", "state", "status", "feed", "events", "liveness":
+			return false
+		default:
+			return true
+		}
+	default:
+		return false
+	}
 }
 
 func runNotifyCLI(args []string, cfg *config.Config, db *storage.DB) error {
@@ -1135,7 +1191,7 @@ func redactAuditRows(rows []storage.AuditEvent) {
 	}
 }
 
-func runBundleCLI(args []string, db *storage.DB) error {
+func runBundleCLI(args []string, db *storage.DB, recordExport bool) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: agent-ledger bundle export|import")
 	}
@@ -1159,8 +1215,8 @@ func runBundleCLI(args []string, db *storage.DB) error {
 		if cliBool(args[1:], "--privacy") {
 			privacyLabel = "redacted"
 		}
-		_, raw, err := db.BuildOfflineBundle(from, to, cliValue(args[1:], "--source"), cliValue(args[1:], "--model"), cliValue(args[1:], "--project"),
-			privacyLabel, signingKey, cliValue(args[1:], "--key-id"), 10000)
+		_, raw, err := db.BuildOfflineBundleWithOptions(from, to, cliValue(args[1:], "--source"), cliValue(args[1:], "--model"), cliValue(args[1:], "--project"),
+			privacyLabel, signingKey, cliValue(args[1:], "--key-id"), 10000, recordExport)
 		if err != nil {
 			return err
 		}

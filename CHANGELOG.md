@@ -66,6 +66,7 @@
 - CLI commands: `today`, `top`, `doctor`, `battery`, `discovery`, `notify webhook`, `workload list/create/show/timeline/state/feed/close/start-run/heartbeat/liveness/tool/context/evaluation`, `run --goal ... -- <command>`, `export`, `pricing sync`, `policy enforcement`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
 - Cursor-compatible session pagination via `next_cursor`.
 - Black/white/gray data-dense dashboard panels for workloads, pricing, quota, quality, model calls, cache, watchdog, and cost intelligence.
+- Read-only observer mode through `rbac.read_only`, disabling background collectors, pricing sync, cost recalculation, REST/CLI writes, and GET-derived audit/insight/bundle writebacks.
 
 ### Changed
 
@@ -77,6 +78,7 @@
 ### Security
 
 - Added RBAC configuration fields and role checks for side-effectful governance APIs.
+- Added a read-only control plane mode for observer deployments that must not mutate local SQLite state.
 - Added local audit logging for scan, pricing sync, recalculation, and reconciliation import operations.
 - Exports can be forced into privacy mode by policy.
 - Agent run commands are best-effort redacted for common API key, token, password, secret, and bearer patterns before persistence, including canonical run events.

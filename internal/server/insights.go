@@ -69,7 +69,7 @@ func (s *Server) handlePricingSync(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "pricing.sync", "", nil)
+	s.appendAuditLog("local", s.roleFor(r), "pricing.sync", "", nil)
 	writeJSON(w, map[string]interface{}{"ok": true})
 }
 
@@ -100,7 +100,7 @@ func (s *Server) handlePricingRecalculate(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "pricing.recalculate", mode, map[string]string{"mode": mode})
+	s.appendAuditLog("local", s.roleFor(r), "pricing.recalculate", mode, map[string]string{"mode": mode})
 	writeJSON(w, map[string]interface{}{"ok": true, "mode": mode})
 }
 
@@ -301,9 +301,11 @@ func (s *Server) handleAnomalies(w http.ResponseWriter, r *http.Request) {
 	source := r.URL.Query().Get("source")
 	model := r.URL.Query().Get("model")
 	project := r.URL.Query().Get("project")
-	if err := s.db.DetectAnomaliesFiltered(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour); err != nil {
-		serverError(w, err)
-		return
+	if s.canWriteDerivedData() {
+		if err := s.db.DetectAnomaliesFiltered(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour); err != nil {
+			serverError(w, err)
+			return
+		}
 	}
 	rows, err := s.db.GetInsightEventsFiltered(storage.InsightEventFilter{
 		Kind:    "anomaly",
@@ -331,7 +333,7 @@ func (s *Server) handleWatchdogEvents(w http.ResponseWriter, r *http.Request) {
 	source := r.URL.Query().Get("source")
 	model := r.URL.Query().Get("model")
 	project := r.URL.Query().Get("project")
-	if s.options.Watchdog.Enabled {
+	if s.options.Watchdog.Enabled && s.canWriteDerivedData() {
 		if err := s.db.DetectWatchdogEvents(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.MinCalls, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour); err != nil {
 			serverError(w, err)
 			return
@@ -553,7 +555,7 @@ func (s *Server) handleReconciliationImport(w http.ResponseWriter, r *http.Reque
 		serverError(w, err)
 		return
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "reconciliation.import", row.Provider, map[string]string{"format": row.Format, "sha256": row.PayloadSHA256})
+	s.appendAuditLog("local", s.roleFor(r), "reconciliation.import", row.Provider, map[string]string{"format": row.Format, "sha256": row.PayloadSHA256})
 	writeJSON(w, map[string]interface{}{"ok": true, "import": row})
 }
 
@@ -679,9 +681,11 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 	pricingRules, _ := s.db.GetPricingRuleSummary()
 	pricingRows, _ := s.db.GetPricingAudit(500)
 	dashboard, _ := s.db.GetDashboardBundleFiltered(from, to, granularity, source, model, project, tzOffset)
-	_ = s.db.DetectAnomaliesFiltered(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour)
-	if s.options.Watchdog.Enabled {
-		_ = s.db.DetectWatchdogEvents(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.MinCalls, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour)
+	if s.canWriteDerivedData() {
+		_ = s.db.DetectAnomaliesFiltered(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour)
+		if s.options.Watchdog.Enabled {
+			_ = s.db.DetectWatchdogEvents(from, to, source, model, project, s.options.Watchdog.TokenSpikeMultiplier, s.options.Watchdog.MinCalls, s.options.Watchdog.NightStartHour, s.options.Watchdog.NightEndHour)
+		}
 	}
 	anomalies, _ := s.db.GetInsightEventsFiltered(storage.InsightEventFilter{Kind: "anomaly", Source: source, Model: model, Project: project, From: from, To: to, Limit: 50})
 	watchdog, _ := s.db.GetInsightEventsFiltered(storage.InsightEventFilter{Kind: "watchdog", Source: source, Model: model, Project: project, From: from, To: to, Limit: 50})
@@ -733,8 +737,10 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 		"workload_states":   workloadStates,
 	}
 	raw, _ := json.Marshal(bundle)
-	_ = s.db.RecordOfflineBundle(fmt.Sprintf("evidence-%d", time.Now().Unix()), raw, "json")
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "export", "evidence-bundle", map[string]string{"privacy": "redacted", "source": source, "model": model, "project": project})
+	if s.canWriteDerivedData() {
+		_ = s.db.RecordOfflineBundle(fmt.Sprintf("evidence-%d", time.Now().Unix()), raw, "json")
+	}
+	s.appendAuditLog("local", s.roleFor(r), "export", "evidence-bundle", map[string]string{"privacy": "redacted", "source": source, "model": model, "project": project})
 	w.Header().Set("Content-Disposition", "attachment; filename=agent-ledger-evidence.json")
 	writeJSON(w, bundle)
 }
@@ -742,6 +748,7 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePolicyStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"enabled":                s.options.Policies.Enabled,
+		"read_only":              s.options.RBAC.ReadOnly,
 		"require_privacy_export": s.options.Policies.RequirePrivacyExport,
 		"rules":                  s.options.Policies.Rules,
 		"webhooks_enabled":       s.options.Webhooks.Enabled,
