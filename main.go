@@ -399,12 +399,47 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "otel":
 		return runOTelCLI(args[1:], db)
+	case "a2a":
+		return runA2ACLI(args[1:], db)
 	case "mcp":
 		return mcp.New(db, cfg).Serve(os.Stdin, os.Stdout)
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func runA2ACLI(args []string, db *storage.DB) error {
+	if len(args) == 0 || (args[0] != "convert" && args[0] != "ingest") {
+		return fmt.Errorf("usage: agent-ledger a2a convert|ingest [--file task.json]")
+	}
+	raw, err := readCLIInput(args[1:], "--file", 4<<20)
+	if err != nil {
+		return err
+	}
+	tasks, err := integrations.DecodeA2ATasks(raw)
+	if err != nil {
+		return err
+	}
+	events, err := integrations.ConvertA2ATasks(tasks)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("no A2A task events found")
+	}
+	if args[0] == "convert" {
+		return json.NewEncoder(os.Stdout).Encode(events)
+	}
+	results := make([]*storage.CanonicalEventResult, 0, len(events))
+	for _, event := range events {
+		result, err := db.IngestCanonicalEvent(event)
+		if err != nil {
+			return err
+		}
+		results = append(results, result)
+	}
+	return json.NewEncoder(os.Stdout).Encode(results)
 }
 
 func runOTelCLI(args []string, db *storage.DB) error {
