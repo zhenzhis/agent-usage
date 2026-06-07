@@ -88,6 +88,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/workloads", s.handleWorkloads)
 	mux.HandleFunc("/api/workloads/close", s.handleWorkloadClose)
 	mux.HandleFunc("/api/agent-runs/heartbeat", s.handleAgentRunHeartbeat)
+	mux.HandleFunc("/api/agent-runs/liveness", s.handleAgentRunLiveness)
 	mux.HandleFunc("/api/workload-detail", s.handleWorkloadDetail)
 	mux.HandleFunc("/api/workload-graph", s.handleWorkloadGraph)
 	mux.HandleFunc("/api/fleet-attribution", s.handleFleetAttribution)

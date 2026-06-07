@@ -181,6 +181,11 @@ func tools() []map[string]interface{} {
 			"timestamp":  stringSchema(),
 			"confidence": numberSchema(),
 		}),
+		tool("ledger.run_liveness", "Return active agent runs and whether their heartbeat is stale.", map[string]interface{}{
+			"max_age":    stringSchema(),
+			"stale_only": map[string]interface{}{"type": "boolean"},
+			"limit":      integerSchema(),
+		}),
 		tool("ledger.record_artifact", "Record a privacy-safe artifact reference by hash or label.", map[string]interface{}{
 			"workload_id":   requiredStringSchema(),
 			"run_id":        stringSchema(),
@@ -319,6 +324,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolCloseWorkload(args)
 	case "ledger.heartbeat_run":
 		return s.toolHeartbeatRun(args)
+	case "ledger.run_liveness":
+		return s.toolRunLiveness(args)
 	case "ledger.record_artifact":
 		return s.toolRecordArtifact(args)
 	case "ledger.record_event":
@@ -555,6 +562,31 @@ func (s *Server) toolHeartbeatRun(args json.RawMessage) (interface{}, error) {
 		in.Confidence = 1
 	}
 	return s.db.RecordAgentRunHeartbeat(in.EventID, in.RunID, in.Status, in.Phase, in.Message, in.Progress, in.Metrics, ts, in.Confidence)
+}
+
+func (s *Server) toolRunLiveness(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		MaxAge    string `json:"max_age"`
+		StaleOnly bool   `json:"stale_only"`
+		Limit     int    `json:"limit"`
+	}
+	_ = json.Unmarshal(args, &in)
+	maxAge := 10 * time.Minute
+	if in.MaxAge != "" {
+		parsed, err := time.ParseDuration(in.MaxAge)
+		if err != nil {
+			return nil, err
+		}
+		if parsed <= 0 {
+			return nil, fmt.Errorf("max_age must be positive")
+		}
+		maxAge = parsed
+	}
+	rows, err := s.db.GetAgentRunLiveness(maxAge, in.StaleOnly, in.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"rows": rows, "max_age": maxAge.String(), "stale_only": in.StaleOnly}, nil
 }
 
 func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {

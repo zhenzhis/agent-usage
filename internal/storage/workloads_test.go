@@ -101,3 +101,90 @@ func TestManualWorkloadAndRunDetail(t *testing.T) {
 		t.Fatalf("run detail missing: %+v", detail.Runs)
 	}
 }
+
+func TestAgentRunLivenessReportsStaleActiveRuns(t *testing.T) {
+	db := tempDB(t)
+	id, err := db.CreateWorkload("ship async goal", "codex", "repo-a", "repo-a", "main", "alice", "research", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(id, "codex", "codex", "codex exec", "/home/user/repo-a")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	oldHeartbeat := time.Now().UTC().Add(-20 * time.Minute)
+	if _, err := db.RecordAgentRunHeartbeat("evt-stale-run", runID, "working", "testing", "waiting on tests", 0.5, map[string]interface{}{"files_touched": 2}, oldHeartbeat, 1); err != nil {
+		t.Fatalf("RecordAgentRunHeartbeat: %v", err)
+	}
+
+	freshID, err := db.CreateWorkload("finished goal", "codex", "repo-b", "repo-b", "main", "", "", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload fresh: %v", err)
+	}
+	finishedRunID, err := db.StartAgentRun(freshID, "codex", "codex", "codex exec", "/home/user/repo-b")
+	if err != nil {
+		t.Fatalf("StartAgentRun fresh: %v", err)
+	}
+	if err := db.FinishAgentRun(finishedRunID, "completed", 0, "", 10); err != nil {
+		t.Fatalf("FinishAgentRun: %v", err)
+	}
+
+	rows, err := db.GetAgentRunLiveness(10*time.Minute, false, 10)
+	if err != nil {
+		t.Fatalf("GetAgentRunLiveness: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one active run, got %+v", rows)
+	}
+	row := rows[0]
+	if row.RunID != runID || !row.Stale || row.HeartbeatCount != 1 || row.Phase != "testing" || row.Progress != 0.5 {
+		t.Fatalf("unexpected liveness row: %+v", row)
+	}
+	if row.LastHeartbeatAt == "" || row.LastActivity != row.LastHeartbeatAt || row.AgeSeconds < int64((10*time.Minute).Seconds()) {
+		t.Fatalf("bad activity fields: %+v", row)
+	}
+
+	staleRows, err := db.GetAgentRunLiveness(10*time.Minute, true, 10)
+	if err != nil {
+		t.Fatalf("GetAgentRunLiveness stale: %v", err)
+	}
+	if len(staleRows) != 1 || staleRows[0].RunID != runID {
+		t.Fatalf("unexpected stale rows: %+v", staleRows)
+	}
+}
+
+func TestAgentRunHeartbeatRejectsTerminalRun(t *testing.T) {
+	db := tempDB(t)
+	id, err := db.CreateWorkload("terminal run", "codex", "repo-a", "repo-a", "main", "", "", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(id, "codex", "codex", "codex exec", "/home/user/repo-a")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	first, err := db.RecordAgentRunHeartbeat("evt-terminal-dup", runID, "working", "testing", "", 0.5, nil, time.Now().UTC(), 1)
+	if err != nil {
+		t.Fatalf("RecordAgentRunHeartbeat: %v", err)
+	}
+	if err := db.FinishAgentRun(runID, "completed", 0, "", 10); err != nil {
+		t.Fatalf("FinishAgentRun: %v", err)
+	}
+	dup, err := db.RecordAgentRunHeartbeat("evt-terminal-dup", runID, "working", "testing", "", 0.5, nil, time.Now().UTC(), 1)
+	if err != nil {
+		t.Fatalf("duplicate terminal heartbeat should remain idempotent: %v", err)
+	}
+	if dup.EventID != first.EventID || dup.RunID != runID {
+		t.Fatalf("unexpected duplicate row: %+v", dup)
+	}
+	if _, err := db.RecordAgentRunHeartbeat("evt-terminal-new", runID, "working", "testing", "", 0.5, nil, time.Now().UTC(), 1); err == nil {
+		t.Fatal("expected new heartbeat on terminal run to fail")
+	}
+	rows, err := db.GetAgentRunLiveness(10*time.Minute, false, 10)
+	if err != nil {
+		t.Fatalf("GetAgentRunLiveness: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("terminal run should not be live: %+v", rows)
+	}
+}

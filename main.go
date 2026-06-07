@@ -1113,6 +1113,24 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(row)
+	case "liveness":
+		maxAge := 10 * time.Minute
+		if raw := cliValue(args[1:], "--max-age"); raw != "" {
+			parsed, err := time.ParseDuration(raw)
+			if err != nil {
+				return err
+			}
+			if parsed <= 0 {
+				return fmt.Errorf("--max-age must be positive")
+			}
+			maxAge = parsed
+		}
+		staleOnly := cliBool(args[1:], "--stale-only")
+		rows, err := db.GetAgentRunLiveness(maxAge, staleOnly, cliInt(args[1:], "--limit", 200))
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"rows": rows, "max_age": maxAge.String(), "stale_only": staleOnly})
 	default:
 		return fmt.Errorf("unknown workload command %q", args[0])
 	}

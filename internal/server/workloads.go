@@ -151,6 +151,37 @@ func (s *Server) handleAgentRunHeartbeat(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, map[string]interface{}{"ok": true, "heartbeat": row})
 }
 
+func (s *Server) handleAgentRunLiveness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	maxAge := 10 * time.Minute
+	if raw := r.URL.Query().Get("max_age"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			badRequest(w, fmt.Errorf("invalid max_age: %w", err))
+			return
+		}
+		if parsed <= 0 {
+			badRequest(w, fmt.Errorf("invalid max_age: must be positive"))
+			return
+		}
+		maxAge = parsed
+	}
+	staleOnly := r.URL.Query().Get("stale_only") == "1" || r.URL.Query().Get("stale_only") == "true"
+	rows, err := s.db.GetAgentRunLiveness(maxAge, staleOnly, parseLimit(r, 200))
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	applyRunLivenessPrivacy(rows, s.privacyFor(r))
+	writeJSON(w, map[string]interface{}{"rows": rows, "max_age": maxAge.String(), "stale_only": staleOnly})
+}
+
 func (s *Server) handleWorkloadDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("workload_id")
 	if id == "" {
@@ -355,6 +386,20 @@ func applyFleetPrivacy(report *storage.FleetAttributionReport, privacy config.Pr
 			report.Rows[i].Repo = "<redacted>"
 			report.Rows[i].GitBranch = "<redacted>"
 			report.Rows[i].Team = "<redacted>"
+		}
+	}
+}
+
+func applyRunLivenessPrivacy(rows []storage.AgentRunLivenessRow, privacy config.PrivacyConfig) {
+	for i := range rows {
+		if privacy.ScreenshotMode {
+			rows[i].Goal = "<redacted>"
+			rows[i].StatusMessage = "<redacted>"
+		}
+		if privacy.HideProjectNames || privacy.ScreenshotMode {
+			rows[i].Project = "<redacted>"
+			rows[i].Repo = "<redacted>"
+			rows[i].GitBranch = "<redacted>"
 		}
 	}
 }

@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
@@ -60,5 +62,45 @@ func TestAgentRunHeartbeatAPI(t *testing.T) {
 	rawAudit, _ := json.Marshal(audit)
 	if !strings.Contains(string(rawAudit), "agent_run.heartbeat") || strings.Contains(string(rawAudit), "running tests") {
 		t.Fatalf("unexpected audit log: %s", string(rawAudit))
+	}
+}
+
+func TestAgentRunLivenessAPI(t *testing.T) {
+	db := testServerDB(t)
+	workloadID, err := db.CreateWorkload("sensitive async goal", "codex", "agent-ledger", "zhenzhis/agent-ledger", "feature/private", "", "", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(workloadID, "codex", "codex", "codex", "C:/work/agent-ledger")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	if _, err := db.RecordAgentRunHeartbeat("evt-api-liveness", runID, "working", "testing", "waiting on tests", 0.4, map[string]interface{}{"files_touched": 3}, time.Now().UTC().Add(-20*time.Minute), 1); err != nil {
+		t.Fatalf("RecordAgentRunHeartbeat: %v", err)
+	}
+	srv := New(db, "", Options{Privacy: config.PrivacyConfig{ScreenshotMode: true}})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/agent-runs/liveness?max_age=10m&stale_only=1", nil)
+	rr := httptest.NewRecorder()
+	srv.handleAgentRunLiveness(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("liveness status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var response struct {
+		Rows      []storage.AgentRunLivenessRow `json:"rows"`
+		MaxAge    string                        `json:"max_age"`
+		StaleOnly bool                          `json:"stale_only"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.MaxAge != "10m0s" || !response.StaleOnly || len(response.Rows) != 1 {
+		t.Fatalf("unexpected liveness response: %+v", response)
+	}
+	row := response.Rows[0]
+	if row.RunID != runID || !row.Stale || row.Phase != "testing" || row.Progress != 0.4 {
+		t.Fatalf("unexpected liveness row: %+v", row)
+	}
+	if row.Goal != "<redacted>" || row.StatusMessage != "<redacted>" || row.Project != "<redacted>" || row.Repo != "<redacted>" || row.GitBranch != "<redacted>" {
+		t.Fatalf("privacy redaction failed: %+v", row)
 	}
 }

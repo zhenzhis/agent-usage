@@ -12,6 +12,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger doctor --format markdown    # local diagnostics
 ./agent-ledger today                       # CLI summary
 ./agent-ledger workload heartbeat --run-id <id> --status working --phase testing --progress 0.5
+./agent-ledger workload liveness --max-age 10m --stale-only
 ./agent-ledger event schema                # print canonical event schema
 ./agent-ledger event ingest < event.json   # ingest metadata-only canonical event(s)
 ./agent-ledger integrations                # print privacy-safe integration capability catalog

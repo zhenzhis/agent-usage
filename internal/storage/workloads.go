@@ -86,6 +86,28 @@ type AgentRunEventRow struct {
 	Confidence float64 `json:"confidence"`
 }
 
+// AgentRunLivenessRow reports whether an async run is still sending heartbeats.
+type AgentRunLivenessRow struct {
+	RunID           string  `json:"run_id"`
+	WorkloadID      string  `json:"workload_id"`
+	Goal            string  `json:"goal"`
+	Source          string  `json:"source"`
+	AgentName       string  `json:"agent_name"`
+	Status          string  `json:"status"`
+	Project         string  `json:"project"`
+	Repo            string  `json:"repo"`
+	GitBranch       string  `json:"git_branch"`
+	Phase           string  `json:"phase"`
+	Progress        float64 `json:"progress"`
+	StartedAt       string  `json:"started_at"`
+	LastHeartbeatAt string  `json:"last_heartbeat_at"`
+	LastActivity    string  `json:"last_activity"`
+	HeartbeatCount  int     `json:"heartbeat_count"`
+	StatusMessage   string  `json:"status_message"`
+	AgeSeconds      int64   `json:"age_seconds"`
+	Stale           bool    `json:"stale"`
+}
+
 // ModelCallDetail summarizes canonical model calls by source/model/session.
 type ModelCallDetail struct {
 	CallID            string  `json:"call_id,omitempty"`
@@ -431,6 +453,50 @@ func (d *DB) RecordAgentRunHeartbeat(eventID, runID, status, phase, message stri
 	return row, nil
 }
 
+// GetAgentRunLiveness returns active runs ordered by oldest heartbeat/activity first.
+func (d *DB) GetAgentRunLiveness(maxAge time.Duration, staleOnly bool, limit int) ([]AgentRunLivenessRow, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if maxAge <= 0 {
+		maxAge = 10 * time.Minute
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	rows, err := d.db.Query(`SELECT ar.run_id,ar.workload_id,w.goal,ar.source,ar.agent_name,ar.status,w.project,w.repo,w.git_branch,
+		COALESCE(ar.phase,''),COALESCE(ar.progress,0),ar.started_at,COALESCE(ar.last_heartbeat_at,''),COALESCE(ar.heartbeat_count,0),COALESCE(ar.status_message,'')
+		FROM agent_runs ar JOIN workloads w ON ar.workload_id=w.workload_id
+		WHERE ar.status IN ('queued','running','working','waiting_approval','blocked','evaluating','stalled')
+		ORDER BY COALESCE(ar.last_heartbeat_at, ar.started_at) ASC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	now := time.Now().UTC()
+	var out []AgentRunLivenessRow
+	for rows.Next() {
+		var r AgentRunLivenessRow
+		if err := rows.Scan(&r.RunID, &r.WorkloadID, &r.Goal, &r.Source, &r.AgentName, &r.Status, &r.Project, &r.Repo, &r.GitBranch,
+			&r.Phase, &r.Progress, &r.StartedAt, &r.LastHeartbeatAt, &r.HeartbeatCount, &r.StatusMessage); err != nil {
+			return nil, err
+		}
+		r.LastActivity = firstNonEmptyStorage(r.LastHeartbeatAt, r.StartedAt)
+		if t, ok := parseDBTime(r.LastActivity); ok {
+			r.AgeSeconds = int64(now.Sub(t).Seconds())
+			r.Stale = now.Sub(t) > maxAge
+		}
+		if staleOnly && !r.Stale {
+			continue
+		}
+		out = append(out, r)
+	}
+	if out == nil {
+		out = []AgentRunLivenessRow{}
+	}
+	return out, rows.Err()
+}
+
 func recordAgentRunHeartbeatTx(tx *sql.Tx, in agentRunHeartbeatInput) (*AgentRunEventRow, error) {
 	in.RunID = strings.TrimSpace(in.RunID)
 	if in.RunID == "" {
@@ -464,8 +530,8 @@ func recordAgentRunHeartbeatTx(tx *sql.Tx, in agentRunHeartbeatInput) (*AgentRun
 	if err != nil {
 		return nil, err
 	}
-	var workloadID, source string
-	err = tx.QueryRow(`SELECT workload_id,source FROM agent_runs WHERE run_id=?`, in.RunID).Scan(&workloadID, &source)
+	var workloadID, source, currentStatus string
+	err = tx.QueryRow(`SELECT workload_id,source,status FROM agent_runs WHERE run_id=?`, in.RunID).Scan(&workloadID, &source, &currentStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -474,6 +540,18 @@ func recordAgentRunHeartbeatTx(tx *sql.Tx, in agentRunHeartbeatInput) (*AgentRun
 	}
 	if strings.TrimSpace(in.Source) != "" {
 		source = strings.TrimSpace(in.Source)
+	}
+	if terminalAgentRunStatus(currentStatus) {
+		if strings.TrimSpace(in.EventID) != "" {
+			row, err := getAgentRunEventTx(tx, in.EventID)
+			if err == nil && row.RunID == in.RunID {
+				return row, nil
+			}
+			if err != nil && err != sql.ErrNoRows {
+				return nil, err
+			}
+		}
+		return nil, fmt.Errorf("run_id %s is already %s; heartbeat rejected", in.RunID, currentStatus)
 	}
 	if in.EventID == "" {
 		in.EventID = generatedID("runevt")
@@ -495,16 +573,14 @@ func recordAgentRunHeartbeatTx(tx *sql.Tx, in agentRunHeartbeatInput) (*AgentRun
 			return nil, err
 		}
 	}
-	row := AgentRunEventRow{}
-	if err := tx.QueryRow(`SELECT event_id,run_id,workload_id,source,event_type,status,phase,progress,message,metrics,timestamp,confidence
-		FROM agent_run_events WHERE event_id=?`, in.EventID).Scan(&row.EventID, &row.RunID, &row.WorkloadID, &row.Source, &row.EventType, &row.Status,
-		&row.Phase, &row.Progress, &row.Message, &row.Metrics, &row.Timestamp, &row.Confidence); err != nil {
+	row, err := getAgentRunEventTx(tx, in.EventID)
+	if err != nil {
 		return nil, err
 	}
 	if row.RunID != in.RunID {
 		return nil, fmt.Errorf("heartbeat event_id %s already belongs to run %s", in.EventID, row.RunID)
 	}
-	return &row, nil
+	return row, nil
 }
 
 // GetWorkloadsPage returns workload summaries derived from canonical model calls.
@@ -1001,6 +1077,15 @@ func validAgentRunStatus(status string) bool {
 	}
 }
 
+func terminalAgentRunStatus(status string) bool {
+	switch status {
+	case "completed", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
 func workloadStatusForRunHeartbeat(status string) string {
 	switch status {
 	case "working":
@@ -1027,6 +1112,17 @@ func runHeartbeatMetricsJSON(metrics map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("heartbeat metrics are too large: max 16 KiB")
 	}
 	return string(raw), nil
+}
+
+func getAgentRunEventTx(tx *sql.Tx, eventID string) (*AgentRunEventRow, error) {
+	row := AgentRunEventRow{}
+	err := tx.QueryRow(`SELECT event_id,run_id,workload_id,source,event_type,status,phase,progress,message,metrics,timestamp,confidence
+		FROM agent_run_events WHERE event_id=?`, eventID).Scan(&row.EventID, &row.RunID, &row.WorkloadID, &row.Source, &row.EventType, &row.Status,
+		&row.Phase, &row.Progress, &row.Message, &row.Metrics, &row.Timestamp, &row.Confidence)
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 func firstNonEmpty(values ...string) string {
