@@ -21,6 +21,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger router simulate --to-model gpt-5-mini --ratio 0.5  # local what-if model routing estimate
 ./agent-ledger replay --source codex --session-id <id>  # per-call session token/cost replay
 ./agent-ledger badge --project repo --metric cost       # local SVG repo AI cost badge
+./agent-ledger preflight --task refactor --project repo # estimate cost before starting a task
 ./agent-ledger bundle export/import        # offline JSON bundle for air-gapped aggregation
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call  # local advisory policy evaluation
 ./agent-ledger mcp                         # local stdio JSON-RPC tool surface

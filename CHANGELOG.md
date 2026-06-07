@@ -15,6 +15,7 @@
 - Provider usage envelope mapping through `POST /api/provider/calls` and `agent-ledger provider convert|ingest`, supporting OpenAI-compatible, Anthropic-style, and LiteLLM-style usage objects while excluding request/response message content.
 - Provider bill reconciliation import through `POST /api/reconciliation/import` and `agent-ledger reconcile import/status`, parsing local CSV/JSON statements into summary totals, statement hash, window, warnings, and local/provider cost diff.
 - Model Router Simulator through `GET /api/router/simulate` and `agent-ledger router simulate`, estimating target-model routing savings from existing token components and pricing governance metadata without mutating ledger records.
+- Preflight Cost Estimate through `GET /api/preflight/estimate` and `agent-ledger preflight`, estimating likely task cost/tokens/calls from local historical session medians and task-type multipliers.
 - Session Cost Replay through `GET /api/session-replay` and `agent-ledger replay`, returning chronological per-call token/cost accumulation without reading prompt content.
 - Repo AI Cost Badge through `GET /api/badge/repo.svg` and `agent-ledger badge`, rendering local black/white SVG cost, token, session, or cache badges.
 - Offline bundle export/import for air-gapped multi-machine aggregation, with metadata-only canonical event replay, payload SHA-256 integrity, optional HMAC-SHA256 signing, CLI commands, and REST endpoints.
@@ -23,7 +24,7 @@
 - Workload APIs: list/create/close/detail/graph, model registry, policy decisions, and workload CSV/JSON export.
 - Local MCP stdio JSON-RPC tools for budget lookup, workload lifecycle, privacy-safe artifacts, advisory policy decisions, cost explanation, and similar workload search.
 - Hourly and daily usage aggregate tables with dashboard aggregate fallback.
-- CLI commands: `today`, `top`, `doctor`, `battery`, `workload list/create/show/close`, `run --goal ... -- <command>`, `export`, `pricing sync`, `router simulate`, `replay`, `badge`, and `wrapped`.
+- CLI commands: `today`, `top`, `doctor`, `battery`, `workload list/create/show/close`, `run --goal ... -- <command>`, `export`, `pricing sync`, `router simulate`, `preflight`, `replay`, `badge`, and `wrapped`.
 - Cursor-compatible session pagination via `next_cursor`.
 - Black/white/gray data-dense dashboard panels for workloads, pricing, quota, quality, model calls, cache, watchdog, and cost intelligence.
 

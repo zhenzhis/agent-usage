@@ -320,6 +320,28 @@ func (s *Server) handleRouterSimulation(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, report)
 }
 
+func (s *Server) handlePreflightEstimate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	from, to, _, err := s.parseTimeRange(r)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	task := firstNonEmpty(r.URL.Query().Get("task"), r.URL.Query().Get("type"), "custom")
+	report, err := s.db.EstimatePreflightCost(from, to, task, r.URL.Query().Get("source"), r.URL.Query().Get("model"), r.URL.Query().Get("project"), parseLimit(r, 2000))
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, report)
+}
+
 func (s *Server) handleReconciliationImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

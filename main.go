@@ -404,6 +404,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runReplayCLI(args[1:], db)
 	case "badge":
 		return runBadgeCLI(args[1:], db)
+	case "preflight":
+		return runPreflightCLI(args[1:], db)
 	case "integrations":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "otel":
@@ -565,6 +567,28 @@ func runBadgeCLI(args []string, db *storage.DB) error {
 	}
 	_, err = os.Stdout.Write([]byte(svg + "\n"))
 	return err
+}
+
+func runPreflightCLI(args []string, db *storage.DB) error {
+	now := time.Now()
+	from, to, err := cliDateRange(args, now)
+	if err != nil {
+		return err
+	}
+	limit := 2000
+	if raw := cliValue(args, "--limit"); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err != nil {
+			return fmt.Errorf("invalid --limit %q: %w", raw, err)
+		}
+		limit = parsed
+	}
+	report, err := db.EstimatePreflightCost(from, to, firstNonEmptyCLI(cliValue(args, "--task"), cliValue(args, "--type"), "custom"),
+		cliValue(args, "--source"), cliValue(args, "--model"), cliValue(args, "--project"), limit)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(report)
 }
 
 func runProviderCLI(args []string, db *storage.DB) error {

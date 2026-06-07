@@ -64,6 +64,7 @@ CLI：
 ./agent-ledger router simulate --to-model gpt-5-mini --from-model gpt-5 --ratio 0.5
 ./agent-ledger replay --source codex --session-id <id>
 ./agent-ledger badge --project repo-name --metric cost --out agent-ledger.svg
+./agent-ledger preflight --task refactor --project repo-name
 ./agent-ledger bundle export --privacy --signed --out usage-bundle.json
 ./agent-ledger bundle import --file usage-bundle.json --verify
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
@@ -184,6 +185,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/reconciliation/status` | 查看最近本地账本与 provider 账单对账 |
 | `POST /api/reconciliation/import` | 导入手动 summary 或 provider CSV/JSON 账单并做本地对账 |
 | `GET /api/router/simulate?to_model=gpt-5-mini&ratio=0.5` | 模拟模型路由调整的费用影响，不修改账本 |
+| `GET /api/preflight/estimate?task=refactor&project=repo-name` | 开始 agent 任务前估算可能费用、token 与调用量 |
 | `POST /api/policy/evaluate` | 评估本地 advisory policy，并可选择写入 policy decision |
 | `GET /api/sessions` | 服务端分页会话账本 |
 | `GET /api/session-replay?source=codex&session_id=...` | 单个 session 的调用级 token/cost 时间回放 |
@@ -253,7 +255,7 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.25.11-alpine sh -c "gofmt -w . &
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、A2A task telemetry mapping、provider usage envelope mapping、provider 账单导入对账、model router simulation、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy/router/replay/badge 命令、CLI run wrapper 和本地 MCP stdio tools。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、OpenTelemetry GenAI JSON span mapping、A2A task telemetry mapping、provider usage envelope mapping、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、CLI workload/event/policy/router/replay/badge/preflight 命令、CLI run wrapper 和本地 MCP stdio tools。
 
 后续路线：完整 OTLP receiver mode、live provider/API gateway mode、Postgres 团队模式、OIDC/SSO、更完整的 MCP resources/prompts、企业策略审批流。
 
