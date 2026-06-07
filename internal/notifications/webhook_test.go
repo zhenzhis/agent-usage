@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,41 @@ func TestWebhookDryRunBuildsRedactedPayload(t *testing.T) {
 	}
 	if payload.Summary.BySeverity["warning"] != 1 || payload.Summary.ByPhase["stale"] != 1 {
 		t.Fatalf("unexpected summary: %+v", payload.Summary)
+	}
+}
+
+func TestWebhookPayloadIncludesRedactedApprovalRequests(t *testing.T) {
+	approvals := []storage.ApprovalRequest{{
+		RequestID:        "apr-private",
+		PolicyDecisionID: "pd-private",
+		WorkloadID:       "wl-private",
+		RunID:            "run-private",
+		Source:           "codex",
+		Model:            "gpt-5.5",
+		Project:          "private-project",
+		Action:           "model.call",
+		Target:           "C:/private/path",
+		ActorRole:        "operator",
+		Status:           "pending",
+		Reason:           "private approval reason",
+		RequestPayload:   `{"secret":"do-not-send"}`,
+		CreatedAt:        "2026-06-07T12:00:00Z",
+		UpdatedAt:        "2026-06-07T12:00:00Z",
+	}}
+	payload := BuildWebhookPayloadWithApprovals(sampleFeed(), approvals, 10)
+	if payload.Summary.Total != 2 || payload.Summary.PendingApprovals != 1 || len(payload.Approvals) != 1 {
+		t.Fatalf("unexpected approval summary: %+v", payload)
+	}
+	approval := payload.Approvals[0]
+	if approval.RequestID == "apr-private" || approval.PolicyDecisionID == "pd-private" || approval.WorkloadID == "wl-private" || approval.RunID == "run-private" {
+		t.Fatalf("approval ids were not hashed: %+v", approval)
+	}
+	if approval.Project != "<redacted>" || approval.Target != "<redacted>" || approval.Reason != "<redacted>" {
+		t.Fatalf("approval fields were not redacted: %+v", approval)
+	}
+	raw, _ := json.Marshal(payload)
+	if strings.Contains(string(raw), "private-project") || strings.Contains(string(raw), "C:/private/path") || strings.Contains(string(raw), "do-not-send") {
+		t.Fatalf("approval payload leaked sensitive data: %s", string(raw))
 	}
 }
 

@@ -66,6 +66,52 @@ func TestWebhookNotificationEndpointFailsWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestWebhookNotificationEndpointDryRunIncludesApprovals(t *testing.T) {
+	db := testServerDB(t)
+	now := time.Now().UTC()
+	if _, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		RequestID:      "apr-private",
+		WorkloadID:     "wl-private-approval",
+		RunID:          "run-private-approval",
+		Source:         "codex",
+		Model:          "gpt-5.5",
+		Project:        "private-project",
+		Action:         "model.call",
+		Target:         "C:/private/workspace",
+		ActorRole:      "operator",
+		Status:         "pending",
+		Reason:         "private approval reason",
+		RequestPayload: `{"prompt":"do-not-send"}`,
+	}); err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	srv := New(db, "", Options{Webhooks: config.WebhookConfig{Enabled: false, MaxEvents: 10}})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/notifications/webhook?dry_run=1&from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.Format("2006-01-02"), nil)
+	rr := httptest.NewRecorder()
+	srv.handleWebhookNotification(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("dry-run notify status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Result  notifications.DeliveryResult `json:"result"`
+		Payload notifications.WebhookPayload `json:"payload"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode dry-run body: %v", err)
+	}
+	if !body.Result.DryRun || body.Result.ApprovalCount != 1 || body.Payload.Summary.PendingApprovals != 1 || len(body.Payload.Approvals) != 1 {
+		t.Fatalf("expected approval notification summary: %+v", body)
+	}
+	approval := body.Payload.Approvals[0]
+	if approval.WorkloadID == "wl-private-approval" || approval.RunID == "run-private-approval" || approval.Project != "<redacted>" || approval.Target != "<redacted>" || approval.Reason != "<redacted>" {
+		t.Fatalf("approval notification was not redacted: %+v", approval)
+	}
+	raw, _ := json.Marshal(body)
+	if strings.Contains(string(raw), "private-project") || strings.Contains(string(raw), "C:/private/workspace") || strings.Contains(string(raw), "do-not-send") {
+		t.Fatalf("approval notification leaked sensitive data: %s", string(raw))
+	}
+}
+
 func createStaleWebhookWorkload(t *testing.T, db *storage.DB, now time.Time) string {
 	t.Helper()
 	workloadID, err := db.CreateWorkload("private webhook goal", "codex", "private-project", "zhenzhis/private-project", "feature/private", "", "research", 0)

@@ -23,31 +23,60 @@ type WebhookPayload struct {
 	GeneratedAt string                      `json:"generated_at"`
 	Summary     WebhookSummary              `json:"summary"`
 	Events      []storage.WorkloadFeedEvent `json:"events"`
+	Approvals   []WebhookApproval           `json:"approvals,omitempty"`
 }
 
 // WebhookSummary contains aggregate counts without local paths or prompt content.
 type WebhookSummary struct {
-	Total      int            `json:"total"`
-	ByPhase    map[string]int `json:"by_phase"`
-	BySeverity map[string]int `json:"by_severity"`
+	Total            int            `json:"total"`
+	PendingApprovals int            `json:"pending_approvals"`
+	ByPhase          map[string]int `json:"by_phase"`
+	BySeverity       map[string]int `json:"by_severity"`
+}
+
+// WebhookApproval is a redacted local approval request summary.
+type WebhookApproval struct {
+	RequestID        string `json:"request_id"`
+	PolicyDecisionID string `json:"policy_decision_id,omitempty"`
+	WorkloadID       string `json:"workload_id,omitempty"`
+	RunID            string `json:"run_id,omitempty"`
+	Source           string `json:"source,omitempty"`
+	Model            string `json:"model,omitempty"`
+	Project          string `json:"project"`
+	Action           string `json:"action"`
+	Target           string `json:"target"`
+	ActorRole        string `json:"actor_role,omitempty"`
+	Status           string `json:"status"`
+	Reason           string `json:"reason"`
+	CreatedAt        string `json:"created_at,omitempty"`
+	UpdatedAt        string `json:"updated_at,omitempty"`
 }
 
 // DeliveryResult describes one attempted notification delivery.
 type DeliveryResult struct {
-	Enabled    bool   `json:"enabled"`
-	DryRun     bool   `json:"dry_run"`
-	EventCount int    `json:"event_count"`
-	StatusCode int    `json:"status_code,omitempty"`
-	Message    string `json:"message"`
+	Enabled       bool   `json:"enabled"`
+	DryRun        bool   `json:"dry_run"`
+	EventCount    int    `json:"event_count"`
+	ApprovalCount int    `json:"approval_count"`
+	StatusCode    int    `json:"status_code,omitempty"`
+	Message       string `json:"message"`
 }
 
 // BuildWebhookPayload creates a privacy-safe notification payload from a workload event feed.
 func BuildWebhookPayload(feed *storage.WorkloadEventFeed, maxEvents int) WebhookPayload {
+	return BuildWebhookPayloadWithApprovals(feed, nil, maxEvents)
+}
+
+// BuildWebhookPayloadWithApprovals creates a privacy-safe notification payload
+// from workload events plus pending approval requests.
+func BuildWebhookPayloadWithApprovals(feed *storage.WorkloadEventFeed, approvals []storage.ApprovalRequest, maxEvents int) WebhookPayload {
 	redacted := RedactWorkloadEventFeed(feed, maxEvents)
+	redactedApprovals := RedactApprovalRequests(approvals, maxEvents)
 	summary := WebhookSummary{
-		Total:      len(redacted),
-		ByPhase:    map[string]int{},
-		BySeverity: map[string]int{},
+		Total:            len(redacted) + len(redactedApprovals),
+		PendingApprovals: len(redactedApprovals),
+		ByPhase:          map[string]int{},
+		BySeverity:       map[string]int{},
 	}
 	for _, event := range redacted {
 		summary.ByPhase[event.Phase]++
@@ -59,6 +88,7 @@ func BuildWebhookPayload(feed *storage.WorkloadEventFeed, maxEvents int) Webhook
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Summary:     summary,
 		Events:      redacted,
+		Approvals:   redactedApprovals,
 	}
 }
 
@@ -89,16 +119,59 @@ func RedactWorkloadEventFeed(feed *storage.WorkloadEventFeed, maxEvents int) []s
 	return out
 }
 
+// RedactApprovalRequests returns bounded approval summaries suitable for
+// external notifications without local paths, targets, reasons, or payloads.
+func RedactApprovalRequests(approvals []storage.ApprovalRequest, maxApprovals int) []WebhookApproval {
+	if len(approvals) == 0 {
+		return []WebhookApproval{}
+	}
+	if maxApprovals <= 0 || maxApprovals > 100 {
+		maxApprovals = 20
+	}
+	limit := maxApprovals
+	if len(approvals) < limit {
+		limit = len(approvals)
+	}
+	out := make([]WebhookApproval, 0, limit)
+	for i := 0; i < limit; i++ {
+		approval := approvals[i]
+		out = append(out, WebhookApproval{
+			RequestID:        shortHash(approval.RequestID),
+			PolicyDecisionID: shortHash(approval.PolicyDecisionID),
+			WorkloadID:       shortHash(approval.WorkloadID),
+			RunID:            shortHash(approval.RunID),
+			Source:           approval.Source,
+			Model:            approval.Model,
+			Project:          "<redacted>",
+			Action:           approval.Action,
+			Target:           "<redacted>",
+			ActorRole:        approval.ActorRole,
+			Status:           approval.Status,
+			Reason:           "<redacted>",
+			CreatedAt:        approval.CreatedAt,
+			UpdatedAt:        approval.UpdatedAt,
+		})
+	}
+	return out
+}
+
 // SendWebhook sends a redacted notification payload, or returns an explicit disabled/dry-run result.
 func SendWebhook(ctx context.Context, cfg config.WebhookConfig, feed *storage.WorkloadEventFeed, dryRun bool) (*DeliveryResult, error) {
+	return SendWebhookWithApprovals(ctx, cfg, feed, nil, dryRun)
+}
+
+// SendWebhookWithApprovals sends a redacted notification payload that may include
+// local pending approval request summaries.
+func SendWebhookWithApprovals(ctx context.Context, cfg config.WebhookConfig, feed *storage.WorkloadEventFeed, approvals []storage.ApprovalRequest, dryRun bool) (*DeliveryResult, error) {
 	if cfg.MaxEvents <= 0 || cfg.MaxEvents > 100 {
 		cfg.MaxEvents = 20
 	}
-	payload := BuildWebhookPayload(feed, cfg.MaxEvents)
+	payload := BuildWebhookPayloadWithApprovals(feed, approvals, cfg.MaxEvents)
 	result := &DeliveryResult{
-		Enabled:    cfg.Enabled,
-		DryRun:     dryRun,
-		EventCount: len(payload.Events),
+		Enabled:       cfg.Enabled,
+		DryRun:        dryRun,
+		EventCount:    len(payload.Events),
+		ApprovalCount: len(payload.Approvals),
 	}
 	if dryRun {
 		result.Message = "dry run payload built; webhook not sent"

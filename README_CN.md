@@ -156,7 +156,7 @@ gateway:
 
 可选 gateway 是本地 OpenAI-compatible Chat Completions 代理。它默认关闭，支持 JSON 响应和 SSE streaming，只从配置的环境变量读取上游 API key，并只记录 token usage 与审计元数据，不保存 request messages 或 response content。对 streaming 请求，`include_stream_usage: true` 会在客户端没有显式设置 `stream_options.include_usage` 时请求兼容上游返回最终 usage chunk；如果三方中转拒绝该选项，可设为 `false`。
 
-Webhook 通知默认关闭。显式开启后，`POST /api/notifications/webhook` 与 `agent-ledger notify webhook` 只发送有上限的 workload-event 脱敏摘要；goal、project、repo、branch、team、event id、workload id 都会被隐藏或 hash。可用 `--dry-run` 或 `dry_run=1` 检查即将发送的 payload，不进行外发。
+Webhook 通知默认关闭。显式开启后，`POST /api/notifications/webhook` 与 `agent-ledger notify webhook` 只发送有上限的 workload-event 与 pending approval 脱敏摘要；goal、project、repo、branch、team、approval target、approval reason、event id、workload id、run id、approval request id 都会被隐藏或 hash。可用 `--dry-run` 或 `dry_run=1` 检查即将发送的 payload，不进行外发。
 
 Gateway 请求可以通过 query 参数或 request `metadata` 附加账本上下文：`agent_ledger.project`、`agent_ledger.goal`、`agent_ledger.workload_id`、`agent_ledger.agent_run_id`、`agent_ledger.session_id`、`agent_ledger.git_branch`。这样 wrapper、MCP 工具和异步 agent 可以把实时模型调用绑定到已有 workload/run，而无需暴露 prompt 内容。
 
@@ -390,7 +390,7 @@ agent-ledger doctor --format markdown
 - 可选 provider gateway 默认关闭。它只在内存中把 prompt content 转发给配置的上游，只从环境变量读取 API key，并只保存 usage 元数据而不是消息内容。
 - Run command 会作为 metadata 保存，但常见命令行密钥模式，例如 `API_KEY=...`、`--token ...`、`--api-key=...`、`Bearer ...`，会在持久化前做 best-effort 脱敏。敏感值仍建议使用环境变量或密钥管理器，不要放进长期命令参数。
 - 隐私 preset 可隐藏路径、项目、分支、机器名和 session id。
-- Webhook 默认关闭，只应发送脱敏摘要。
+- Webhook 默认关闭，只发送脱敏 workload-event 与 pending approval 摘要。
 - Offline bundle 是本地 JSON 导出。设置 `AGENT_LEDGER_BUNDLE_KEY` 并使用 `signed=1` / `--signed` 可加入 HMAC-SHA256 签名；导入时使用 `verify=1` / `--verify` 可强制验证签名。
 
 ## 开发验证
@@ -414,7 +414,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
 
 后续路线：OTLP protobuf/gRPC conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、多操作者审批通知。
 

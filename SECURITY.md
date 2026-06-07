@@ -21,7 +21,7 @@ Agent Ledger runs locally and reads local agent usage files. The default deploym
 - The OTLP HTTP/JSON receiver is disabled by default, rejects OTLP protobuf/gRPC, and still requires localhost access or configured auth.
 - The optional OpenAI-compatible provider gateway is disabled by default. It forwards request bodies only in memory to the configured upstream, reads API keys only from environment variables, and records usage/audit metadata instead of prompt or response content.
 - Local policy evaluation is advisory unless your wrapper or gateway enforces it. Policy decisions record rule metadata, role, workload ID, and action, but must not record prompt text, secrets, or raw tool output.
-- Policy approval requests are local metadata records and authorize only matching action/target retries through an explicit approval id.
+- Policy approval requests are local metadata records and authorize only matching action/target retries through an explicit approval id. Webhook summaries hash approval ids and redact project, target, reason, and request payload fields.
 - Webhooks are disabled by default.
 - Usage data, prompts, local paths, and session IDs are not uploaded by default.
 
