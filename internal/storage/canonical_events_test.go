@@ -67,6 +67,28 @@ func TestIngestCanonicalEventBuildsWorkloadLedger(t *testing.T) {
 		t.Fatalf("run id=%q", run.RunID)
 	}
 
+	heartbeat, err := db.IngestCanonicalEvent(CanonicalEvent{
+		EventID:    "evt-heartbeat",
+		Source:     "codex",
+		EventType:  "agent.run.heartbeat",
+		WorkloadID: start.WorkloadID,
+		AgentRunID: run.RunID,
+		Timestamp:  ts.Add(90 * time.Second),
+		Payload: rawJSON(t, map[string]interface{}{
+			"status":   "working",
+			"phase":    "editing",
+			"progress": 0.4,
+			"message":  "editing tracked files",
+			"metrics":  map[string]interface{}{"files_touched": 3},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if heartbeat.WorkloadID != start.WorkloadID || heartbeat.RunID != run.RunID {
+		t.Fatalf("unexpected heartbeat result: %#v", heartbeat)
+	}
+
 	events := []CanonicalEvent{
 		{
 			EventID:    "evt-model",
@@ -161,6 +183,12 @@ func TestIngestCanonicalEventBuildsWorkloadLedger(t *testing.T) {
 	if len(detail.Runs) != 1 || len(detail.ModelCalls) != 1 || len(detail.ToolCalls) != 1 {
 		t.Fatalf("runs=%d model_calls=%d tool_calls=%d", len(detail.Runs), len(detail.ModelCalls), len(detail.ToolCalls))
 	}
+	if detail.Runs[0].HeartbeatCount != 1 || detail.Runs[0].Phase != "editing" || detail.Runs[0].Progress != 0.4 {
+		t.Fatalf("run heartbeat snapshot not updated: %#v", detail.Runs[0])
+	}
+	if len(detail.RunEvents) != 1 || detail.RunEvents[0].EventType != "agent.run.heartbeat" || detail.RunEvents[0].Status != "working" {
+		t.Fatalf("run heartbeat event missing: %#v", detail.RunEvents)
+	}
 	if detail.ModelCalls[0].Tokens != 1550 || detail.ModelCalls[0].CostUSD != 0.42 {
 		t.Fatalf("model call=%#v", detail.ModelCalls[0])
 	}
@@ -192,7 +220,7 @@ func TestCanonicalEventSchemaListsCoreTypes(t *testing.T) {
 	for _, info := range types {
 		seen[info.EventType] = true
 	}
-	for _, eventType := range []string{"workload.started", "agent.run.started", "model.call", "tool.call", "policy.decision"} {
+	for _, eventType := range []string{"workload.started", "agent.run.started", "agent.run.heartbeat", "model.call", "tool.call", "policy.decision"} {
 		if !seen[eventType] {
 			t.Fatalf("schema missing %s", eventType)
 		}
@@ -213,6 +241,26 @@ func TestIngestCanonicalEventRejectsPromptContent(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected prompt content rejection")
+	}
+}
+
+func TestAgentRunHeartbeatRejectsPromptMetrics(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	workloadID, err := db.CreateWorkload("async run", "codex", "agent-ledger", "", "main", "", "", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(workloadID, "codex", "codex", "codex", "C:/work/agent-ledger")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	_, err = db.RecordAgentRunHeartbeat("", runID, "running", "planning", "working", 0.1, map[string]interface{}{"messages": []string{"raw prompt"}}, time.Time{}, 1)
+	if err == nil {
+		t.Fatal("expected heartbeat metrics prompt/content rejection")
 	}
 }
 

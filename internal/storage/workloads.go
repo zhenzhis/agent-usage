@@ -48,21 +48,42 @@ type WorkloadPage struct {
 
 // AgentRunRow is one agent execution attached to a workload.
 type AgentRunRow struct {
-	RunID        string  `json:"run_id"`
-	WorkloadID   string  `json:"workload_id"`
-	ParentRunID  string  `json:"parent_run_id"`
-	Source       string  `json:"source"`
-	AgentName    string  `json:"agent_name"`
-	AgentVersion string  `json:"agent_version"`
-	Command      string  `json:"command"`
-	CWD          string  `json:"cwd"`
-	Status       string  `json:"status"`
-	ExitCode     int     `json:"exit_code"`
-	Error        string  `json:"error"`
-	StartedAt    string  `json:"started_at"`
-	EndedAt      string  `json:"ended_at"`
-	DurationMS   int64   `json:"duration_ms"`
-	Confidence   float64 `json:"confidence"`
+	RunID           string  `json:"run_id"`
+	WorkloadID      string  `json:"workload_id"`
+	ParentRunID     string  `json:"parent_run_id"`
+	Source          string  `json:"source"`
+	AgentName       string  `json:"agent_name"`
+	AgentVersion    string  `json:"agent_version"`
+	Command         string  `json:"command"`
+	CWD             string  `json:"cwd"`
+	Status          string  `json:"status"`
+	ExitCode        int     `json:"exit_code"`
+	Error           string  `json:"error"`
+	StartedAt       string  `json:"started_at"`
+	EndedAt         string  `json:"ended_at"`
+	DurationMS      int64   `json:"duration_ms"`
+	LastHeartbeatAt string  `json:"last_heartbeat_at"`
+	HeartbeatCount  int     `json:"heartbeat_count"`
+	Phase           string  `json:"phase"`
+	Progress        float64 `json:"progress"`
+	StatusMessage   string  `json:"status_message"`
+	Confidence      float64 `json:"confidence"`
+}
+
+// AgentRunEventRow is an append-only metadata event for async agent run state.
+type AgentRunEventRow struct {
+	EventID    string  `json:"event_id"`
+	RunID      string  `json:"run_id"`
+	WorkloadID string  `json:"workload_id"`
+	Source     string  `json:"source"`
+	EventType  string  `json:"event_type"`
+	Status     string  `json:"status"`
+	Phase      string  `json:"phase"`
+	Progress   float64 `json:"progress"`
+	Message    string  `json:"message"`
+	Metrics    string  `json:"metrics"`
+	Timestamp  string  `json:"timestamp"`
+	Confidence float64 `json:"confidence"`
 }
 
 // ModelCallDetail summarizes canonical model calls by source/model/session.
@@ -145,6 +166,7 @@ type PolicyDecisionRow struct {
 type WorkloadDetail struct {
 	Summary     WorkloadSummary     `json:"summary"`
 	Runs        []AgentRunRow       `json:"runs"`
+	RunEvents   []AgentRunEventRow  `json:"run_events"`
 	ModelCalls  []ModelCallDetail   `json:"model_calls"`
 	ToolCalls   []ToolCallRow       `json:"tool_calls"`
 	Artifacts   []ArtifactRow       `json:"artifacts"`
@@ -366,6 +388,125 @@ func (d *DB) FinishAgentRun(runID, status string, exitCode int, errText string, 
 	return err
 }
 
+type agentRunHeartbeatInput struct {
+	EventID    string
+	RunID      string
+	WorkloadID string
+	Source     string
+	Status     string
+	Phase      string
+	Message    string
+	Progress   float64
+	Metrics    map[string]interface{}
+	Timestamp  time.Time
+	Confidence float64
+}
+
+// RecordAgentRunHeartbeat appends a metadata-only heartbeat and updates the run snapshot.
+func (d *DB) RecordAgentRunHeartbeat(eventID, runID, status, phase, message string, progress float64, metrics map[string]interface{}, timestamp time.Time, confidence float64) (*AgentRunEventRow, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	tx, err := d.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	row, err := recordAgentRunHeartbeatTx(tx, agentRunHeartbeatInput{
+		EventID:    eventID,
+		RunID:      runID,
+		Status:     status,
+		Phase:      phase,
+		Message:    message,
+		Progress:   progress,
+		Metrics:    metrics,
+		Timestamp:  timestamp,
+		Confidence: confidence,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func recordAgentRunHeartbeatTx(tx *sql.Tx, in agentRunHeartbeatInput) (*AgentRunEventRow, error) {
+	in.RunID = strings.TrimSpace(in.RunID)
+	if in.RunID == "" {
+		return nil, fmt.Errorf("run_id is required")
+	}
+	if in.Timestamp.IsZero() {
+		in.Timestamp = time.Now().UTC()
+	}
+	if in.Confidence <= 0 {
+		in.Confidence = 1
+	}
+	in.Status = strings.ToLower(strings.TrimSpace(in.Status))
+	if in.Status == "" {
+		in.Status = "running"
+	}
+	if !validAgentRunStatus(in.Status) {
+		return nil, fmt.Errorf("unsupported agent run status %q", in.Status)
+	}
+	if in.Progress < 0 || in.Progress > 1 {
+		return nil, fmt.Errorf("progress must be in [0,1]")
+	}
+	in.Phase = strings.TrimSpace(in.Phase)
+	in.Message = strings.TrimSpace(in.Message)
+	if len(in.Phase) > 128 {
+		return nil, fmt.Errorf("phase is too long: max 128 bytes")
+	}
+	if len(in.Message) > 512 {
+		return nil, fmt.Errorf("message is too long: max 512 bytes")
+	}
+	metricsJSON, err := runHeartbeatMetricsJSON(in.Metrics)
+	if err != nil {
+		return nil, err
+	}
+	var workloadID, source string
+	err = tx.QueryRow(`SELECT workload_id,source FROM agent_runs WHERE run_id=?`, in.RunID).Scan(&workloadID, &source)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.WorkloadID) != "" && strings.TrimSpace(in.WorkloadID) != workloadID {
+		return nil, fmt.Errorf("run_id %s belongs to workload %s, not %s", in.RunID, workloadID, in.WorkloadID)
+	}
+	if strings.TrimSpace(in.Source) != "" {
+		source = strings.TrimSpace(in.Source)
+	}
+	if in.EventID == "" {
+		in.EventID = generatedID("runevt")
+	}
+	res, err := tx.Exec(`INSERT OR IGNORE INTO agent_run_events(event_id,run_id,workload_id,source,event_type,status,phase,progress,message,metrics,timestamp,confidence)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		in.EventID, in.RunID, workloadID, source, "agent.run.heartbeat", in.Status, in.Phase, in.Progress, in.Message, metricsJSON, in.Timestamp, in.Confidence)
+	if err != nil {
+		return nil, err
+	}
+	inserted, _ := res.RowsAffected()
+	if inserted > 0 {
+		if _, err := tx.Exec(`UPDATE agent_runs SET status=?, phase=?, progress=?, status_message=?, last_heartbeat_at=?, heartbeat_count=COALESCE(heartbeat_count,0)+1
+			WHERE run_id=?`, in.Status, in.Phase, in.Progress, in.Message, in.Timestamp, in.RunID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(`UPDATE workloads SET updated_at=?, status=CASE WHEN status IN ('active','queued','running','waiting_approval','evaluating','blocked','stalled') THEN ? ELSE status END
+			WHERE workload_id=?`, in.Timestamp, workloadStatusForRunHeartbeat(in.Status), workloadID); err != nil {
+			return nil, err
+		}
+	}
+	row := AgentRunEventRow{}
+	if err := tx.QueryRow(`SELECT event_id,run_id,workload_id,source,event_type,status,phase,progress,message,metrics,timestamp,confidence
+		FROM agent_run_events WHERE event_id=?`, in.EventID).Scan(&row.EventID, &row.RunID, &row.WorkloadID, &row.Source, &row.EventType, &row.Status,
+		&row.Phase, &row.Progress, &row.Message, &row.Metrics, &row.Timestamp, &row.Confidence); err != nil {
+		return nil, err
+	}
+	if row.RunID != in.RunID {
+		return nil, fmt.Errorf("heartbeat event_id %s already belongs to run %s", in.EventID, row.RunID)
+	}
+	return &row, nil
+}
+
 // GetWorkloadsPage returns workload summaries derived from canonical model calls.
 func (d *DB) GetWorkloadsPage(from, to time.Time, source, model, project, status, query string, limit, offset int) (*WorkloadPage, error) {
 	if err := d.BackfillWorkloadsFromUsage(from, to); err != nil {
@@ -441,6 +582,9 @@ func (d *DB) GetWorkloadDetail(workloadID string) (*WorkloadDetail, error) {
 	}
 	detail := &WorkloadDetail{Summary: *summary}
 	if detail.Runs, err = d.getAgentRuns(workloadID); err != nil {
+		return nil, err
+	}
+	if detail.RunEvents, err = d.getAgentRunEvents(workloadID); err != nil {
 		return nil, err
 	}
 	if detail.ModelCalls, err = d.getModelCallDetails(workloadID); err != nil {
@@ -619,7 +763,8 @@ func (d *DB) RecordPolicyDecision(workloadID, runID, ruleID, action, reason, act
 
 func (d *DB) getAgentRuns(workloadID string) ([]AgentRunRow, error) {
 	rows, err := d.db.Query(`SELECT run_id,workload_id,parent_run_id,source,agent_name,agent_version,command,cwd,status,exit_code,error,
-		started_at,COALESCE(ended_at,''),duration_ms,confidence FROM agent_runs WHERE workload_id=? ORDER BY started_at`, workloadID)
+		started_at,COALESCE(ended_at,''),duration_ms,COALESCE(last_heartbeat_at,''),COALESCE(heartbeat_count,0),COALESCE(phase,''),COALESCE(progress,0),COALESCE(status_message,''),confidence
+		FROM agent_runs WHERE workload_id=? ORDER BY started_at`, workloadID)
 	if err != nil {
 		return nil, err
 	}
@@ -628,7 +773,27 @@ func (d *DB) getAgentRuns(workloadID string) ([]AgentRunRow, error) {
 	for rows.Next() {
 		var r AgentRunRow
 		if err := rows.Scan(&r.RunID, &r.WorkloadID, &r.ParentRunID, &r.Source, &r.AgentName, &r.AgentVersion, &r.Command, &r.CWD,
-			&r.Status, &r.ExitCode, &r.Error, &r.StartedAt, &r.EndedAt, &r.DurationMS, &r.Confidence); err != nil {
+			&r.Status, &r.ExitCode, &r.Error, &r.StartedAt, &r.EndedAt, &r.DurationMS, &r.LastHeartbeatAt, &r.HeartbeatCount,
+			&r.Phase, &r.Progress, &r.StatusMessage, &r.Confidence); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) getAgentRunEvents(workloadID string) ([]AgentRunEventRow, error) {
+	rows, err := d.db.Query(`SELECT event_id,run_id,workload_id,source,event_type,status,phase,progress,message,metrics,timestamp,confidence
+		FROM agent_run_events WHERE workload_id=? ORDER BY timestamp DESC LIMIT 500`, workloadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AgentRunEventRow
+	for rows.Next() {
+		var r AgentRunEventRow
+		if err := rows.Scan(&r.EventID, &r.RunID, &r.WorkloadID, &r.Source, &r.EventType, &r.Status, &r.Phase, &r.Progress,
+			&r.Message, &r.Metrics, &r.Timestamp, &r.Confidence); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -820,11 +985,48 @@ func durationMillis(first, last string) int64 {
 
 func validWorkloadStatus(status string) bool {
 	switch status {
-	case "active", "queued", "running", "waiting_approval", "evaluating", "completed", "partial", "failed", "abandoned", "merged", "deployed", "reverted":
+	case "active", "queued", "running", "waiting_approval", "evaluating", "blocked", "stalled", "completed", "partial", "failed", "abandoned", "cancelled", "merged", "deployed", "reverted":
 		return true
 	default:
 		return false
 	}
+}
+
+func validAgentRunStatus(status string) bool {
+	switch status {
+	case "queued", "running", "working", "waiting_approval", "blocked", "evaluating", "stalled", "completed", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func workloadStatusForRunHeartbeat(status string) string {
+	switch status {
+	case "working":
+		return "running"
+	case "completed", "failed", "cancelled":
+		return status
+	default:
+		return status
+	}
+}
+
+func runHeartbeatMetricsJSON(metrics map[string]interface{}) (string, error) {
+	if metrics == nil {
+		return "{}", nil
+	}
+	if containsPromptContentKey(metrics) {
+		return "", fmt.Errorf("heartbeat metrics appear to contain prompt/content text; store hashes or metadata only")
+	}
+	raw, err := json.Marshal(metrics)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) > 16<<10 {
+		return "", fmt.Errorf("heartbeat metrics are too large: max 16 KiB")
+	}
+	return string(raw), nil
 }
 
 func firstNonEmpty(values ...string) string {

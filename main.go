@@ -1095,6 +1095,24 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 			return err
 		}
 		fmt.Printf("%s\t%s\n", id, status)
+	case "heartbeat":
+		runID := firstNonEmptyCLI(cliValue(args[1:], "--run-id"), cliValue(args[1:], "--run_id"), cliValue(args[1:], "--id"))
+		progress, err := parseFloat(cliValue(args[1:], "--progress"))
+		if err != nil {
+			return err
+		}
+		metrics := map[string]interface{}{}
+		if rawMetrics := cliValue(args[1:], "--metrics-json"); rawMetrics != "" {
+			if err := json.Unmarshal([]byte(rawMetrics), &metrics); err != nil {
+				return fmt.Errorf("--metrics-json must be a JSON object: %w", err)
+			}
+		}
+		row, err := db.RecordAgentRunHeartbeat(cliValue(args[1:], "--event-id"), runID, cliValue(args[1:], "--status"), cliValue(args[1:], "--phase"),
+			cliValue(args[1:], "--message"), progress, metrics, time.Time{}, 1)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(row)
 	default:
 		return fmt.Errorf("unknown workload command %q", args[0])
 	}

@@ -48,6 +48,7 @@ CLI：
 ./agent-ledger battery
 ./agent-ledger workload list
 ./agent-ledger workload create --goal "review strategy engine" --source codex --project quant
+./agent-ledger workload heartbeat --run-id run_... --status working --phase testing --progress 0.5
 ./agent-ledger run --goal "debug ingestion" --agent codex -- codex
 ./agent-ledger event schema
 ./agent-ledger event ingest --file event.json
@@ -176,7 +177,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 核心表：
 
 - `canonical_events`：面向未来 collector、MCP、A2A、gateway 的规范事件流。
-- `workloads`、`agent_runs`、`model_calls`、`tool_calls`：goal/run/call 级账本。
+- `workloads`、`agent_runs`、`agent_run_events`、`model_calls`、`tool_calls`：goal/run/heartbeat/call 级账本。
 - `workload_sessions`：旧 session 与 workload 的兼容映射。
 - `artifacts`、`evaluations`、`policy_decisions`、`context_refs`：AgentOps 扩展记录。
 - `usage_records`：API 调用级 token 与费用。
@@ -198,6 +199,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/workloads` | 服务端分页工作负载账本 |
 | `POST /api/workloads` | 创建本地 workload |
 | `POST /api/workloads/close` | 关闭 workload 并记录结果 |
+| `POST /api/agent-runs/heartbeat` | 写入 metadata-only 异步 run 存活/进度心跳 |
 | `GET /api/workload-detail` | workload 的 run、model call、tool、session、policy 明细 |
 | `GET /api/workload-graph` | workload 图谱 |
 | `GET /api/integrations` | 隐私安全的集成能力目录 |
@@ -247,13 +249,14 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 ## MCP 工具接口
 
-`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、记录 hash 后的 artifact、查询本地策略建议、查询预算状态、解释成本、查找相似 workload。Resources 提供 metadata-only 的 schema、integration、budget、workload、policy 上下文；prompts 提供可复用的 workload、成本复盘、证据包模板。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
+`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、写入 run heartbeat、记录 hash 后的 artifact、查询本地策略建议、查询预算状态、解释成本、查找相似 workload。Resources 提供 metadata-only 的 schema、integration、budget、workload、policy 上下文；prompts 提供可复用的 workload、成本复盘、证据包模板。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
 
 当前工具：
 
 - `ledger.current_budget`
 - `ledger.start_workload`
 - `ledger.close_workload`
+- `ledger.heartbeat_run`
 - `ledger.record_artifact`
 - `ledger.record_event`
 - `ledger.event_schema`
@@ -276,7 +279,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `agent-ledger/cost-review`
 - `agent-ledger/incident-evidence`
 
-Canonical event ingest 支持 workload、run、model call、tool call、context ref、artifact、evaluation、policy decision 事件。Payload 只允许元数据；如果出现 raw prompt/content 相关键会直接失败，不会静默持久化。Canonical `model.call` 也会投影到 `usage_records`，让 dashboard、预算、导出和 preflight 尽量使用同一个 token 来源。`GET /api/integrations`、`agent-ledger integrations` 与 `ledger.integrations` 会暴露当前 connector/protocol 能力目录，但不会泄露本地 source 原始路径。`POST /api/otel/genai` 与 `agent-ledger otel ingest` 支持 OpenTelemetry GenAI JSON span，并只保留经过挑选的元数据和 token 字段。显式开启后，`POST /v1/traces` 与 `POST /api/otlp/v1/traces` 可接收 OTLP HTTP/JSON trace batch，并有 body 与 span 数量上限；OTLP protobuf/gRPC 在加入 conformance tests 前会被明确拒绝。`POST /api/a2a/tasks` 与 `agent-ledger a2a ingest` 支持 A2A task snapshot/event，只保留任务生命周期元数据，不保存 message/history/artifact part 内容。`POST /api/provider/calls` 与 `agent-ledger provider ingest` 支持 OpenAI-compatible、Anthropic-style、LiteLLM-style usage envelope，不保存 request/response message 内容。显式开启后，`POST /gateway/openai/v1/chat/completions` 会在内存中代理 OpenAI-compatible JSON 或 SSE streaming 请求，执行本地 policy 检查，写入 usage/audit 元数据，并通过 headers/trailers 暴露记账状态。`POST /api/reconciliation/import` 与 `agent-ledger reconcile import` 支持导入本地 provider CSV/JSON 账单，只保存汇总金额、账单 hash、窗口和 warning，并与相同窗口的本地账本做差异比较。
+Canonical event ingest 支持 workload、run、run heartbeat、model call、tool call、context ref、artifact、evaluation、policy decision 事件。Payload 只允许元数据；如果出现 raw prompt/content 相关键会直接失败，不会静默持久化。Canonical `model.call` 也会投影到 `usage_records`，让 dashboard、预算、导出和 preflight 尽量使用同一个 token 来源。`agent.run.heartbeat` 会写入存活/进度时间线并更新 run 快照，使长时间异步 agent 可被监控而不需要读取 prompt。`GET /api/integrations`、`agent-ledger integrations` 与 `ledger.integrations` 会暴露当前 connector/protocol 能力目录，但不会泄露本地 source 原始路径。`POST /api/otel/genai` 与 `agent-ledger otel ingest` 支持 OpenTelemetry GenAI JSON span，并只保留经过挑选的元数据和 token 字段。显式开启后，`POST /v1/traces` 与 `POST /api/otlp/v1/traces` 可接收 OTLP HTTP/JSON trace batch，并有 body 与 span 数量上限；OTLP protobuf/gRPC 在加入 conformance tests 前会被明确拒绝。`POST /api/a2a/tasks` 与 `agent-ledger a2a ingest` 支持 A2A task snapshot/event，只保留任务生命周期元数据，不保存 message/history/artifact part 内容。`POST /api/provider/calls` 与 `agent-ledger provider ingest` 支持 OpenAI-compatible、Anthropic-style、LiteLLM-style usage envelope，不保存 request/response message 内容。显式开启后，`POST /gateway/openai/v1/chat/completions` 会在内存中代理 OpenAI-compatible JSON 或 SSE streaming 请求，执行本地 policy 检查，写入 usage/audit 元数据，并通过 headers/trailers 暴露记账状态。`POST /api/reconciliation/import` 与 `agent-ledger reconcile import` 支持导入本地 provider CSV/JSON 账单，只保存汇总金额、账单 hash、窗口和 warning，并与相同窗口的本地账本做差异比较。
 
 ## 数据准确性排障
 
@@ -342,7 +345,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、异步 run heartbeat 账本、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
 
 后续路线：OTLP protobuf/gRPC conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、多操作者审批通知。
 

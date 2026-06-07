@@ -170,6 +170,17 @@ func tools() []map[string]interface{} {
 			"status":      stringSchema(),
 			"outcome":     stringSchema(),
 		}),
+		tool("ledger.heartbeat_run", "Append a metadata-only liveness/progress heartbeat for an async agent run.", map[string]interface{}{
+			"run_id":     requiredStringSchema(),
+			"status":     stringSchema(),
+			"phase":      stringSchema(),
+			"progress":   numberSchema(),
+			"message":    stringSchema(),
+			"metrics":    objectSchema(),
+			"event_id":   stringSchema(),
+			"timestamp":  stringSchema(),
+			"confidence": numberSchema(),
+		}),
 		tool("ledger.record_artifact", "Record a privacy-safe artifact reference by hash or label.", map[string]interface{}{
 			"workload_id":   requiredStringSchema(),
 			"run_id":        stringSchema(),
@@ -306,6 +317,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolStartWorkload(args)
 	case "ledger.close_workload":
 		return s.toolCloseWorkload(args)
+	case "ledger.heartbeat_run":
+		return s.toolHeartbeatRun(args)
 	case "ledger.record_artifact":
 		return s.toolRecordArtifact(args)
 	case "ledger.record_event":
@@ -513,6 +526,35 @@ func (s *Server) toolCloseWorkload(args json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{"workload_id": in.WorkloadID, "status": firstNonEmpty(in.Status, "completed")}, nil
+}
+
+func (s *Server) toolHeartbeatRun(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		RunID      string                 `json:"run_id"`
+		Status     string                 `json:"status"`
+		Phase      string                 `json:"phase"`
+		Progress   float64                `json:"progress"`
+		Message    string                 `json:"message"`
+		Metrics    map[string]interface{} `json:"metrics"`
+		EventID    string                 `json:"event_id"`
+		Timestamp  string                 `json:"timestamp"`
+		Confidence float64                `json:"confidence"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	var ts time.Time
+	if in.Timestamp != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, in.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		ts = parsed
+	}
+	if in.Confidence <= 0 {
+		in.Confidence = 1
+	}
+	return s.db.RecordAgentRunHeartbeat(in.EventID, in.RunID, in.Status, in.Phase, in.Message, in.Progress, in.Metrics, ts, in.Confidence)
 }
 
 func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {

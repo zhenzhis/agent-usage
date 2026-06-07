@@ -130,6 +130,19 @@ func CanonicalEventTypes() []CanonicalEventTypeInfo {
 			},
 		},
 		{
+			EventType:   "agent.run.heartbeat",
+			Description: "Append a metadata-only liveness/progress signal for an async agent run.",
+			Required:    []string{"source", "event_type", "agent_run_id"},
+			PayloadFields: map[string]string{
+				"event_id": "Optional stable heartbeat event id.",
+				"status":   "running, working, waiting_approval, blocked, evaluating, or stalled.",
+				"phase":    "Short phase label such as planning, editing, testing, or waiting.",
+				"progress": "Optional progress in [0,1].",
+				"message":  "Short metadata-only status message; do not include prompt or response content.",
+				"metrics":  "Small JSON object with counters or hashes; prompt/content keys are rejected.",
+			},
+		},
+		{
 			EventType:   "model.call",
 			Description: "Record one model call with non-overlapping token components.",
 			Required:    []string{"source", "event_type", "workload_id or payload.goal", "model or payload.model"},
@@ -355,6 +368,39 @@ func (d *DB) applyCanonicalEvent(tx *sql.Tx, event *CanonicalEvent, payload map[
 			return nil, sql.ErrNoRows
 		}
 		return []string{"agent_run"}, nil
+	case "agent.run.heartbeat":
+		if event.AgentRunID == "" {
+			event.AgentRunID = firstPayloadString(payload, "run_id", "agent_run_id")
+		}
+		if event.AgentRunID == "" {
+			return nil, fmt.Errorf("agent_run_id is required for %s", event.EventType)
+		}
+		metrics := map[string]interface{}{}
+		if rawMetrics, ok := payload["metrics"]; ok && rawMetrics != nil {
+			typedMetrics, ok := rawMetrics.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("heartbeat metrics must be a JSON object")
+			}
+			metrics = typedMetrics
+		}
+		row, err := recordAgentRunHeartbeatTx(tx, agentRunHeartbeatInput{
+			EventID:    firstNonEmptyStorage(payloadString(payload, "event_id"), event.SourceEventID),
+			RunID:      event.AgentRunID,
+			WorkloadID: event.WorkloadID,
+			Source:     event.Source,
+			Status:     payloadString(payload, "status"),
+			Phase:      payloadString(payload, "phase"),
+			Message:    payloadString(payload, "message"),
+			Progress:   payloadFloat(payload, "progress"),
+			Metrics:    metrics,
+			Timestamp:  event.Timestamp,
+			Confidence: event.Confidence,
+		})
+		if err != nil {
+			return nil, err
+		}
+		event.WorkloadID = row.WorkloadID
+		return []string{"agent_run_heartbeat"}, nil
 	case "model.call":
 		if err := ensureEventWorkload(tx, event, payload, now); err != nil {
 			return nil, err
@@ -583,6 +629,8 @@ func normalizeCanonicalEventType(raw string) string {
 		return "agent.run.started"
 	case "agent_run_finished", "run.finished", "agent.run.finish", "agent.run.finished":
 		return "agent.run.finished"
+	case "agent_run_heartbeat", "run.heartbeat", "agent.run.ping", "agent.run.heartbeat":
+		return "agent.run.heartbeat"
 	case "model_call", "model.call":
 		return "model.call"
 	case "tool_call", "tool.call":

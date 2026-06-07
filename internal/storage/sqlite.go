@@ -481,6 +481,11 @@ func migrate(db *sql.DB) error {
 	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN window_start DATETIME")
 	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN window_end DATETIME")
 	db.Exec("ALTER TABLE reconciliation_imports ADD COLUMN warnings TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE agent_runs ADD COLUMN last_heartbeat_at DATETIME")
+	db.Exec("ALTER TABLE agent_runs ADD COLUMN heartbeat_count INTEGER DEFAULT 0")
+	db.Exec("ALTER TABLE agent_runs ADD COLUMN phase TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE agent_runs ADD COLUMN progress REAL DEFAULT 0")
+	db.Exec("ALTER TABLE agent_runs ADD COLUMN status_message TEXT DEFAULT ''")
 
 	// Versioned migrations: each runs once, tracked via meta table.
 	migrations := []struct {
@@ -626,6 +631,11 @@ func migrate(db *sql.DB) error {
 					started_at DATETIME NOT NULL,
 					ended_at DATETIME,
 					duration_ms INTEGER DEFAULT 0,
+					last_heartbeat_at DATETIME,
+					heartbeat_count INTEGER DEFAULT 0,
+					phase TEXT DEFAULT '',
+					progress REAL DEFAULT 0,
+					status_message TEXT DEFAULT '',
 					confidence REAL DEFAULT 1
 				);
 				CREATE INDEX IF NOT EXISTS idx_agent_runs_workload ON agent_runs(workload_id, started_at);
@@ -748,6 +758,27 @@ func migrate(db *sql.DB) error {
 				CREATE INDEX IF NOT EXISTS idx_canonical_events_source_time ON canonical_events(source, timestamp);
 				CREATE INDEX IF NOT EXISTS idx_canonical_events_workload_time ON canonical_events(workload_id, timestamp);
 				CREATE INDEX IF NOT EXISTS idx_canonical_events_type_time ON canonical_events(event_type, timestamp);
+			`,
+		},
+		{
+			"011_agent_run_heartbeat", `
+				CREATE TABLE IF NOT EXISTS agent_run_events (
+					event_id TEXT PRIMARY KEY,
+					run_id TEXT NOT NULL,
+					workload_id TEXT DEFAULT '',
+					source TEXT DEFAULT '',
+					event_type TEXT NOT NULL,
+					status TEXT DEFAULT '',
+					phase TEXT DEFAULT '',
+					progress REAL DEFAULT 0,
+					message TEXT DEFAULT '',
+					metrics TEXT DEFAULT '{}',
+					timestamp DATETIME NOT NULL,
+					confidence REAL DEFAULT 1
+				);
+				CREATE INDEX IF NOT EXISTS idx_agent_run_events_run_time ON agent_run_events(run_id, timestamp);
+				CREATE INDEX IF NOT EXISTS idx_agent_run_events_workload_time ON agent_run_events(workload_id, timestamp);
+				CREATE INDEX IF NOT EXISTS idx_agent_run_events_type_time ON agent_run_events(event_type, timestamp);
 			`,
 		},
 	}

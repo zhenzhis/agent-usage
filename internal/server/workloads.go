@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
@@ -105,6 +106,49 @@ func (s *Server) handleWorkloadClose(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.db.AppendAuditLog("local", s.roleFor(r), "workload.close", payload.WorkloadID, map[string]string{"status": payload.Status})
 	writeJSON(w, map[string]interface{}{"ok": true, "workload_id": payload.WorkloadID, "status": payload.Status})
+}
+
+func (s *Server) handleAgentRunHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
+		return
+	}
+	var payload struct {
+		EventID   string                 `json:"event_id"`
+		RunID     string                 `json:"run_id"`
+		Status    string                 `json:"status"`
+		Phase     string                 `json:"phase"`
+		Message   string                 `json:"message"`
+		Progress  float64                `json:"progress"`
+		Metrics   map[string]interface{} `json:"metrics"`
+		Timestamp string                 `json:"timestamp"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload); err != nil {
+		badRequest(w, err)
+		return
+	}
+	if payload.RunID == "" {
+		payload.RunID = r.URL.Query().Get("run_id")
+	}
+	var ts time.Time
+	var err error
+	if payload.Timestamp != "" {
+		ts, err = time.Parse(time.RFC3339Nano, payload.Timestamp)
+		if err != nil {
+			badRequest(w, fmt.Errorf("invalid timestamp: %w", err))
+			return
+		}
+	}
+	row, err := s.db.RecordAgentRunHeartbeat(payload.EventID, payload.RunID, payload.Status, payload.Phase, payload.Message, payload.Progress, payload.Metrics, ts, 1)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	_ = s.db.AppendAuditLog("local", s.roleFor(r), "agent_run.heartbeat", payload.RunID, map[string]string{"status": row.Status, "phase": row.Phase, "workload_id": row.WorkloadID})
+	writeJSON(w, map[string]interface{}{"ok": true, "heartbeat": row})
 }
 
 func (s *Server) handleWorkloadDetail(w http.ResponseWriter, r *http.Request) {
@@ -269,6 +313,13 @@ func applyWorkloadDetailPrivacy(detail *storage.WorkloadDetail, privacy config.P
 		if privacy.RedactPaths || privacy.ScreenshotMode {
 			detail.Runs[i].CWD = "<redacted>"
 			detail.Runs[i].Command = "<redacted>"
+			detail.Runs[i].StatusMessage = "<redacted>"
+		}
+	}
+	for i := range detail.RunEvents {
+		if privacy.RedactPaths || privacy.ScreenshotMode {
+			detail.RunEvents[i].Message = "<redacted>"
+			detail.RunEvents[i].Metrics = "{}"
 		}
 	}
 	for i := range detail.ModelCalls {
