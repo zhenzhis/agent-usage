@@ -289,21 +289,91 @@ func (s *Server) handleWorkloadEvents(w http.ResponseWriter, r *http.Request) {
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
+	feed, clientErr, err := s.workloadEventFeedFromRequest(r, 100)
+	if err != nil {
+		if clientErr {
+			badRequest(w, err)
+		} else {
+			serverError(w, err)
+		}
+		return
+	}
+	applyWorkloadEventFeedPrivacy(feed, s.privacyFor(r))
+	writeJSON(w, feed)
+}
+
+func (s *Server) handleWorkloadEventsStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	interval := 10 * time.Second
+	if raw := r.URL.Query().Get("interval"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			badRequest(w, fmt.Errorf("invalid interval: %w", err))
+			return
+		}
+		if parsed < time.Second || parsed > 5*time.Minute {
+			badRequest(w, fmt.Errorf("invalid interval: must be between 1s and 5m"))
+			return
+		}
+		interval = parsed
+	}
+	feed, clientErr, err := s.workloadEventFeedFromRequest(r, 100)
+	if err != nil {
+		if clientErr {
+			badRequest(w, err)
+		} else {
+			serverError(w, err)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	writeWorkloadEventsSSE(w, flusher, feed, s.privacyFor(r))
+	if r.URL.Query().Get("once") == "1" || r.URL.Query().Get("once") == "true" {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			feed, _, err := s.workloadEventFeedFromRequest(r, 100)
+			if err != nil {
+				writeSSE(w, flusher, "agent_ledger_error", map[string]string{"error": err.Error()})
+				return
+			}
+			writeWorkloadEventsSSE(w, flusher, feed, s.privacyFor(r))
+		}
+	}
+}
+
+func (s *Server) workloadEventFeedFromRequest(r *http.Request, fallbackLimit int) (*storage.WorkloadEventFeed, bool, error) {
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
-		badRequest(w, err)
-		return
+		return nil, true, err
 	}
 	maxAge := 10 * time.Minute
 	if raw := r.URL.Query().Get("max_age"); raw != "" {
 		parsed, err := time.ParseDuration(raw)
 		if err != nil {
-			badRequest(w, fmt.Errorf("invalid max_age: %w", err))
-			return
+			return nil, true, fmt.Errorf("invalid max_age: %w", err)
 		}
 		if parsed <= 0 {
-			badRequest(w, fmt.Errorf("invalid max_age: must be positive"))
-			return
+			return nil, true, fmt.Errorf("invalid max_age: must be positive")
 		}
 		maxAge = parsed
 	}
@@ -313,14 +383,24 @@ func (s *Server) handleWorkloadEvents(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("project"),
 		r.URL.Query().Get("phase"),
 		r.URL.Query().Get("severity"),
-		parseLimit(r, 100),
+		parseLimit(r, fallbackLimit),
 		maxAge)
+	return feed, false, err
+}
+
+func writeWorkloadEventsSSE(w http.ResponseWriter, flusher http.Flusher, feed *storage.WorkloadEventFeed, privacy config.PrivacyConfig) {
+	applyWorkloadEventFeedPrivacy(feed, privacy)
+	writeSSE(w, flusher, "workload_events", feed)
+}
+
+func writeSSE(w http.ResponseWriter, flusher http.Flusher, event string, payload interface{}) {
+	raw, err := json.Marshal(payload)
 	if err != nil {
-		serverError(w, err)
-		return
+		raw = []byte(`{"error":"failed to encode event"}`)
 	}
-	applyWorkloadEventFeedPrivacy(feed, s.privacyFor(r))
-	writeJSON(w, feed)
+	fmt.Fprintf(w, "event: %s\n", event)
+	fmt.Fprintf(w, "data: %s\n\n", raw)
+	flusher.Flush()
 }
 
 func (s *Server) handleFleetAttribution(w http.ResponseWriter, r *http.Request) {

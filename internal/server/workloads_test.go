@@ -223,6 +223,39 @@ func TestWorkloadEventsAPIPrivacy(t *testing.T) {
 	}
 }
 
+func TestWorkloadEventsStreamOncePrivacy(t *testing.T) {
+	db := testServerDB(t)
+	now := time.Now().UTC()
+	workloadID, err := db.CreateWorkload("private stream goal", "codex", "private-project", "zhenzhis/private-project", "feature/private", "", "research", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
+	runID, err := db.StartAgentRun(workloadID, "codex", "codex", "codex", "C:/private/workspace")
+	if err != nil {
+		t.Fatalf("StartAgentRun: %v", err)
+	}
+	if _, err := db.RecordAgentRunHeartbeat("evt-api-stream", runID, "working", "testing", "private message", 0.6, nil, now.Add(-20*time.Minute), 1); err != nil {
+		t.Fatalf("RecordAgentRunHeartbeat: %v", err)
+	}
+	srv := New(db, "", Options{Privacy: config.PrivacyConfig{ScreenshotMode: true}})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/workload-events/stream?from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.Format("2006-01-02")+"&max_age=10m&severity=warning&privacy=1&once=1", nil)
+	rr := httptest.NewRecorder()
+	srv.handleWorkloadEventsStream(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("stream status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("content-type=%s", got)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "event: workload_events") || !strings.Contains(body, `"rows"`) {
+		t.Fatalf("unexpected SSE body: %s", body)
+	}
+	if strings.Contains(body, workloadID) || strings.Contains(body, "private-project") || strings.Contains(body, "private stream goal") || strings.Contains(body, "feature/private") {
+		t.Fatalf("SSE privacy redaction failed: %s", body)
+	}
+}
+
 func TestEvidenceBundleIncludesRedactedWorkloadState(t *testing.T) {
 	db := testServerDB(t)
 	now := time.Now().UTC()

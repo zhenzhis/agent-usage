@@ -226,6 +226,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/workload-timeline` | 按时间排序的 workload 审计时间线 |
 | `GET /api/workload-state` | 单个异步 agent workload 的 terminal-state 派生快照 |
 | `GET /api/workload-events` | 面向 monitor、router、通知适配器的本地 workload 状态事件 feed |
+| `GET /api/workload-events/stream` | 面向本地轮询 monitor 与 router subscription 的 SSE workload 状态流 |
 | `POST /api/notifications/webhook` | 显式发送脱敏 workload-event 摘要到配置的 webhook |
 | `GET /api/integrations` | 隐私安全的集成能力目录 |
 | `GET /api/event-schema` | Canonical event schema 与支持的事件类型 |
@@ -384,7 +385,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed、显式 workload evaluation 信号、默认关闭的脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP/JSON traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选 JSON/SSE 本地 OpenAI-compatible gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/prompts。
 
 后续路线：OTLP protobuf/gRPC conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、更完整的 MCP subscriptions、多操作者审批通知。
 

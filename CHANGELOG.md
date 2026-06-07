@@ -51,7 +51,7 @@
 - Workload audit timeline through `GET /api/workload-timeline`, `agent-ledger workload timeline`, and MCP `ledger.workload_timeline`, merging runs, heartbeats, model calls, tool calls, context refs, artifacts, evaluations, and policies.
 - Workload terminal-state snapshots through `GET /api/workload-state`, `agent-ledger workload state`, and MCP `ledger.workload_state`, deriving running/stale/blocked/needs-evaluation/accepted phases from local metadata only.
 - MCP `agent-ledger://workloads/recent` now includes derived terminal-state snapshots alongside recent workload summary rows for read-only agent context.
-- Local workload event feed through `GET /api/workload-events` and `agent-ledger workload feed`, deriving metadata-only phase/severity/next-action events for monitors, routers, and notification adapters.
+- Local workload event feed through `GET /api/workload-events`, `GET /api/workload-events/stream`, and `agent-ledger workload feed`, deriving metadata-only phase/severity/next-action events for monitors, routers, and notification adapters.
 - Disabled-by-default redacted webhook notifications through `POST /api/notifications/webhook` and `agent-ledger notify webhook`, with dry-run support, bounded event counts, audit logging, and forced redaction of workload ids, goals, projects, repos, branches, and teams.
 - Workload detail UI now shows the recent audit timeline while isolating timeline API failures from the core detail view.
 - Explicit tool-call entrypoints through `agent-ledger workload tool` and MCP `ledger.record_tool_call`, recording tool metadata without command parameters or tool input content.
