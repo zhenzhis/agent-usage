@@ -193,6 +193,10 @@ func tools() []map[string]interface{} {
 			"stale_only": map[string]interface{}{"type": "boolean"},
 			"limit":      integerSchema(),
 		}),
+		tool("ledger.workload_timeline", "Return a chronological metadata-only workload audit timeline.", map[string]interface{}{
+			"workload_id": requiredStringSchema(),
+			"limit":       integerSchema(),
+		}),
 		tool("ledger.record_tool_call", "Record metadata-only tool execution such as shell, file, browser, MCP, or custom agent actions.", map[string]interface{}{
 			"workload_id":  requiredStringSchema(),
 			"run_id":       stringSchema(),
@@ -364,6 +368,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolHeartbeatRun(args)
 	case "ledger.run_liveness":
 		return s.toolRunLiveness(args)
+	case "ledger.workload_timeline":
+		return s.toolWorkloadTimeline(args)
 	case "ledger.record_tool_call":
 		return s.toolRecordToolCall(args)
 	case "ledger.record_artifact":
@@ -647,6 +653,21 @@ func (s *Server) toolRunLiveness(args json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{"rows": rows, "max_age": maxAge.String(), "stale_only": in.StaleOnly}, nil
+}
+
+func (s *Server) toolWorkloadTimeline(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		WorkloadID string `json:"workload_id"`
+		Limit      int    `json:"limit"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.GetWorkloadTimeline(in.WorkloadID, in.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"workload_id": in.WorkloadID, "rows": rows}, nil
 }
 
 func (s *Server) toolRecordArtifact(args json.RawMessage) (interface{}, error) {

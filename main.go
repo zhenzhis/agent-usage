@@ -1088,6 +1088,13 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(detail)
+	case "timeline":
+		id := firstNonEmptyCLI(cliValue(args[1:], "--id"), cliValue(args[1:], "--workload-id"))
+		rows, err := db.GetWorkloadTimeline(id, cliInt(args[1:], "--limit", 500))
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"workload_id": id, "rows": rows})
 	case "close":
 		id := firstNonEmptyCLI(cliValue(args[1:], "--id"), cliValue(args[1:], "--workload-id"))
 		status := firstNonEmptyCLI(cliValue(args[1:], "--status"), "completed")

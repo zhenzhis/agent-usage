@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -120,7 +120,8 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	contextLine := `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ledger.record_context","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","source":"codex","context_ref_id":"ctx-mcp","ref_type":"repo","ref_hash":"sha256:context","label":"privacy-safe-context","repo":"zhenzhis/agent-ledger","git_branch":"main","privacy_label":"synthetic"}}}`
 	artifactLine := `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ledger.record_artifact","arguments":{"workload_id":"` + workloadID + `","run_id":"` + runID + `","artifact_type":"report","label":"privacy-safe-summary","path_hash":"sha256:abc","sha256":"def","metadata":{"format":"markdown"}}}}`
 	closeLine := `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ledger.close_workload","arguments":{"workload_id":"` + workloadID + `","status":"completed","outcome":"accepted"}}}`
-	responses := serveLines(t, srv, startRunLine, policyLine, toolLine, contextLine, artifactLine, closeLine)
+	timelineLine := `{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"ledger.workload_timeline","arguments":{"workload_id":"` + workloadID + `","limit":20}}}`
+	responses := serveLines(t, srv, startRunLine, policyLine, toolLine, contextLine, artifactLine, closeLine, timelineLine)
 	startedRun := toolTextPayload(t, responses[0])
 	if startedRun["run_id"] == "" || startedRun["workload_id"] != workloadID {
 		t.Fatalf("start run payload=%#v", startedRun)
@@ -144,6 +145,10 @@ func TestMCPWorkloadLifecycleArtifactAndPolicy(t *testing.T) {
 	closed := toolTextPayload(t, responses[5])
 	if closed["status"] != "completed" {
 		t.Fatalf("close payload=%#v", closed)
+	}
+	timeline := toolTextPayload(t, responses[6])
+	if rows, ok := timeline["rows"].([]interface{}); !ok || len(rows) == 0 {
+		t.Fatalf("timeline payload=%#v", timeline)
 	}
 
 	detail, err := db.GetWorkloadDetail(workloadID)

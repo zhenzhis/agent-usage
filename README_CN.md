@@ -206,6 +206,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/agent-runs/liveness` | 列出 active run 与心跳 stale 状态 |
 | `GET /api/workload-detail` | workload 的 run、model call、tool、session、policy 明细 |
 | `GET /api/workload-graph` | workload 图谱 |
+| `GET /api/workload-timeline` | 按时间排序的 workload 审计时间线 |
 | `GET /api/integrations` | 隐私安全的集成能力目录 |
 | `GET /api/event-schema` | Canonical event schema 与支持的事件类型 |
 | `POST /api/events` | 写入 metadata-only canonical events |
@@ -263,6 +264,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `ledger.close_workload`
 - `ledger.heartbeat_run`
 - `ledger.run_liveness`
+- `ledger.workload_timeline`
 - `ledger.record_tool_call`
 - `ledger.record_context`
 - `ledger.record_artifact`

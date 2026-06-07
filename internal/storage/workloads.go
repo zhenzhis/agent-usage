@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -225,6 +226,22 @@ type WorkloadDetail struct {
 type WorkloadGraph struct {
 	Nodes []GraphNode `json:"nodes"`
 	Edges []GraphEdge `json:"edges"`
+}
+
+// WorkloadTimelineRow is a normalized chronological audit event for one workload.
+type WorkloadTimelineRow struct {
+	Kind       string  `json:"kind"`
+	ID         string  `json:"id"`
+	RunID      string  `json:"run_id,omitempty"`
+	Source     string  `json:"source,omitempty"`
+	Label      string  `json:"label"`
+	Status     string  `json:"status,omitempty"`
+	Detail     string  `json:"detail,omitempty"`
+	Tokens     int64   `json:"tokens,omitempty"`
+	CostUSD    float64 `json:"cost_usd,omitempty"`
+	DurationMS int64   `json:"duration_ms,omitempty"`
+	Timestamp  string  `json:"timestamp"`
+	Confidence float64 `json:"confidence,omitempty"`
 }
 
 // GraphNode is a workload graph node.
@@ -777,6 +794,148 @@ func (d *DB) GetWorkloadGraph(workloadID string) (*WorkloadGraph, error) {
 		}
 	}
 	return graph, nil
+}
+
+// GetWorkloadTimeline returns a chronological metadata-only event stream for audit and replay.
+func (d *DB) GetWorkloadTimeline(workloadID string, limit int) ([]WorkloadTimelineRow, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 500
+	}
+	detail, err := d.GetWorkloadDetail(workloadID)
+	if err != nil {
+		return nil, err
+	}
+	rows := []WorkloadTimelineRow{{
+		Kind:       "workload",
+		ID:         detail.Summary.WorkloadID,
+		Source:     detail.Summary.Source,
+		Label:      detail.Summary.Goal,
+		Status:     detail.Summary.Status,
+		Detail:     firstNonEmpty(detail.Summary.Project, detail.Summary.Repo),
+		Tokens:     detail.Summary.Tokens,
+		CostUSD:    detail.Summary.CostUSD,
+		Timestamp:  detail.Summary.CreatedAt,
+		Confidence: detail.Summary.Confidence,
+	}}
+	for _, r := range detail.Runs {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:       "agent_run",
+			ID:         r.RunID,
+			RunID:      r.RunID,
+			Source:     r.Source,
+			Label:      firstNonEmpty(r.AgentName, r.Source, "agent"),
+			Status:     r.Status,
+			Detail:     r.Phase,
+			DurationMS: r.DurationMS,
+			Timestamp:  r.StartedAt,
+			Confidence: r.Confidence,
+		})
+	}
+	for _, e := range detail.RunEvents {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:       "run_event",
+			ID:         e.EventID,
+			RunID:      e.RunID,
+			Source:     e.Source,
+			Label:      firstNonEmpty(e.Phase, e.EventType),
+			Status:     e.Status,
+			Detail:     e.Message,
+			Timestamp:  e.Timestamp,
+			Confidence: e.Confidence,
+		})
+	}
+	for _, c := range detail.ModelCalls {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:       "model_call",
+			ID:         firstNonEmpty(c.CallID, "model:"+c.Source+":"+c.Model+":"+c.LastAt),
+			RunID:      c.RunID,
+			Source:     c.Source,
+			Label:      c.Model,
+			Status:     c.PricingConfidence,
+			Detail:     c.Provider,
+			Tokens:     c.Tokens,
+			CostUSD:    c.CostUSD,
+			Timestamp:  firstNonEmpty(c.LastAt, c.FirstAt),
+			Confidence: c.Confidence,
+		})
+	}
+	for _, t := range detail.ToolCalls {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:       "tool_call",
+			ID:         t.ToolCallID,
+			RunID:      t.RunID,
+			Source:     t.Source,
+			Label:      t.ToolName,
+			Status:     t.Status,
+			Detail:     firstNonEmpty(t.ToolType, t.ErrorClass),
+			DurationMS: t.DurationMS,
+			Timestamp:  t.Timestamp,
+			Confidence: t.Confidence,
+		})
+	}
+	for _, c := range detail.ContextRefs {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:       "context_ref",
+			ID:         c.ContextRefID,
+			RunID:      c.RunID,
+			Label:      firstNonEmpty(c.Label, c.RefType, c.RefHash),
+			Status:     c.PrivacyLabel,
+			Detail:     firstNonEmpty(c.Repo, c.RefHash),
+			Timestamp:  c.CreatedAt,
+			Confidence: c.Confidence,
+		})
+	}
+	for _, a := range detail.Artifacts {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:       "artifact",
+			ID:         a.ArtifactID,
+			RunID:      a.RunID,
+			Label:      firstNonEmpty(a.Label, a.ArtifactType),
+			Status:     a.ArtifactType,
+			Detail:     firstNonEmpty(a.SHA256, a.PathHash),
+			Timestamp:  a.CreatedAt,
+			Confidence: a.Confidence,
+		})
+	}
+	for _, e := range detail.Evaluations {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:      "evaluation",
+			ID:        e.EvaluationID,
+			Label:     firstNonEmpty(e.Signal, e.Evaluator, "evaluation"),
+			Status:    e.Status,
+			Detail:    e.Notes,
+			Timestamp: e.CreatedAt,
+		})
+	}
+	for _, p := range detail.Policies {
+		rows = append(rows, WorkloadTimelineRow{
+			Kind:      "policy",
+			ID:        p.DecisionID,
+			RunID:     p.RunID,
+			Label:     firstNonEmpty(p.RuleID, p.Action),
+			Status:    p.Action,
+			Detail:    p.Reason,
+			Timestamp: p.CreatedAt,
+		})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		ti, iok := parseDBTime(rows[i].Timestamp)
+		tj, jok := parseDBTime(rows[j].Timestamp)
+		if iok && jok && !ti.Equal(tj) {
+			return ti.Before(tj)
+		}
+		if iok != jok {
+			return iok
+		}
+		if rows[i].Timestamp != rows[j].Timestamp {
+			return rows[i].Timestamp < rows[j].Timestamp
+		}
+		return rows[i].ID < rows[j].ID
+	})
+	if len(rows) > limit {
+		rows = rows[len(rows)-limit:]
+	}
+	return rows, nil
 }
 
 func (d *DB) getWorkloadSummaryByID(workloadID string) (*WorkloadSummary, error) {

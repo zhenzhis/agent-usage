@@ -180,3 +180,16 @@ func TestWorkloadDetailPrivacyRedactsContextRefs(t *testing.T) {
 		t.Fatalf("ref hash should remain visible for evidence correlation: %+v", ctx)
 	}
 }
+
+func TestWorkloadTimelinePrivacyRedactsSensitiveText(t *testing.T) {
+	rows := []storage.WorkloadTimelineRow{
+		{Kind: "context_ref", Label: "C:/Users/zhang/quant/private-project", Detail: "zhenzhis/private-project"},
+		{Kind: "tool_call", Label: "shell", Detail: "command"},
+	}
+	applyWorkloadTimelinePrivacy(rows, config.PrivacyConfig{ScreenshotMode: true})
+	for _, row := range rows {
+		if row.Label != "<redacted>" || row.Detail != "<redacted>" {
+			t.Fatalf("timeline privacy redaction failed: %+v", rows)
+		}
+	}
+}

@@ -206,6 +206,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/agent-runs/liveness` | List active runs and stale heartbeat state |
 | `GET /api/workload-detail` | Workload runs, model calls, tools, sessions, policies |
 | `GET /api/workload-graph` | Compact workload graph |
+| `GET /api/workload-timeline` | Chronological workload audit timeline |
 | `GET /api/integrations` | Privacy-safe integration capability catalog |
 | `GET /api/event-schema` | Canonical event schema and supported event types |
 | `POST /api/events` | Ingest metadata-only canonical events |
@@ -263,6 +264,7 @@ Current tools:
 - `ledger.close_workload`
 - `ledger.heartbeat_run`
 - `ledger.run_liveness`
+- `ledger.workload_timeline`
 - `ledger.record_tool_call`
 - `ledger.record_context`
 - `ledger.record_artifact`

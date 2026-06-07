@@ -244,6 +244,19 @@ func TestIngestCanonicalEventBuildsWorkloadLedger(t *testing.T) {
 	if !contextNode || !contextEdge {
 		t.Fatalf("context missing from graph: nodes=%#v edges=%#v", graph.Nodes, graph.Edges)
 	}
+	timeline, err := db.GetWorkloadTimeline(start.WorkloadID, 100)
+	if err != nil {
+		t.Fatalf("timeline: %v", err)
+	}
+	seenKinds := map[string]bool{}
+	for _, row := range timeline {
+		seenKinds[row.Kind] = true
+	}
+	for _, kind := range []string{"workload", "agent_run", "run_event", "model_call", "tool_call", "context_ref", "artifact", "evaluation", "policy"} {
+		if !seenKinds[kind] {
+			t.Fatalf("timeline missing %s: %#v", kind, timeline)
+		}
+	}
 }
 
 func TestCanonicalEventSchemaListsCoreTypes(t *testing.T) {

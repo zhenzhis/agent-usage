@@ -242,6 +242,21 @@ func (s *Server) handleWorkloadGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, graph)
 }
 
+func (s *Server) handleWorkloadTimeline(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("workload_id")
+	if id == "" {
+		badRequest(w, fmt.Errorf("workload_id required"))
+		return
+	}
+	rows, err := s.db.GetWorkloadTimeline(id, parseLimit(r, 500))
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	applyWorkloadTimelinePrivacy(rows, s.privacyFor(r))
+	writeJSON(w, map[string]interface{}{"workload_id": id, "rows": rows})
+}
+
 func (s *Server) handleFleetAttribution(w http.ResponseWriter, r *http.Request) {
 	if !s.requireRole(w, r, "viewer") {
 		return
@@ -399,6 +414,22 @@ func applyWorkloadDetailPrivacy(detail *storage.WorkloadDetail, privacy config.P
 	}
 	for i := range detail.Sessions {
 		applySessionPrivacy(&detail.Sessions[i], privacy)
+	}
+}
+
+func applyWorkloadTimelinePrivacy(rows []storage.WorkloadTimelineRow, privacy config.PrivacyConfig) {
+	for i := range rows {
+		if privacy.ScreenshotMode {
+			rows[i].Label = "<redacted>"
+			rows[i].Detail = "<redacted>"
+			continue
+		}
+		if privacy.RedactPaths || privacy.HideProjectNames {
+			switch rows[i].Kind {
+			case "workload", "context_ref", "artifact", "run_event":
+				rows[i].Detail = "<redacted>"
+			}
+		}
 	}
 }
 
