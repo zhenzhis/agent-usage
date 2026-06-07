@@ -189,6 +189,9 @@ func (s *Server) recordOpenAIChatGatewayUsage(raw []byte, model string, ledgerCt
 			calls[i].Metadata = map[string]interface{}{}
 		}
 		calls[i].Metadata["agent_ledger.source"] = "gateway"
+		calls[i].Metadata["agent_ledger.source_version"] = "openai-compatible-gateway"
+		calls[i].Metadata["agent_ledger.parser_version"] = "agent-ledger-openai-gateway@v1"
+		calls[i].Metadata["agent_ledger.match_type"] = "source_reported"
 		calls[i].Metadata["agent_ledger.goal"] = ledgerCtx.Goal
 		calls[i].Metadata["agent_ledger.project"] = ledgerCtx.Project
 		calls[i].Metadata["agent_ledger.latency_ms"] = int64(time.Since(started) / time.Millisecond)

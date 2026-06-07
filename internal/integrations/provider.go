@@ -81,6 +81,10 @@ func ConvertProviderCalls(calls []ProviderCall) ([]storage.CanonicalEvent, error
 		}
 		runID := metadataString(call.Metadata, "agent_ledger.agent_run_id", "agent_run_id")
 		timestamp := firstTime(call.Timestamp, time.Now().UTC())
+		sourceVersion := firstNonEmpty(metadataString(call.Metadata, "agent_ledger.source_version", "provider_version", "provider_usage_schema"), call.Provider)
+		parserVersion := firstNonEmpty(metadataString(call.Metadata, "agent_ledger.parser_version"), "agent-ledger-provider-usage@v1")
+		rawRef := firstNonEmpty(metadataString(call.Metadata, "agent_ledger.raw_ref", "raw_ref"), "provider:"+firstNonEmpty(call.Provider, "unknown")+":"+callID)
+		matchType := firstNonEmpty(metadataString(call.Metadata, "agent_ledger.match_type", "match_type"), "source_reported")
 		payload := map[string]interface{}{
 			"goal":                         goal,
 			"call_id":                      callID,
@@ -109,7 +113,12 @@ func ConvertProviderCalls(calls []ProviderCall) ([]storage.CanonicalEvent, error
 			EventID:       "provider:" + callID,
 			Source:        source,
 			EventType:     "model.call",
+			SchemaVersion: "v1",
+			SourceVersion: sourceVersion,
+			ParserVersion: parserVersion,
 			SourceEventID: callID,
+			RawRef:        rawRef,
+			MatchType:     matchType,
 			WorkloadID:    workloadID,
 			AgentRunID:    runID,
 			SessionID:     call.SessionID,
@@ -136,7 +145,12 @@ func ConvertProviderCalls(calls []ProviderCall) ([]storage.CanonicalEvent, error
 			EventID:       "providerctx:" + callID,
 			Source:        source,
 			EventType:     "context.ref",
+			SchemaVersion: modelEvent.SchemaVersion,
+			SourceVersion: modelEvent.SourceVersion,
+			ParserVersion: modelEvent.ParserVersion,
 			SourceEventID: "providerctx:" + callID,
+			RawRef:        modelEvent.RawRef + ":context",
+			MatchType:     "reconstructed",
 			WorkloadID:    workloadID,
 			AgentRunID:    runID,
 			SessionID:     call.SessionID,

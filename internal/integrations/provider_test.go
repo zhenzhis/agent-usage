@@ -34,6 +34,12 @@ func TestConvertOpenAIResponsesUsage(t *testing.T) {
 	if modelEvent.WorkloadID == "" || contextEvent.WorkloadID != modelEvent.WorkloadID {
 		t.Fatalf("expected shared workload ids: model=%s context=%s", modelEvent.WorkloadID, contextEvent.WorkloadID)
 	}
+	if modelEvent.ParserVersion == "" || modelEvent.RawRef == "" || modelEvent.MatchType != "source_reported" {
+		t.Fatalf("provider provenance missing: %#v", modelEvent)
+	}
+	if contextEvent.ParserVersion != modelEvent.ParserVersion || contextEvent.MatchType != "reconstructed" {
+		t.Fatalf("context provenance missing: %#v", contextEvent)
+	}
 	var payload map[string]interface{}
 	if err := json.Unmarshal(modelEvent.Payload, &payload); err != nil {
 		t.Fatalf("payload: %v", err)

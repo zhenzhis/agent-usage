@@ -42,6 +42,9 @@ func TestConvertOTelGenAISpanToCanonicalModelCall(t *testing.T) {
 	if event.EventType != "model.call" || event.Source != "opentelemetry" || event.Model != "gpt-5.5" || event.Project != "agent-ledger" {
 		t.Fatalf("unexpected event: %#v", event)
 	}
+	if event.ParserVersion != "agent-ledger-otel-genai@v1" || event.RawRef == "" || event.MatchType != "source_reported" {
+		t.Fatalf("OTel provenance missing: %#v", event)
+	}
 	var payload map[string]interface{}
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		t.Fatalf("payload: %v", err)
@@ -62,6 +65,9 @@ func TestConvertOTelGenAISpanToCanonicalModelCall(t *testing.T) {
 	}
 	if contextPayload["ref_type"] != "otel_span" || contextPayload["ref_hash"] == "" {
 		t.Fatalf("unexpected context payload: %#v", contextPayload)
+	}
+	if contextEvent.ParserVersion != event.ParserVersion || contextEvent.MatchType != "reconstructed" {
+		t.Fatalf("OTel context provenance missing: %#v", contextEvent)
 	}
 }
 

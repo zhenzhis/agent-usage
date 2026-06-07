@@ -110,6 +110,10 @@ func ConvertOTelGenAISpans(spans []OTelSpan) ([]storage.CanonicalEvent, error) {
 		if goal != "" {
 			payload["goal"] = goal
 		}
+		sourceVersion := firstNonEmpty(stringAttr(attrs, "agent_ledger.source_version", "otel.scope.version", "telemetry.sdk.version"), span.SourceConvention)
+		parserVersion := firstNonEmpty(stringAttr(attrs, "agent_ledger.parser_version"), "agent-ledger-otel-genai@v1")
+		rawRef := firstNonEmpty(stringAttr(attrs, "agent_ledger.raw_ref"), "otel:trace:"+span.TraceID+":span:"+span.SpanID)
+		matchType := firstNonEmpty(stringAttr(attrs, "agent_ledger.match_type"), "source_reported")
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			return nil, err
@@ -118,7 +122,12 @@ func ConvertOTelGenAISpans(spans []OTelSpan) ([]storage.CanonicalEvent, error) {
 			EventID:       firstNonEmpty(stringAttr(attrs, "agent_ledger.event_id"), "otel:"+span.TraceID+":"+span.SpanID),
 			Source:        firstNonEmpty(stringAttr(attrs, "agent_ledger.source"), "opentelemetry"),
 			EventType:     "model.call",
+			SchemaVersion: "v1",
+			SourceVersion: sourceVersion,
+			ParserVersion: parserVersion,
 			SourceEventID: firstNonEmpty(stringAttr(attrs, "agent_ledger.source_event_id"), span.TraceID+":"+span.SpanID),
+			RawRef:        rawRef,
+			MatchType:     matchType,
 			WorkloadID:    workloadID,
 			AgentRunID:    stringAttr(attrs, "agent_ledger.agent_run_id"),
 			SessionID:     stringAttr(attrs, "agent_ledger.session_id", "session.id"),
@@ -151,7 +160,12 @@ func ConvertOTelGenAISpans(spans []OTelSpan) ([]storage.CanonicalEvent, error) {
 				EventID:       "otelctx:" + span.TraceID + ":" + span.SpanID,
 				Source:        modelEvent.Source,
 				EventType:     "context.ref",
+				SchemaVersion: modelEvent.SchemaVersion,
+				SourceVersion: modelEvent.SourceVersion,
+				ParserVersion: modelEvent.ParserVersion,
 				SourceEventID: "otelctx:" + span.TraceID + ":" + span.SpanID,
+				RawRef:        modelEvent.RawRef + ":context",
+				MatchType:     "reconstructed",
 				WorkloadID:    modelEvent.WorkloadID,
 				AgentRunID:    modelEvent.AgentRunID,
 				SessionID:     modelEvent.SessionID,

@@ -52,6 +52,9 @@ func TestConvertA2ATaskSnapshotToCanonicalEvents(t *testing.T) {
 		if string(event.Payload) == "" {
 			t.Fatalf("missing payload for %s", event.EventType)
 		}
+		if event.SchemaVersion != "v1" || event.SourceVersion == "" || event.ParserVersion != "agent-ledger-a2a@v1" || event.RawRef == "" || event.MatchType == "" {
+			t.Fatalf("A2A provenance missing for %s: %#v", event.EventType, event)
+		}
 		if containsAny(string(event.Payload), "must not persist", "secret request", "artifact body") {
 			t.Fatalf("sensitive A2A content leaked in %s payload: %s", event.EventType, string(event.Payload))
 		}
