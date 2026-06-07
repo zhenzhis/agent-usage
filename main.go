@@ -1065,13 +1065,16 @@ func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		if status == "" {
 			status = "approved"
 		}
-		if err := db.ResolveApprovalRequest(requestID, status, "cli", cliValue(args[1:], "--note")); err != nil {
+		voter := firstNonEmptyCLI(cliValue(args[1:], "--voter"), cliValue(args[1:], "--actor"), "cli")
+		requiredApprovals := firstNonEmptyInt(cliInt(args[1:], "--required-approvals", 0), cliInt(args[1:], "--required_approvals", 0))
+		result, err := db.CastApprovalVote(requestID, status, voter, "cli", cliValue(args[1:], "--note"), requiredApprovals)
+		if err != nil {
 			return err
 		}
-		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"ok": true, "request_id": requestID, "status": status})
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"ok": true, "result": result})
 	case "evaluate":
 	default:
-		return fmt.Errorf("usage: agent-ledger policy audit [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format markdown|json]; agent-ledger policy enforcement [--limit n] [--privacy]; agent-ledger policy evaluate [--source s] [--model m] [--project p] [--repo r] [--branch b] [--team t] [--action a] [--target x] [--workload-id id] [--run-id id] [--role role] [--record]; agent-ledger policy approvals [--status pending|approved|rejected|all]; agent-ledger policy resolve --id id --status approved|rejected [--note text]")
+		return fmt.Errorf("usage: agent-ledger policy audit [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format markdown|json]; agent-ledger policy enforcement [--limit n] [--privacy]; agent-ledger policy evaluate [--source s] [--model m] [--project p] [--repo r] [--branch b] [--team t] [--action a] [--target x] [--workload-id id] [--run-id id] [--role role] [--record]; agent-ledger policy approvals [--status pending|approved|rejected|all]; agent-ledger policy resolve --id id --status approved|rejected [--voter name] [--required-approvals n] [--note text]")
 	}
 	req := ledgerpolicy.Request{
 		WorkloadID: firstNonEmptyCLI(cliValue(args[1:], "--workload-id"), cliValue(args[1:], "--workload_id")),
@@ -1781,6 +1784,15 @@ func cliInt(args []string, key string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+func firstNonEmptyInt(values ...int) int {
+	for _, v := range values {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
 }
 
 func firstNonEmptyCLI(values ...string) string {

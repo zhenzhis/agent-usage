@@ -19,10 +19,13 @@ func (d *DB) CreateApprovalRequest(req ApprovalRequest) (string, error) {
 	if req.Status == "" {
 		req.Status = "pending"
 	}
-	_, err := d.db.Exec(`INSERT INTO approval_requests(request_id,policy_decision_id,workload_id,run_id,source,model,project,action,target,actor_role,status,reason,request_payload,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	if req.RequiredApprovals <= 0 {
+		req.RequiredApprovals = 1
+	}
+	_, err := d.db.Exec(`INSERT INTO approval_requests(request_id,policy_decision_id,workload_id,run_id,source,model,project,action,target,actor_role,status,required_approvals,reason,request_payload,created_at,updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		req.RequestID, req.PolicyDecisionID, req.WorkloadID, req.RunID, req.Source, req.Model, req.Project, req.Action, req.Target,
-		req.ActorRole, normalizeApprovalStatus(req.Status), req.Reason, req.RequestPayload, now, now)
+		req.ActorRole, normalizeApprovalStatus(req.Status), req.RequiredApprovals, req.Reason, req.RequestPayload, now, now)
 	if err != nil {
 		return "", err
 	}
@@ -34,8 +37,11 @@ func (d *DB) ListApprovalRequests(status string, limit int) ([]ApprovalRequest, 
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	q := `SELECT request_id,policy_decision_id,workload_id,run_id,source,model,project,action,target,actor_role,status,reason,request_payload,
-		created_at,updated_at,COALESCE(decided_at,''),decided_by,decision_note FROM approval_requests`
+	q := `SELECT request_id,policy_decision_id,workload_id,run_id,source,model,project,action,target,actor_role,status,
+		COALESCE(required_approvals,1),
+		(SELECT COUNT(*) FROM approval_votes av WHERE av.request_id=approval_requests.request_id AND av.status='approved'),
+		(SELECT COUNT(*) FROM approval_votes av WHERE av.request_id=approval_requests.request_id AND av.status='rejected'),
+		reason,request_payload,created_at,updated_at,COALESCE(decided_at,''),decided_by,decision_note FROM approval_requests`
 	args := []interface{}{}
 	if status != "" && status != "all" {
 		q += ` WHERE status=?`
@@ -52,7 +58,7 @@ func (d *DB) ListApprovalRequests(status string, limit int) ([]ApprovalRequest, 
 	for rows.Next() {
 		var r ApprovalRequest
 		if err := rows.Scan(&r.RequestID, &r.PolicyDecisionID, &r.WorkloadID, &r.RunID, &r.Source, &r.Model, &r.Project,
-			&r.Action, &r.Target, &r.ActorRole, &r.Status, &r.Reason, &r.RequestPayload, &r.CreatedAt, &r.UpdatedAt,
+			&r.Action, &r.Target, &r.ActorRole, &r.Status, &r.RequiredApprovals, &r.ApprovalVotes, &r.RejectionVotes, &r.Reason, &r.RequestPayload, &r.CreatedAt, &r.UpdatedAt,
 			&r.DecidedAt, &r.DecidedBy, &r.DecisionNote); err != nil {
 			return nil, err
 		}
@@ -64,26 +70,101 @@ func (d *DB) ListApprovalRequests(status string, limit int) ([]ApprovalRequest, 
 	return out, rows.Err()
 }
 
-// ResolveApprovalRequest marks a request approved or rejected.
-func (d *DB) ResolveApprovalRequest(requestID, status, decidedBy, note string) error {
+// CastApprovalVote records or updates one local actor vote and resolves the request when quorum is reached.
+func (d *DB) CastApprovalVote(requestID, status, voter, role, note string, requiredApprovals int) (*ApprovalVoteResult, error) {
 	if requestID == "" {
-		return fmt.Errorf("request_id is required")
+		return nil, fmt.Errorf("request_id is required")
 	}
 	status = normalizeApprovalStatus(status)
 	if status != "approved" && status != "rejected" {
-		return fmt.Errorf("approval status must be approved or rejected")
+		return nil, fmt.Errorf("approval status must be approved or rejected")
+	}
+	voter = strings.TrimSpace(voter)
+	if voter == "" {
+		voter = firstNonEmpty(role, "local")
+	}
+	if requiredApprovals <= 0 {
+		requiredApprovals = 0
 	}
 	now := time.Now().UTC()
-	res, err := d.db.Exec(`UPDATE approval_requests SET status=?,updated_at=?,decided_at=?,decided_by=?,decision_note=?
-		WHERE request_id=? AND status='pending'`, status, now, now, decidedBy, note, requestID)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	tx, err := d.db.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return sql.ErrNoRows
+	defer tx.Rollback()
+	var currentStatus string
+	var storedRequired int
+	err = tx.QueryRow(`SELECT status, COALESCE(required_approvals,1) FROM approval_requests WHERE request_id=?`, requestID).Scan(&currentStatus, &storedRequired)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if currentStatus != "pending" {
+		return nil, sql.ErrNoRows
+	}
+	if requiredApprovals <= 0 {
+		requiredApprovals = storedRequired
+	}
+	if requiredApprovals <= 0 {
+		requiredApprovals = 1
+	}
+	if requiredApprovals > 20 {
+		requiredApprovals = 20
+	}
+	if _, err := tx.Exec(`UPDATE approval_requests SET required_approvals=?, updated_at=? WHERE request_id=?`, requiredApprovals, now, requestID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(`INSERT INTO approval_votes(request_id,voter,role,status,note,created_at)
+		VALUES(?,?,?,?,?,?)
+		ON CONFLICT(request_id,voter) DO UPDATE SET role=excluded.role,status=excluded.status,note=excluded.note,created_at=excluded.created_at`,
+		requestID, voter, role, status, note, now); err != nil {
+		return nil, err
+	}
+	var approvals, rejections int
+	if err := tx.QueryRow(`SELECT
+		COALESCE(SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END),0)
+		FROM approval_votes WHERE request_id=?`, requestID).Scan(&approvals, &rejections); err != nil {
+		return nil, err
+	}
+	finalStatus := "pending"
+	if rejections >= requiredApprovals {
+		finalStatus = "rejected"
+	} else if approvals >= requiredApprovals {
+		finalStatus = "approved"
+	}
+	if finalStatus != "pending" {
+		voters, err := approvalVoters(tx, requestID, finalStatus)
+		if err != nil {
+			return nil, err
+		}
+		decisionNote := fmt.Sprintf("%s quorum reached: %s", finalStatus, strings.Join(voters, ","))
+		if strings.TrimSpace(note) != "" {
+			decisionNote = decisionNote + " - " + strings.TrimSpace(note)
+		}
+		if _, err := tx.Exec(`UPDATE approval_requests SET status=?,updated_at=?,decided_at=?,decided_by=?,decision_note=? WHERE request_id=?`,
+			finalStatus, now, now, strings.Join(voters, ","), decisionNote, requestID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &ApprovalVoteResult{
+		RequestID:         requestID,
+		Status:            finalStatus,
+		RequiredApprovals: requiredApprovals,
+		ApprovalVotes:     approvals,
+		RejectionVotes:    rejections,
+		Decided:           finalStatus != "pending",
+	}, nil
+}
+
+// ResolveApprovalRequest marks a request approved or rejected.
+func (d *DB) ResolveApprovalRequest(requestID, status, decidedBy, note string) error {
+	_, err := d.CastApprovalVote(requestID, status, firstNonEmpty(decidedBy, "admin"), decidedBy, note, 0)
+	return err
 }
 
 // ApprovalAllows reports whether a previously approved request can authorize an operation retry.
@@ -109,6 +190,26 @@ func (d *DB) ApprovalAllows(requestID, action, target string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func approvalVoters(tx *sql.Tx, requestID, status string) ([]string, error) {
+	rows, err := tx.Query(`SELECT voter FROM approval_votes WHERE request_id=? AND status=? ORDER BY created_at, voter`, requestID, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var voter string
+		if err := rows.Scan(&voter); err != nil {
+			return nil, err
+		}
+		out = append(out, voter)
+	}
+	if len(out) == 0 {
+		out = []string{"local"}
+	}
+	return out, rows.Err()
 }
 
 func normalizeApprovalStatus(status string) string {

@@ -264,20 +264,27 @@ func (s *Server) handlePolicyApprovals(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var payload struct {
-			RequestID string `json:"request_id"`
-			Status    string `json:"status"`
-			Note      string `json:"note"`
+			RequestID         string `json:"request_id"`
+			Status            string `json:"status"`
+			Note              string `json:"note"`
+			Voter             string `json:"voter"`
+			RequiredApprovals int    `json:"required_approvals"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload); err != nil {
 			badRequest(w, err)
 			return
 		}
-		if err := s.db.ResolveApprovalRequest(payload.RequestID, payload.Status, s.roleFor(r), payload.Note); err != nil {
+		voter := payload.Voter
+		if voter == "" {
+			voter = s.roleFor(r)
+		}
+		result, err := s.db.CastApprovalVote(payload.RequestID, payload.Status, voter, s.roleFor(r), payload.Note, payload.RequiredApprovals)
+		if err != nil {
 			badRequest(w, err)
 			return
 		}
-		s.appendAuditLog("local", s.roleFor(r), "policy.approval."+payload.Status, payload.RequestID, map[string]string{"note": payload.Note})
-		writeJSON(w, map[string]interface{}{"ok": true, "request_id": payload.RequestID, "status": payload.Status})
+		s.appendAuditLog("local", s.roleFor(r), "policy.approval."+result.Status, payload.RequestID, map[string]string{"note": payload.Note, "voter": voter, "required_approvals": fmt.Sprint(result.RequiredApprovals), "approval_votes": fmt.Sprint(result.ApprovalVotes), "rejection_votes": fmt.Sprint(result.RejectionVotes)})
+		writeJSON(w, map[string]interface{}{"ok": true, "result": result})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

@@ -166,24 +166,47 @@ type AuditLogFilter struct {
 
 // ApprovalRequest is a local policy approval request.
 type ApprovalRequest struct {
-	RequestID        string `json:"request_id"`
-	PolicyDecisionID string `json:"policy_decision_id"`
-	WorkloadID       string `json:"workload_id"`
-	RunID            string `json:"run_id"`
-	Source           string `json:"source"`
-	Model            string `json:"model"`
-	Project          string `json:"project"`
-	Action           string `json:"action"`
-	Target           string `json:"target"`
-	ActorRole        string `json:"actor_role"`
-	Status           string `json:"status"`
-	Reason           string `json:"reason"`
-	RequestPayload   string `json:"request_payload"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
-	DecidedAt        string `json:"decided_at"`
-	DecidedBy        string `json:"decided_by"`
-	DecisionNote     string `json:"decision_note"`
+	RequestID         string `json:"request_id"`
+	PolicyDecisionID  string `json:"policy_decision_id"`
+	WorkloadID        string `json:"workload_id"`
+	RunID             string `json:"run_id"`
+	Source            string `json:"source"`
+	Model             string `json:"model"`
+	Project           string `json:"project"`
+	Action            string `json:"action"`
+	Target            string `json:"target"`
+	ActorRole         string `json:"actor_role"`
+	Status            string `json:"status"`
+	RequiredApprovals int    `json:"required_approvals"`
+	ApprovalVotes     int    `json:"approval_votes"`
+	RejectionVotes    int    `json:"rejection_votes"`
+	Reason            string `json:"reason"`
+	RequestPayload    string `json:"request_payload"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+	DecidedAt         string `json:"decided_at"`
+	DecidedBy         string `json:"decided_by"`
+	DecisionNote      string `json:"decision_note"`
+}
+
+// ApprovalVote is one local actor decision on an approval request.
+type ApprovalVote struct {
+	RequestID string `json:"request_id"`
+	Voter     string `json:"voter"`
+	Role      string `json:"role"`
+	Status    string `json:"status"`
+	Note      string `json:"note"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ApprovalVoteResult summarizes the request state after recording a vote.
+type ApprovalVoteResult struct {
+	RequestID         string `json:"request_id"`
+	Status            string `json:"status"`
+	RequiredApprovals int    `json:"required_approvals"`
+	ApprovalVotes     int    `json:"approval_votes"`
+	RejectionVotes    int    `json:"rejection_votes"`
+	Decided           bool   `json:"decided"`
 }
 
 // InsightEvent describes a local anomaly, watchdog, or quality signal.
@@ -390,6 +413,7 @@ func migrate(db *sql.DB) error {
 			target TEXT DEFAULT '',
 			actor_role TEXT DEFAULT '',
 			status TEXT DEFAULT 'pending',
+			required_approvals INTEGER DEFAULT 1,
 			reason TEXT DEFAULT '',
 			request_payload TEXT DEFAULT '',
 			created_at DATETIME NOT NULL,
@@ -400,6 +424,17 @@ func migrate(db *sql.DB) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_approval_requests_status_created ON approval_requests(status, created_at);
 		CREATE INDEX IF NOT EXISTS idx_approval_requests_action_target ON approval_requests(action, target);
+
+		CREATE TABLE IF NOT EXISTS approval_votes (
+			request_id TEXT NOT NULL,
+			voter TEXT NOT NULL,
+			role TEXT DEFAULT '',
+			status TEXT NOT NULL,
+			note TEXT DEFAULT '',
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY(request_id, voter)
+		);
+		CREATE INDEX IF NOT EXISTS idx_approval_votes_request_status ON approval_votes(request_id, status);
 
 		CREATE TABLE IF NOT EXISTS insight_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -511,6 +546,7 @@ func migrate(db *sql.DB) error {
 	db.Exec("ALTER TABLE agent_runs ADD COLUMN progress REAL DEFAULT 0")
 	db.Exec("ALTER TABLE agent_runs ADD COLUMN status_message TEXT DEFAULT ''")
 	db.Exec("ALTER TABLE insight_events ADD COLUMN event_key TEXT")
+	db.Exec("ALTER TABLE approval_requests ADD COLUMN required_approvals INTEGER DEFAULT 1")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_insight_event_key ON insight_events(event_key)")
 
 	// Versioned migrations: each runs once, tracked via meta table.

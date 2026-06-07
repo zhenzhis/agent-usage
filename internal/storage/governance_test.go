@@ -445,6 +445,62 @@ func TestApprovalRequestLifecycle(t *testing.T) {
 	}
 }
 
+func TestMultiActorApprovalVotesRequireQuorum(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	id, err := db.CreateApprovalRequest(ApprovalRequest{
+		Action: "model.call", Target: "gpt-5.5", Source: "gateway", Model: "gpt-5.5", Project: "agent-ledger", ActorRole: "operator", RequiredApprovals: 2, Reason: "high cost model",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := db.CastApprovalVote(id, "approved", "alice", "admin", "looks ok", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Status != "pending" || first.Decided || first.ApprovalVotes != 1 || first.RequiredApprovals != 2 {
+		t.Fatalf("first vote should not decide quorum: %+v", first)
+	}
+	allowed, err := db.ApprovalAllows(id, "model.call", "gpt-5.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("single vote should not authorize a two-actor approval")
+	}
+	updated, err := db.CastApprovalVote(id, "approved", "alice", "admin", "still ok", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ApprovalVotes != 1 || updated.Status != "pending" {
+		t.Fatalf("same voter should update rather than duplicate: %+v", updated)
+	}
+	second, err := db.CastApprovalVote(id, "approved", "bob", "admin", "approved", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Status != "approved" || !second.Decided || second.ApprovalVotes != 2 {
+		t.Fatalf("second vote should approve request: %+v", second)
+	}
+	allowed, err = db.ApprovalAllows(id, "model.call", "gpt-5.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowed {
+		t.Fatal("approved quorum should authorize matching operation")
+	}
+	rows, err := db.ListApprovalRequests("approved", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].RequiredApprovals != 2 || rows[0].ApprovalVotes != 2 || !strings.Contains(rows[0].DecidedBy, "alice") || !strings.Contains(rows[0].DecidedBy, "bob") {
+		t.Fatalf("approved request missing vote evidence: %+v", rows)
+	}
+}
+
 func TestAuditLogFiltering(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

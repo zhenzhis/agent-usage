@@ -113,6 +113,77 @@ func TestExportPolicyRequireApprovalCreatesRequestAndApprovedRequestAllows(t *te
 	}
 }
 
+func TestPolicyApprovalAPISupportsMultiActorQuorum(t *testing.T) {
+	db := testServerDB(t)
+	requestID, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		Source:            "gateway",
+		Model:             "gpt-5.5",
+		Project:           "agent-ledger",
+		Action:            "model.call",
+		Target:            "gpt-5.5",
+		ActorRole:         "operator",
+		Status:            "pending",
+		RequiredApprovals: 2,
+		Reason:            "review expensive model",
+	})
+	if err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	srv := New(db, "", Options{})
+
+	firstPayload, _ := json.Marshal(map[string]interface{}{
+		"request_id":         requestID,
+		"status":             "approved",
+		"voter":              "alice",
+		"required_approvals": 2,
+		"note":               "looks safe",
+	})
+	firstReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/policy/approvals", bytes.NewReader(firstPayload))
+	firstRR := httptest.NewRecorder()
+	srv.handlePolicyApprovals(firstRR, firstReq)
+	if firstRR.Code != http.StatusOK {
+		t.Fatalf("first vote status=%d body=%s", firstRR.Code, firstRR.Body.String())
+	}
+	var firstBody struct {
+		Result storage.ApprovalVoteResult `json:"result"`
+	}
+	if err := json.Unmarshal(firstRR.Body.Bytes(), &firstBody); err != nil {
+		t.Fatalf("decode first vote: %v", err)
+	}
+	if firstBody.Result.Status != "pending" || firstBody.Result.ApprovalVotes != 1 || firstBody.Result.Decided {
+		t.Fatalf("unexpected first vote result: %+v", firstBody.Result)
+	}
+	if ok, err := db.ApprovalAllows(requestID, "model.call", "gpt-5.5"); err != nil || ok {
+		t.Fatalf("approval should not allow before quorum, ok=%v err=%v", ok, err)
+	}
+
+	secondPayload, _ := json.Marshal(map[string]interface{}{
+		"request_id":         requestID,
+		"status":             "approved",
+		"voter":              "bob",
+		"required_approvals": 2,
+		"note":               "second approval",
+	})
+	secondReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/policy/approvals", bytes.NewReader(secondPayload))
+	secondRR := httptest.NewRecorder()
+	srv.handlePolicyApprovals(secondRR, secondReq)
+	if secondRR.Code != http.StatusOK {
+		t.Fatalf("second vote status=%d body=%s", secondRR.Code, secondRR.Body.String())
+	}
+	var secondBody struct {
+		Result storage.ApprovalVoteResult `json:"result"`
+	}
+	if err := json.Unmarshal(secondRR.Body.Bytes(), &secondBody); err != nil {
+		t.Fatalf("decode second vote: %v", err)
+	}
+	if secondBody.Result.Status != "approved" || secondBody.Result.ApprovalVotes != 2 || !secondBody.Result.Decided {
+		t.Fatalf("unexpected second vote result: %+v", secondBody.Result)
+	}
+	if ok, err := db.ApprovalAllows(requestID, "model.call", "gpt-5.5"); err != nil || !ok {
+		t.Fatalf("approval should allow after quorum, ok=%v err=%v", ok, err)
+	}
+}
+
 func TestPolicyAuditAPIReportsAndRedactsMatches(t *testing.T) {
 	db := testServerDB(t)
 	ts := time.Date(2026, 6, 7, 13, 30, 0, 0, time.UTC)
