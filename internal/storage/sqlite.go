@@ -141,6 +141,17 @@ type AuditEvent struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// AuditLogFilter constrains local operational audit log queries.
+type AuditLogFilter struct {
+	From   time.Time
+	To     time.Time
+	Actor  string
+	Role   string
+	Action string
+	Target string
+	Limit  int
+}
+
 // ApprovalRequest is a local policy approval request.
 type ApprovalRequest struct {
 	RequestID        string `json:"request_id"`

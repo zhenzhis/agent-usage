@@ -268,6 +268,16 @@ func tools() []map[string]interface{} {
 			"project": stringSchema(),
 			"limit":   integerSchema(),
 		}),
+		tool("ledger.audit_log", "Return local operational audit log events with optional privacy redaction.", map[string]interface{}{
+			"from":    stringSchema(),
+			"to":      stringSchema(),
+			"actor":   stringSchema(),
+			"role":    stringSchema(),
+			"action":  stringSchema(),
+			"target":  stringSchema(),
+			"limit":   integerSchema(),
+			"privacy": map[string]interface{}{"type": "boolean"},
+		}),
 		tool("ledger.explain_cost", "Explain expensive sessions without reading prompt content.", map[string]interface{}{
 			"from":    stringSchema(),
 			"to":      stringSchema(),
@@ -394,6 +404,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolGetPolicy(args)
 	case "ledger.policy_audit":
 		return s.toolPolicyAudit(args)
+	case "ledger.audit_log":
+		return s.toolAuditLog(args)
 	case "ledger.explain_cost":
 		return s.toolExplainCost(args)
 	case "ledger.find_similar_workloads":
@@ -877,6 +889,50 @@ func (s *Server) toolPolicyAudit(args json.RawMessage) (interface{}, error) {
 	report.WindowTo = to.Format(time.RFC3339)
 	report.Scope = "usage_records,tool_calls,workloads"
 	return report, nil
+}
+
+func (s *Server) toolAuditLog(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		From    string `json:"from"`
+		To      string `json:"to"`
+		Actor   string `json:"actor"`
+		Role    string `json:"role"`
+		Action  string `json:"action"`
+		Target  string `json:"target"`
+		Limit   int    `json:"limit"`
+		Privacy bool   `json:"privacy"`
+	}
+	_ = json.Unmarshal(args, &in)
+	filter := storage.AuditLogFilter{
+		Actor:  in.Actor,
+		Role:   in.Role,
+		Action: in.Action,
+		Target: in.Target,
+		Limit:  in.Limit,
+	}
+	if in.From != "" || in.To != "" {
+		from, to, err := parseDateRange(in.From, in.To, s.now())
+		if err != nil {
+			return nil, err
+		}
+		filter.From = from
+		filter.To = to
+	}
+	rows, err := s.db.QueryAuditLog(filter)
+	if err != nil {
+		return nil, err
+	}
+	if in.Privacy {
+		redactMCPAuditRows(rows)
+	}
+	return map[string]interface{}{"count": len(rows), "rows": rows}, nil
+}
+
+func redactMCPAuditRows(rows []storage.AuditEvent) {
+	for i := range rows {
+		rows[i].Target = "<redacted>"
+		rows[i].Params = "<redacted>"
+	}
 }
 
 func (s *Server) toolExplainCost(args json.RawMessage) (interface{}, error) {

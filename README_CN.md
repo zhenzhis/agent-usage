@@ -75,6 +75,7 @@ CLI：
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ./agent-ledger policy approvals
 ./agent-ledger policy resolve --id apr_... --status approved
+./agent-ledger audit --action pricing --role operator --format markdown --privacy
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -227,6 +228,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/policy/audit` | 使用本地 policy rules 审计历史 usage、tool call 和 workload |
 | `GET /api/policy/approvals?status=pending` | 查看本地 pending、approved、rejected 或全部策略审批请求 |
 | `POST /api/policy/approvals` | 批准或拒绝本地策略审批请求 |
+| `GET /api/audit-log?action=pricing&role=operator` | 过滤本地操作审计事件；支持 `from`、`to`、`actor`、`role`、`action`、`target`、`limit` 与隐私模式 |
 | `GET /api/sessions` | 服务端分页会话账本 |
 | `GET /api/session-replay?source=codex&session_id=...` | 单个 session 的调用级 token/cost 时间回放 |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | 本地 SVG repo 成本、token 或 cache badge |
@@ -274,6 +276,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `ledger.integrations`
 - `ledger.get_policy`
 - `ledger.policy_audit`
+- `ledger.audit_log`
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
 

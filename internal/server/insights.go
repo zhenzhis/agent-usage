@@ -317,11 +317,28 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
-	rows, err := s.db.GetAuditLog(parseLimit(r, 200))
+	filter := storage.AuditLogFilter{
+		Actor:  r.URL.Query().Get("actor"),
+		Role:   r.URL.Query().Get("role"),
+		Action: r.URL.Query().Get("action"),
+		Target: r.URL.Query().Get("target"),
+		Limit:  parseLimit(r, 200),
+	}
+	if r.URL.Query().Get("from") != "" || r.URL.Query().Get("to") != "" {
+		from, to, _, err := s.parseTimeRange(r)
+		if err != nil {
+			badRequest(w, err)
+			return
+		}
+		filter.From = from
+		filter.To = to
+	}
+	rows, err := s.db.QueryAuditLog(filter)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
+	applyAuditEventPrivacy(rows, s.privacyFor(r))
 	writeJSON(w, rows)
 }
 

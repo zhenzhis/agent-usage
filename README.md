@@ -75,6 +75,7 @@ CLI:
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ./agent-ledger policy approvals
 ./agent-ledger policy resolve --id apr_... --status approved
+./agent-ledger audit --action pricing --role operator --format markdown --privacy
 ./agent-ledger pricing sync
 ./agent-ledger wrapped
 ./agent-ledger mcp
@@ -227,6 +228,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/policy/audit` | Audit historical usage, tool calls, and workloads against local policy rules |
 | `GET /api/policy/approvals?status=pending` | List local pending, approved, rejected, or all policy approval requests |
 | `POST /api/policy/approvals` | Approve or reject a local policy approval request |
+| `GET /api/audit-log?action=pricing&role=operator` | Filter local operational audit events; supports `from`, `to`, `actor`, `role`, `action`, `target`, `limit`, and privacy mode |
 | `GET /api/sessions` | Server-side paginated session ledger |
 | `GET /api/session-replay?source=codex&session_id=...` | Chronological per-call token/cost replay for one session |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | Local SVG repo cost/tokens/cache badge |
@@ -274,6 +276,7 @@ Current tools:
 - `ledger.integrations`
 - `ledger.get_policy`
 - `ledger.policy_audit`
+- `ledger.audit_log`
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
 

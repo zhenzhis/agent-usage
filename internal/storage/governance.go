@@ -225,15 +225,50 @@ func (d *DB) AppendAuditLog(actor, role, action, target string, params map[strin
 
 // GetAuditLog returns recent local audit events.
 func (d *DB) GetAuditLog(limit int) ([]AuditEvent, error) {
-	if limit <= 0 || limit > 1000 {
+	return d.QueryAuditLog(AuditLogFilter{Limit: limit})
+}
+
+// QueryAuditLog returns local audit events with optional filters. Time filters
+// use the same half-open [from, to) semantics as usage queries.
+func (d *DB) QueryAuditLog(filter AuditLogFilter) ([]AuditEvent, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 5000 {
 		limit = 200
 	}
-	rows, err := d.db.Query(`SELECT id,actor,role,action,target,params,created_at FROM audit_log ORDER BY created_at DESC LIMIT ?`, limit)
+	q := `SELECT id,actor,role,action,target,params,created_at FROM audit_log WHERE 1=1`
+	args := []interface{}{}
+	if !filter.From.IsZero() {
+		q += ` AND created_at >= ?`
+		args = append(args, filter.From)
+	}
+	if !filter.To.IsZero() {
+		q += ` AND created_at < ?`
+		args = append(args, filter.To)
+	}
+	if filter.Actor != "" {
+		q += ` AND actor LIKE ? COLLATE NOCASE`
+		args = append(args, "%"+filter.Actor+"%")
+	}
+	if filter.Role != "" {
+		q += ` AND role = ? COLLATE NOCASE`
+		args = append(args, filter.Role)
+	}
+	if filter.Action != "" {
+		q += ` AND action LIKE ? COLLATE NOCASE`
+		args = append(args, "%"+filter.Action+"%")
+	}
+	if filter.Target != "" {
+		q += ` AND target LIKE ? COLLATE NOCASE`
+		args = append(args, "%"+filter.Target+"%")
+	}
+	q += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := d.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []AuditEvent
+	out := []AuditEvent{}
 	for rows.Next() {
 		var e AuditEvent
 		if err := rows.Scan(&e.ID, &e.Actor, &e.Role, &e.Action, &e.Target, &e.Params, &e.CreatedAt); err != nil {

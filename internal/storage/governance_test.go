@@ -2,6 +2,7 @@ package storage
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -319,6 +320,48 @@ func TestApprovalRequestLifecycle(t *testing.T) {
 	}
 	if wrongTarget {
 		t.Fatal("approved request should not allow a different target")
+	}
+}
+
+func TestAuditLogFiltering(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	base := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	if err := db.AppendAuditLog("local", "operator", "pricing.sync", "openai", map[string]string{"mode": "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AppendAuditLog("local", "viewer", "export", "sessions", map[string]string{"format": "csv"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE audit_log SET created_at=? WHERE action='pricing.sync'`, base); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE audit_log SET created_at=? WHERE action='export'`, base.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.QueryAuditLog(AuditLogFilter{
+		From:   base.Add(-time.Minute),
+		To:     base.Add(time.Hour),
+		Role:   "operator",
+		Action: "pricing",
+		Target: "open",
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Action != "pricing.sync" || !strings.Contains(rows[0].Params, "manual") {
+		t.Fatalf("unexpected filtered audit rows: %+v", rows)
+	}
+	recent, err := db.GetAuditLog(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 2 {
+		t.Fatalf("legacy GetAuditLog wrapper returned %+v", recent)
 	}
 }
 

@@ -69,6 +69,7 @@ const I18N = {
     cacheDoctor: "Cache Doctor",
     dataQuality: "Data Quality",
     watchdog: "Watchdog",
+    auditLog: "Audit Log",
     fleetAttribution: "Fleet Attribution",
     reconciliation: "Reconciliation",
     teamShowback: "Team Showback",
@@ -179,6 +180,7 @@ const I18N = {
     unitMin: "min",
     unitSec: "sec",
     noIssues: "No issues detected",
+    noAuditEvents: "No audit events",
     noFleet: "No fleet runs",
     noReconciliation: "No provider statements imported",
     noChargeback: "No showback rows",
@@ -243,6 +245,7 @@ const I18N = {
     cacheDoctor: "Cache Doctor",
     dataQuality: "数据质量",
     watchdog: "Watchdog",
+    auditLog: "审计日志",
     fleetAttribution: "Fleet Attribution",
     reconciliation: "对账",
     teamShowback: "团队 Showback",
@@ -353,6 +356,7 @@ const I18N = {
     unitMin: "分钟",
     unitSec: "秒",
     noIssues: "未发现问题",
+    noAuditEvents: "暂无审计事件",
     noFleet: "暂无 Fleet 归因数据",
     noReconciliation: "尚未导入 provider 账单",
     noChargeback: "暂无团队归因数据",
@@ -953,6 +957,21 @@ function renderWatchdog(rows, liveness) {
   list.replaceChildren(fragment);
 }
 
+function renderAuditLog(rows) {
+  const list = $("audit-list");
+  if (!list) return;
+  const fragment = document.createDocumentFragment();
+  (rows || []).slice(0, 8).forEach((row) => {
+    const action = String(row.action || "-");
+    const noisy = action.includes("error") || action.includes("blocked") || action.includes("rejected") || action.includes("failed");
+    const detail = `${row.role || "-"} · ${row.target || "-"} · ${relTime(row.created_at)}`;
+    addOpsRow(fragment, action, detail, row.actor || "-", noisy ? "warning" : "ok");
+  });
+  if (!rows || rows.length === 0) fragment.appendChild(createMessage(t("noAuditEvents"), "ops-empty"));
+  setText("audit-meta", `${(rows || []).length} events`);
+  list.replaceChildren(fragment);
+}
+
 function renderFleetAttribution(report) {
   const list = $("fleet-list");
   if (!list) return;
@@ -1275,6 +1294,7 @@ async function refresh(options = {}) {
       costIntel: api("cost-intelligence"),
       cacheDoctor: api("cache/doctor"),
       watchdog: api("watchdog/events", { skipModel: true }),
+      auditLog: api("audit-log", { extra: { limit: 20 } }),
       liveness: api("agent-runs/liveness", { skipModel: true, extra: { max_age: "10m", limit: 20 } }),
       fleet: api("fleet-attribution", { extra: { limit: 50 } }),
       reconciliation: api("reconciliation/status", { skipModel: true, extra: { limit: 20 } }),
@@ -1324,6 +1344,7 @@ async function refresh(options = {}) {
     if (data.costIntel) renderCostIntelligence(data.costIntel);
     if (data.cacheDoctor) renderCacheDoctor(data.cacheDoctor);
     if (data.watchdog || data.liveness) renderWatchdog(data.watchdog, data.liveness);
+    if (data.auditLog) renderAuditLog(data.auditLog);
     if (data.fleet) renderFleetAttribution(data.fleet);
     if (data.reconciliation) renderReconciliation(data.reconciliation);
     if (data.chargeback) renderChargeback(data.chargeback);

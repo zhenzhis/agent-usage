@@ -90,6 +90,20 @@ func applyDoctorPrivacy(report *storage.DoctorReport, privacy config.PrivacyConf
 	}
 }
 
+func applyAuditEventPrivacy(rows []storage.AuditEvent, privacy config.PrivacyConfig) {
+	if !(privacy.RedactPaths || privacy.HideProjectNames || privacy.HashSessionIDs || privacy.ScreenshotMode) {
+		return
+	}
+	for i := range rows {
+		if rows[i].Target != "" {
+			rows[i].Target = hashValue(rows[i].Target)
+		}
+		if rows[i].Params != "" {
+			rows[i].Params = "<redacted>"
+		}
+	}
+}
+
 func hashValue(value string) string {
 	if value == "" {
 		return ""

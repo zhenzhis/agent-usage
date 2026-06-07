@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -223,6 +223,26 @@ func TestMCPPolicyAudit(t *testing.T) {
 	payload := toolTextPayload(t, resp)
 	if payload["matches"] != float64(1) {
 		t.Fatalf("unexpected policy audit payload: %#v", payload)
+	}
+}
+
+func TestMCPAuditLog(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.AppendAuditLog("local", "operator", "pricing.sync", "openai", map[string]string{"project": "private"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+
+	resp := serveLines(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.audit_log","arguments":{"action":"pricing","privacy":true,"limit":10}}}`)[0]
+	payload := toolTextPayload(t, resp)
+	if payload["count"] != float64(1) {
+		t.Fatalf("unexpected audit payload: %#v", payload)
+	}
+	rows := payload["rows"].([]interface{})
+	row := rows[0].(map[string]interface{})
+	if row["target"] != "<redacted>" || row["params"] != "<redacted>" {
+		t.Fatalf("audit privacy redaction failed: %#v", row)
 	}
 }
 

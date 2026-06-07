@@ -401,6 +401,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runBundleCLI(args[1:], db)
 	case "policy":
 		return runPolicyCLI(args[1:], cfg, db)
+	case "audit":
+		return runAuditCLI(args[1:], db)
 	case "reconcile":
 		return runReconcileCLI(args[1:], db)
 	case "router":
@@ -966,6 +968,75 @@ func redactPolicyAuditReport(report *ledgerpolicy.AuditReport) {
 		report.Rows[i].WorkloadID = "<redacted>"
 		report.Rows[i].RunID = "<redacted>"
 		report.Rows[i].Evidence = "<redacted>"
+	}
+}
+
+func runAuditCLI(args []string, db *storage.DB) error {
+	filter := storage.AuditLogFilter{
+		Actor:  cliValue(args, "--actor"),
+		Role:   cliValue(args, "--role"),
+		Action: cliValue(args, "--action"),
+		Target: cliValue(args, "--target"),
+		Limit:  cliInt(args, "--limit", 200),
+	}
+	if cliValue(args, "--from") != "" || cliValue(args, "--to") != "" {
+		from, to, err := cliDateRange(args, time.Now())
+		if err != nil {
+			return err
+		}
+		filter.From = from
+		filter.To = to
+	}
+	rows, err := db.QueryAuditLog(filter)
+	if err != nil {
+		return err
+	}
+	if cliBool(args, "--privacy") {
+		redactAuditRows(rows)
+	}
+	switch strings.ToLower(cliValue(args, "--format")) {
+	case "markdown", "md":
+		printAuditLogMarkdown(rows)
+	case "csv":
+		return writeAuditLogCSV(rows)
+	default:
+		return json.NewEncoder(os.Stdout).Encode(rows)
+	}
+	return nil
+}
+
+func printAuditLogMarkdown(rows []storage.AuditEvent) {
+	fmt.Println("# Agent Ledger Audit Log")
+	fmt.Println()
+	if len(rows) == 0 {
+		fmt.Println("No audit events.")
+		return
+	}
+	fmt.Println("| time | role | action | target | actor |")
+	fmt.Println("|---|---|---|---|---|")
+	for _, row := range rows {
+		fmt.Printf("| %s | %s | %s | %s | %s |\n", row.CreatedAt, row.Role, row.Action, row.Target, row.Actor)
+	}
+}
+
+func writeAuditLogCSV(rows []storage.AuditEvent) error {
+	w := csv.NewWriter(os.Stdout)
+	if err := w.Write([]string{"id", "actor", "role", "action", "target", "params", "created_at"}); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := w.Write([]string{fmt.Sprint(row.ID), row.Actor, row.Role, row.Action, row.Target, row.Params, row.CreatedAt}); err != nil {
+			return err
+		}
+	}
+	w.Flush()
+	return w.Error()
+}
+
+func redactAuditRows(rows []storage.AuditEvent) {
+	for i := range rows {
+		rows[i].Target = "<redacted>"
+		rows[i].Params = "<redacted>"
 	}
 }
 

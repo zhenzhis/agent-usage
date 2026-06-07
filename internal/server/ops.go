@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
 func (s *Server) handleIngestionHealth(w http.ResponseWriter, r *http.Request) {
@@ -180,11 +182,22 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		applyChargebackPrivacy(rows, privacy)
 		payload = rows
 	case "audit":
-		payload, err = s.db.GetAuditLog(1000)
+		rows, auditErr := s.db.QueryAuditLog(storage.AuditLogFilter{
+			From:   from,
+			To:     to,
+			Actor:  r.URL.Query().Get("actor"),
+			Role:   r.URL.Query().Get("role"),
+			Action: r.URL.Query().Get("action"),
+			Target: r.URL.Query().Get("target"),
+			Limit:  1000,
+		})
+		err = auditErr
 		if err != nil {
 			serverError(w, err)
 			return
 		}
+		applyAuditEventPrivacy(rows, privacy)
+		payload = rows
 	case "quality":
 		payload, err = s.db.GetDataQuality(s.options.Pricing.StaleAfter)
 		if err != nil {
@@ -480,11 +493,11 @@ func csvFor(exportType string, payload interface{}) ([]byte, error) {
 		if err := json.Unmarshal(data, &rows); err != nil {
 			return nil, err
 		}
-		if err := w.Write([]string{"id", "actor", "role", "action", "target", "created_at"}); err != nil {
+		if err := w.Write([]string{"id", "actor", "role", "action", "target", "params", "created_at"}); err != nil {
 			return nil, err
 		}
 		for _, row := range rows {
-			if err := w.Write([]string{fmt.Sprint(row["id"]), fmt.Sprint(row["actor"]), fmt.Sprint(row["role"]), fmt.Sprint(row["action"]), fmt.Sprint(row["target"]), fmt.Sprint(row["created_at"])}); err != nil {
+			if err := w.Write([]string{fmt.Sprint(row["id"]), fmt.Sprint(row["actor"]), fmt.Sprint(row["role"]), fmt.Sprint(row["action"]), fmt.Sprint(row["target"]), fmt.Sprint(row["params"]), fmt.Sprint(row["created_at"])}); err != nil {
 				return nil, err
 			}
 		}
