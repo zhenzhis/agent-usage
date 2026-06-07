@@ -226,6 +226,20 @@ func TestMCPPolicyAudit(t *testing.T) {
 	}
 }
 
+func TestMCPPolicyAgentOpsScopes(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	cfg.Policies.Enabled = true
+	cfg.Policies.Rules = []config.PolicyRule{{Name: "branch-block", Scope: "git_branch", Match: "release", Action: "block"}}
+	srv := New(db, cfg)
+
+	resp := serveLines(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.get_policy","arguments":{"git_branch":"release/2026w23","action":"model.call","target":"gpt-5.5"}}}`)[0]
+	payload := toolTextPayload(t, resp)
+	if payload["action"] != "block" {
+		t.Fatalf("unexpected policy payload: %#v", payload)
+	}
+}
+
 func TestMCPAuditLog(t *testing.T) {
 	db := openTestDB(t)
 	if err := db.AppendAuditLog("local", "operator", "pricing.sync", "openai", map[string]string{"project": "private"}); err != nil {

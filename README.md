@@ -333,6 +333,7 @@ If costs differ from a provider invoice:
 - Pricing sync is the expected outbound request.
 - Manual operations are localhost-only by default.
 - Optional RBAC supports `viewer`, `operator`, and `admin` tokens.
+- Policy rules can match `global`, `source`, `model`, `project`, `repo`, `git_branch`, `team`, `action`, `target`, and `role`.
 - Policy approval requests are local metadata records. They authorize only matching action/target retries and do not include prompt content.
 - The optional provider gateway is disabled by default. It forwards prompt content only to the configured upstream in memory, reads API keys from environment variables, and stores usage metadata rather than message content.
 - Run commands are stored as metadata, but common command-line secret patterns such as `API_KEY=...`, `--token ...`, `--api-key=...`, and `Bearer ...` are best-effort redacted before persistence. Prefer environment variables or a secret manager instead of durable command arguments.

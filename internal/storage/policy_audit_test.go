@@ -45,13 +45,23 @@ func TestPolicyAuditCandidatesCoverUsageToolsAndWorkloads(t *testing.T) {
 		t.Fatalf("GetPolicyAuditCandidates: %v", err)
 	}
 	kinds := map[string]bool{}
+	var sawRepo, sawUsageTarget bool
 	for _, c := range candidates {
 		kinds[c.Kind] = true
+		if c.Kind == "workload" && c.Repo == "zhenzhis/agent-ledger" && c.GitBranch == "main" {
+			sawRepo = true
+		}
+		if c.Kind == "usage_session" && c.Target == "gpt-5.5" {
+			sawUsageTarget = true
+		}
 	}
 	for _, kind := range []string{"usage_session", "tool_call", "workload"} {
 		if !kinds[kind] {
 			t.Fatalf("missing %s candidates=%#v", kind, candidates)
 		}
+	}
+	if !sawRepo || !sawUsageTarget {
+		t.Fatalf("missing agentops candidate fields repo=%t usage_target=%t candidates=%#v", sawRepo, sawUsageTarget, candidates)
 	}
 	report := ledgerpolicy.Audit(config.PolicyConfig{Enabled: true, Rules: []config.PolicyRule{
 		{Name: "warn-gpt", Scope: "model", Match: "gpt-5.5", Action: "warn"},

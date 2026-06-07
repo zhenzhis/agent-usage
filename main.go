@@ -914,7 +914,7 @@ func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"ok": true, "request_id": requestID, "status": status})
 	case "evaluate":
 	default:
-		return fmt.Errorf("usage: agent-ledger policy audit [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format markdown|json]; agent-ledger policy evaluate [--source s] [--model m] [--project p] [--action a] [--workload-id id] [--run-id id] [--role role] [--record]; agent-ledger policy approvals [--status pending|approved|rejected|all]; agent-ledger policy resolve --id id --status approved|rejected [--note text]")
+		return fmt.Errorf("usage: agent-ledger policy audit [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format markdown|json]; agent-ledger policy evaluate [--source s] [--model m] [--project p] [--repo r] [--branch b] [--team t] [--action a] [--target x] [--workload-id id] [--run-id id] [--role role] [--record]; agent-ledger policy approvals [--status pending|approved|rejected|all]; agent-ledger policy resolve --id id --status approved|rejected [--note text]")
 	}
 	req := ledgerpolicy.Request{
 		WorkloadID: firstNonEmptyCLI(cliValue(args[1:], "--workload-id"), cliValue(args[1:], "--workload_id")),
@@ -922,7 +922,11 @@ func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		Source:     cliValue(args[1:], "--source"),
 		Model:      cliValue(args[1:], "--model"),
 		Project:    cliValue(args[1:], "--project"),
+		Repo:       cliValue(args[1:], "--repo"),
+		GitBranch:  firstNonEmptyCLI(cliValue(args[1:], "--branch"), cliValue(args[1:], "--git-branch"), cliValue(args[1:], "--git_branch")),
+		Team:       cliValue(args[1:], "--team"),
 		Action:     cliValue(args[1:], "--action"),
+		Target:     cliValue(args[1:], "--target"),
 		Role:       firstNonEmptyCLI(cliValue(args[1:], "--role"), "operator"),
 	}
 	result := ledgerpolicy.Evaluate(cfg.Policies, req)
@@ -954,16 +958,20 @@ func printPolicyAuditMarkdown(report ledgerpolicy.AuditReport) {
 		fmt.Println("No policy matches.")
 		return
 	}
-	fmt.Println("| action | kind | source | model | project | evidence |")
-	fmt.Println("|---|---|---|---|---|---|")
+	fmt.Println("| action | kind | source | model | project | target | evidence |")
+	fmt.Println("|---|---|---|---|---|---|---|")
 	for _, row := range report.Rows {
-		fmt.Printf("| %s | %s | %s | %s | %s | %s |\n", row.EffectiveAction, row.Kind, row.Source, row.Model, row.Project, strings.ReplaceAll(row.Evidence, "|", "/"))
+		fmt.Printf("| %s | %s | %s | %s | %s | %s | %s |\n", row.EffectiveAction, row.Kind, row.Source, row.Model, row.Project, row.Target, strings.ReplaceAll(row.Evidence, "|", "/"))
 	}
 }
 
 func redactPolicyAuditReport(report *ledgerpolicy.AuditReport) {
 	for i := range report.Rows {
 		report.Rows[i].Project = "<redacted>"
+		report.Rows[i].Repo = "<redacted>"
+		report.Rows[i].GitBranch = "<redacted>"
+		report.Rows[i].Team = "<redacted>"
+		report.Rows[i].Target = "<redacted>"
 		report.Rows[i].SessionID = "<redacted>"
 		report.Rows[i].WorkloadID = "<redacted>"
 		report.Rows[i].RunID = "<redacted>"

@@ -257,7 +257,11 @@ func tools() []map[string]interface{} {
 			"source":      stringSchema(),
 			"model":       stringSchema(),
 			"project":     stringSchema(),
+			"repo":        stringSchema(),
+			"git_branch":  stringSchema(),
+			"team":        stringSchema(),
 			"action":      stringSchema(),
+			"target":      stringSchema(),
 			"role":        stringSchema(),
 		}),
 		tool("ledger.policy_audit", "Audit historical usage, tool calls, and workloads against local policy rules.", map[string]interface{}{
@@ -837,7 +841,11 @@ func (s *Server) toolGetPolicy(args json.RawMessage) (interface{}, error) {
 		Source     string `json:"source"`
 		Model      string `json:"model"`
 		Project    string `json:"project"`
+		Repo       string `json:"repo"`
+		GitBranch  string `json:"git_branch"`
+		Team       string `json:"team"`
 		Action     string `json:"action"`
+		Target     string `json:"target"`
 		Role       string `json:"role"`
 	}
 	_ = json.Unmarshal(args, &in)
@@ -847,7 +855,11 @@ func (s *Server) toolGetPolicy(args json.RawMessage) (interface{}, error) {
 		Source:     in.Source,
 		Model:      in.Model,
 		Project:    in.Project,
+		Repo:       in.Repo,
+		GitBranch:  in.GitBranch,
+		Team:       in.Team,
 		Action:     in.Action,
+		Target:     in.Target,
 		Role:       in.Role,
 	})
 	for i := range result.Decisions {

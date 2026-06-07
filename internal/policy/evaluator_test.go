@@ -45,6 +45,24 @@ func TestEvaluateRoleAndActionScopes(t *testing.T) {
 	}
 }
 
+func TestEvaluateAgentOpsScopes(t *testing.T) {
+	result := Evaluate(config.PolicyConfig{
+		Enabled: true,
+		Rules: []config.PolicyRule{
+			{Name: "target-export", Scope: "target", Match: "sessions", Action: "require_approval"},
+			{Name: "repo-quant", Scope: "repo", Match: "zhenzhis/quant", Action: "warn"},
+			{Name: "branch-prod", Scope: "branch", Match: "release", Action: "block"},
+			{Name: "team-alpha", Scope: "team", Match: "alpha", Action: "warn"},
+		},
+	}, Request{Target: "export:sessions", Repo: "zhenzhis/quant-research", GitBranch: "release/2026w23", Team: "alpha"})
+	if result.Action != "block" || len(result.Decisions) != 4 {
+		t.Fatalf("unexpected agentops scoped result: %#v", result)
+	}
+	if result.Decisions[2].Scope != "git_branch" {
+		t.Fatalf("branch alias should normalize to git_branch: %#v", result.Decisions)
+	}
+}
+
 func TestUnknownScopeDoesNotMatch(t *testing.T) {
 	result := Evaluate(config.PolicyConfig{
 		Enabled: true,

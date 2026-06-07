@@ -29,6 +29,22 @@ func TestExportPolicyBlock(t *testing.T) {
 	}
 }
 
+func TestExportPolicyTargetScopeBlock(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{Policies: config.PolicyConfig{
+		Enabled: true,
+		Rules: []config.PolicyRule{{
+			Name: "block-session-export", Scope: "target", Match: "sessions", Action: "block", Message: "session export disabled",
+		}},
+	}})
+	req := httptest.NewRequest(http.MethodGet, "/api/export?type=sessions&format=csv&from=2026-06-07&to=2026-06-07", nil)
+	rr := httptest.NewRecorder()
+	srv.handleExport(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestExportPolicyWarnRecordsAudit(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{Policies: config.PolicyConfig{

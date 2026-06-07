@@ -13,7 +13,11 @@ type Request struct {
 	Source     string `json:"source"`
 	Model      string `json:"model"`
 	Project    string `json:"project"`
+	Repo       string `json:"repo"`
+	GitBranch  string `json:"git_branch"`
+	Team       string `json:"team"`
 	Action     string `json:"action"`
+	Target     string `json:"target"`
 	Role       string `json:"role"`
 }
 
@@ -45,7 +49,11 @@ type AuditCandidate struct {
 	Source     string  `json:"source,omitempty"`
 	Model      string  `json:"model,omitempty"`
 	Project    string  `json:"project,omitempty"`
+	Repo       string  `json:"repo,omitempty"`
+	GitBranch  string  `json:"git_branch,omitempty"`
+	Team       string  `json:"team,omitempty"`
 	Action     string  `json:"action"`
+	Target     string  `json:"target,omitempty"`
 	Role       string  `json:"role,omitempty"`
 	Tokens     int64   `json:"tokens,omitempty"`
 	CostUSD    float64 `json:"cost_usd,omitempty"`
@@ -124,7 +132,11 @@ func Audit(cfg config.PolicyConfig, candidates []AuditCandidate, limit int) Audi
 			Source:     c.Source,
 			Model:      c.Model,
 			Project:    c.Project,
+			Repo:       c.Repo,
+			GitBranch:  c.GitBranch,
+			Team:       c.Team,
 			Action:     c.Action,
+			Target:     c.Target,
 			Role:       c.Role,
 		})
 		action := NormalizeAction(result.Action)
@@ -165,8 +177,16 @@ func Matches(rule config.PolicyRule, req Request) bool {
 		return strings.EqualFold(req.Model, rule.Match)
 	case "project":
 		return strings.Contains(strings.ToLower(req.Project), match)
+	case "repo":
+		return strings.Contains(strings.ToLower(req.Repo), match)
+	case "branch", "git_branch":
+		return strings.Contains(strings.ToLower(req.GitBranch), match)
+	case "team":
+		return strings.Contains(strings.ToLower(req.Team), match)
 	case "action":
 		return strings.EqualFold(req.Action, rule.Match)
+	case "target":
+		return strings.Contains(strings.ToLower(req.Target), match)
 	case "role":
 		return strings.EqualFold(req.Role, rule.Match)
 	case "global":
@@ -193,8 +213,12 @@ func NormalizeAction(action string) string {
 // NormalizeScope converts scope aliases into stable scope names.
 func NormalizeScope(scope string) string {
 	switch strings.ToLower(strings.TrimSpace(scope)) {
-	case "source", "model", "project", "action", "role":
+	case "source", "model", "project", "repo", "team", "target", "action", "role":
 		return strings.ToLower(strings.TrimSpace(scope))
+	case "branch":
+		return "git_branch"
+	case "git_branch":
+		return "git_branch"
 	case "", "global", "*":
 		return "global"
 	default:

@@ -43,7 +43,7 @@ func (d *DB) GetPolicyAuditCandidates(from, to time.Time, source, model, project
 }
 
 func (d *DB) policyAuditUsageCandidates(from, to time.Time, source, model, project string, limit int) ([]ledgerpolicy.AuditCandidate, error) {
-	q := `SELECT source,model,project,session_id,
+	q := `SELECT source,model,project,COALESCE(git_branch,''),session_id,
 		COALESCE(SUM(input_tokens+cache_read_input_tokens+cache_creation_input_tokens+output_tokens),0),
 		COALESCE(SUM(cost_usd),0),COALESCE(MAX(timestamp),'')
 		FROM usage_records WHERE timestamp >= ? AND timestamp < ?`
@@ -60,7 +60,7 @@ func (d *DB) policyAuditUsageCandidates(from, to time.Time, source, model, proje
 		q += ` AND project=?`
 		args = append(args, project)
 	}
-	q += ` GROUP BY source,model,project,session_id ORDER BY MAX(timestamp) DESC LIMIT ?`
+	q += ` GROUP BY source,model,project,git_branch,session_id ORDER BY MAX(timestamp) DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := d.db.Query(q, args...)
 	if err != nil {
@@ -70,11 +70,12 @@ func (d *DB) policyAuditUsageCandidates(from, to time.Time, source, model, proje
 	out := []ledgerpolicy.AuditCandidate{}
 	for rows.Next() {
 		var c ledgerpolicy.AuditCandidate
-		if err := rows.Scan(&c.Source, &c.Model, &c.Project, &c.SessionID, &c.Tokens, &c.CostUSD, &c.Timestamp); err != nil {
+		if err := rows.Scan(&c.Source, &c.Model, &c.Project, &c.GitBranch, &c.SessionID, &c.Tokens, &c.CostUSD, &c.Timestamp); err != nil {
 			return nil, err
 		}
 		c.Kind = "usage_session"
 		c.Action = "model.call"
+		c.Target = c.Model
 		c.Evidence = "usage_records"
 		out = append(out, c)
 	}
@@ -82,7 +83,7 @@ func (d *DB) policyAuditUsageCandidates(from, to time.Time, source, model, proje
 }
 
 func (d *DB) policyAuditToolCandidates(from, to time.Time, source, project string, limit int) ([]ledgerpolicy.AuditCandidate, error) {
-	q := `SELECT tc.tool_call_id,tc.workload_id,tc.run_id,tc.source,COALESCE(w.project,''),tc.timestamp,tc.tool_name,tc.status
+	q := `SELECT tc.tool_call_id,tc.workload_id,tc.run_id,tc.source,COALESCE(w.project,''),COALESCE(w.repo,''),COALESCE(w.git_branch,''),COALESCE(w.team,''),tc.timestamp,tc.tool_name,tc.status
 		FROM tool_calls tc LEFT JOIN workloads w ON tc.workload_id=w.workload_id
 		WHERE tc.timestamp >= ? AND tc.timestamp < ?`
 	args := []interface{}{from, to}
@@ -105,11 +106,12 @@ func (d *DB) policyAuditToolCandidates(from, to time.Time, source, project strin
 	for rows.Next() {
 		var id, toolName, status string
 		var c ledgerpolicy.AuditCandidate
-		if err := rows.Scan(&id, &c.WorkloadID, &c.RunID, &c.Source, &c.Project, &c.Timestamp, &toolName, &status); err != nil {
+		if err := rows.Scan(&id, &c.WorkloadID, &c.RunID, &c.Source, &c.Project, &c.Repo, &c.GitBranch, &c.Team, &c.Timestamp, &toolName, &status); err != nil {
 			return nil, err
 		}
 		c.Kind = "tool_call"
 		c.Action = "tool.call"
+		c.Target = toolName
 		c.Evidence = "tool_calls:" + id + ":" + toolName + ":" + status
 		out = append(out, c)
 	}
@@ -117,7 +119,7 @@ func (d *DB) policyAuditToolCandidates(from, to time.Time, source, project strin
 }
 
 func (d *DB) policyAuditWorkloadCandidates(from, to time.Time, source, project string, limit int) ([]ledgerpolicy.AuditCandidate, error) {
-	q := `SELECT workload_id,source,project,created_at,status FROM workloads WHERE created_at >= ? AND created_at < ?`
+	q := `SELECT workload_id,source,project,repo,git_branch,team,created_at,status FROM workloads WHERE created_at >= ? AND created_at < ?`
 	args := []interface{}{from, to}
 	if source != "" {
 		q += ` AND source=?`
@@ -138,11 +140,12 @@ func (d *DB) policyAuditWorkloadCandidates(from, to time.Time, source, project s
 	for rows.Next() {
 		var status string
 		var c ledgerpolicy.AuditCandidate
-		if err := rows.Scan(&c.WorkloadID, &c.Source, &c.Project, &c.Timestamp, &status); err != nil {
+		if err := rows.Scan(&c.WorkloadID, &c.Source, &c.Project, &c.Repo, &c.GitBranch, &c.Team, &c.Timestamp, &status); err != nil {
 			return nil, err
 		}
 		c.Kind = "workload"
 		c.Action = "workload"
+		c.Target = c.WorkloadID
 		c.Evidence = "workloads:" + status
 		out = append(out, c)
 	}

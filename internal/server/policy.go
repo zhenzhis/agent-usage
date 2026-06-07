@@ -50,6 +50,7 @@ func (s *Server) handlePolicyEvaluate(w http.ResponseWriter, r *http.Request) {
 		"source": payload.Source,
 		"model":  payload.Model,
 		"action": payload.Action,
+		"target": payload.Target,
 		"record": fmt.Sprint(shouldRecord),
 	})
 	writeJSON(w, result)
@@ -84,12 +85,14 @@ func (s *Server) evaluateOperationPolicy(w http.ResponseWriter, r *http.Request,
 		Model:   model,
 		Project: project,
 		Action:  action,
+		Target:  target,
 		Role:    s.roleFor(r),
 	})
 	if result.Enabled && len(result.Decisions) > 0 {
 		raw, _ := json.Marshal(result.Decisions)
 		_ = s.db.AppendAuditLog("local", s.roleFor(r), "policy.evaluate", target, map[string]string{
 			"action":           action,
+			"target":           target,
 			"effective_action": result.Action,
 			"source":           source,
 			"model":            model,
@@ -137,10 +140,14 @@ func applyPolicyAuditPrivacy(report *ledgerpolicy.AuditReport, privacy config.Pr
 		}
 		if privacy.HideProjectNames || privacy.RedactPaths || privacy.ScreenshotMode {
 			report.Rows[i].Project = "<redacted>"
+			report.Rows[i].Repo = "<redacted>"
+			report.Rows[i].GitBranch = "<redacted>"
+			report.Rows[i].Team = "<redacted>"
 		}
 		if privacy.ScreenshotMode {
 			report.Rows[i].WorkloadID = hashValue(report.Rows[i].WorkloadID)
 			report.Rows[i].RunID = hashValue(report.Rows[i].RunID)
+			report.Rows[i].Target = "<redacted>"
 			report.Rows[i].Evidence = "<redacted>"
 		}
 	}
