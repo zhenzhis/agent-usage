@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -68,7 +68,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("resource subscriptions should be advertised: %#v", resourceCaps)
 	}
 	resources := out[1]["result"].(map[string]interface{})["resources"].([]interface{})
-	if !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/feed") {
+	if !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
 		t.Fatalf("expected core resources, got %#v", resources)
 	}
 	resourceText := resourceTextPayload(t, out[2])
@@ -493,6 +493,53 @@ func TestMCPPolicyAudit(t *testing.T) {
 	payload := toolTextPayload(t, resp)
 	if payload["matches"] != float64(1) {
 		t.Fatalf("unexpected policy audit payload: %#v", payload)
+	}
+}
+
+func TestMCPApprovalRoutesToolAndResource(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().UTC()
+	if _, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		Source:            "gateway",
+		Model:             "gpt-5.5",
+		Project:           "private-project",
+		Action:            "model.call",
+		Target:            "openai-chat-completions",
+		Status:            "pending",
+		RequiredApprovals: 2,
+		ApproverHint:      "desk-lead",
+		EscalationTarget:  "research-head",
+		DueAt:             now.Add(30 * time.Minute).Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+
+	out := serveLines(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.approval_routes","arguments":{"due_within":"1h","limit":10,"privacy":true}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"agent-ledger://policy/approval-routes?due_within=1h&limit=10&privacy=1"}}`,
+	)
+	toolPayload := toolTextPayload(t, out[0])
+	summary := toolPayload["summary"].(map[string]interface{})
+	if summary["pending"] != float64(1) || summary["due_soon"] != float64(1) {
+		t.Fatalf("unexpected approval route tool summary: %#v", toolPayload)
+	}
+	rawTool, _ := json.Marshal(toolPayload)
+	for _, forbidden := range []string{"private-project", "desk-lead", "research-head"} {
+		if strings.Contains(string(rawTool), forbidden) {
+			t.Fatalf("tool approval routes leaked %q: %s", forbidden, string(rawTool))
+		}
+	}
+
+	resourceText := resourceTextPayload(t, out[1])
+	if !strings.Contains(resourceText, `"pending": 1`) || !strings.Contains(resourceText, "redacted") {
+		t.Fatalf("unexpected approval route resource: %s", resourceText)
+	}
+	for _, forbidden := range []string{"private-project", "desk-lead", "research-head"} {
+		if strings.Contains(resourceText, forbidden) {
+			t.Fatalf("resource approval routes leaked %q: %s", forbidden, resourceText)
+		}
 	}
 }
 

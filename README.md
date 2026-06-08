@@ -318,7 +318,7 @@ When a policy returns `require_approval`, Agent Ledger records a local pending a
 
 ## MCP Tool Surface
 
-`agent-ledger mcp` starts a local stdio JSON-RPC tool server for agent frameworks and wrappers. The implementation is intentionally local and privacy-preserving: tools can create or close workloads, link workload dependencies, start runs on existing workloads, append run heartbeats, check run liveness and terminal-state snapshots, read the cursor-stable workload event feed, record tool-call metadata, context refs, hashed artifacts, and quality/evaluation signals, ask for advisory policy decisions, query local budget state, explain cost, and find similar workloads. Resources expose metadata-only schema, integration, budget, workload, feed, terminal-state, and policy context; resource URIs support query parameters for scoped reads such as `agent-ledger://workloads/feed?severity=warning&source=codex&project=agent-ledger&limit=50`. `resources/subscribe` watches the exact subscribed URI locally and emits `notifications/resources/updated` with the latest cursor/hash when that scoped resource changes. Prompts provide reusable workload/cost-review/evidence templates. It does not read prompt content and does not send data to a remote MCP host by itself. MCP, REST, and CLI policy evaluation share the same local evaluator so advisory decisions are consistent across integrations.
+`agent-ledger mcp` starts a local stdio JSON-RPC tool server for agent frameworks and wrappers. The implementation is intentionally local and privacy-preserving: tools can create or close workloads, link workload dependencies, start runs on existing workloads, append run heartbeats, check run liveness and terminal-state snapshots, read the cursor-stable workload event feed, record tool-call metadata, context refs, hashed artifacts, and quality/evaluation signals, ask for advisory policy decisions and approval route rollups, query local budget state, explain cost, and find similar workloads. Resources expose metadata-only schema, integration, budget, workload, feed, terminal-state, and policy context; resource URIs support query parameters for scoped reads such as `agent-ledger://workloads/feed?severity=warning&source=codex&project=agent-ledger&limit=50` and `agent-ledger://policy/approval-routes?due_within=24h&privacy=1`. `resources/subscribe` watches the exact subscribed URI locally and emits `notifications/resources/updated` with the latest cursor/hash when that scoped resource changes. Prompts provide reusable workload/cost-review/evidence templates. It does not read prompt content and does not send data to a remote MCP host by itself. MCP, REST, and CLI policy evaluation share the same local evaluator so advisory decisions are consistent across integrations.
 
 `GET /api/integrations`, `GET /.well-known/agent-ledger.json`, `agent-ledger integrations`, and MCP `ledger.integrations` expose runtime capability fields: `writes_local_state`, `available_in_read_only`, and `runtime_status`. The discovery manifest also exposes first-class `runtime_status_uri`, `canonical_schema_uri`, `canonical_schema_hash`, `event_examples_uri`, `adapter_spec_uri`, and `adapter_conformance_uri` fields for lightweight wrappers. `GET /api/integrations/adapter-spec`, `agent-ledger adapter spec`, MCP `ledger.adapter_contract`, and `agent-ledger://integrations/adapter-contract` expose the same machine-readable adapter contract. `GET /api/runtime/status` and `agent-ledger runtime` provide the same process-level observer/control-plane status for probes. Agent routers and wrappers should use these fields instead of hardcoding endpoint assumptions, especially when `rbac.read_only` is enabled.
 
@@ -347,6 +347,7 @@ Current tools:
 - `ledger.integrations`
 - `ledger.get_policy`
 - `ledger.policy_audit`
+- `ledger.approval_routes`
 - `ledger.audit_log`
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
@@ -361,6 +362,7 @@ Current resources:
 - `agent-ledger://workloads/recent` with summary rows and derived terminal-state snapshots; supports `from`, `to`, `source`, `model`, `project`, `status`, `q`, `limit`, `offset`, and `stale_after`
 - `agent-ledger://workloads/feed` with cursor-stable workload state events for local monitors and routers; supports `from`, `to`, `source`, `model`, `project`, `phase`, `severity`, `limit`, and `stale_after`
 - `agent-ledger://policies/status`
+- `agent-ledger://policy/approval-routes` with pending approval route rollups; supports `due_within`, `limit`, and `privacy`
 
 Current prompts:
 

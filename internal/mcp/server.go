@@ -469,6 +469,11 @@ func tools() []map[string]interface{} {
 			"project": stringSchema(),
 			"limit":   integerSchema(),
 		}),
+		tool("ledger.approval_routes", "Return pending local policy approval route rollups for approval bots and local notification adapters.", map[string]interface{}{
+			"due_within": stringSchema(),
+			"limit":      integerSchema(),
+			"privacy":    booleanSchema(),
+		}),
 		tool("ledger.audit_log", "Return local operational audit log events with optional privacy redaction.", map[string]interface{}{
 			"from":    stringSchema(),
 			"to":      stringSchema(),
@@ -540,6 +545,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://workloads/recent", "Recent Workloads", "Recent workload summaries and terminal-state snapshots from the local ledger; supports from/to/source/model/project/status/q/limit/offset/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://policies/status", "Policy Status", "Local policy configuration summary without prompt or secret content.", "application/json"),
+		resource("agent-ledger://policy/approval-routes", "Policy Approval Routes", "Pending local approval route rollups; supports due_within, limit, and privacy query parameters.", "application/json"),
 	}
 }
 
@@ -636,6 +642,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolGetPolicy(args)
 	case "ledger.policy_audit":
 		return s.toolPolicyAudit(args)
+	case "ledger.approval_routes":
+		return s.toolApprovalRoutes(args)
 	case "ledger.audit_log":
 		return s.toolAuditLog(args)
 	case "ledger.explain_cost":
@@ -713,6 +721,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 			"require_privacy_export": s.cfg.Policies.RequirePrivacyExport,
 			"rules":                  s.cfg.Policies.Rules,
 		}, nil
+	case "agent-ledger://policy/approval-routes":
+		return s.resourceApprovalRoutes(values)
 	default:
 		return nil, fmt.Errorf("unknown resource %q", uri)
 	}
@@ -801,6 +811,21 @@ func (s *Server) resourceWorkloadFeed(values url.Values) (*storage.WorkloadEvent
 		staleAfter)
 }
 
+func (s *Server) resourceApprovalRoutes(values url.Values) (*storage.ApprovalRouteSummary, error) {
+	dueWithin, err := boundedDuration(firstNonEmpty(values.Get("due_within"), values.Get("approval_due_within")), "due_within", 24*time.Hour, 30*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+	report, err := s.db.GetApprovalRouteSummary(boundedQueryInt(values, "limit", 200, 1, 1000), dueWithin)
+	if err != nil {
+		return nil, err
+	}
+	if queryBool(values, "privacy") {
+		redactMCPApprovalRoutes(report)
+	}
+	return report, nil
+}
+
 func boundedQueryInt(values url.Values, key string, fallback, min, max int) int {
 	raw := strings.TrimSpace(values.Get(key))
 	if raw == "" {
@@ -835,6 +860,29 @@ func queryDuration(values url.Values, key string, fallback time.Duration) (time.
 		return 0, fmt.Errorf("%s must be positive", key)
 	}
 	return parsed, nil
+}
+
+func boundedDuration(raw, key string, fallback, max time.Duration) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, err
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be positive", key)
+	}
+	if max > 0 && parsed > max {
+		return 0, fmt.Errorf("%s must be <= %s", key, max)
+	}
+	return parsed, nil
+}
+
+func queryBool(values url.Values, key string) bool {
+	raw := strings.ToLower(strings.TrimSpace(values.Get(key)))
+	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
 }
 
 func (s *Server) resourceCursor(uri string) (string, error) {
@@ -1457,6 +1505,27 @@ func (s *Server) toolPolicyAudit(args json.RawMessage) (interface{}, error) {
 	return report, nil
 }
 
+func (s *Server) toolApprovalRoutes(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		DueWithin string `json:"due_within"`
+		Limit     int    `json:"limit"`
+		Privacy   bool   `json:"privacy"`
+	}
+	_ = json.Unmarshal(args, &in)
+	dueWithin, err := boundedDuration(in.DueWithin, "due_within", 24*time.Hour, 30*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+	report, err := s.db.GetApprovalRouteSummary(in.Limit, dueWithin)
+	if err != nil {
+		return nil, err
+	}
+	if in.Privacy {
+		redactMCPApprovalRoutes(report)
+	}
+	return report, nil
+}
+
 func (s *Server) toolAuditLog(args json.RawMessage) (interface{}, error) {
 	var in struct {
 		From    string `json:"from"`
@@ -1498,6 +1567,20 @@ func redactMCPAuditRows(rows []storage.AuditEvent) {
 	for i := range rows {
 		rows[i].Target = "<redacted>"
 		rows[i].Params = "<redacted>"
+	}
+}
+
+func redactMCPApprovalRoutes(report *storage.ApprovalRouteSummary) {
+	if report == nil {
+		return
+	}
+	for i := range report.Routes {
+		report.Routes[i].RouteKey = "<redacted>"
+		report.Routes[i].Approver = "<redacted>"
+		report.Routes[i].EscalationTarget = "<redacted>"
+		for j := range report.Routes[i].Projects {
+			report.Routes[i].Projects[j] = "<redacted>"
+		}
 	}
 }
 
