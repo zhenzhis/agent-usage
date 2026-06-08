@@ -304,6 +304,35 @@ func TestPolicyEnforcementAPIReportsAndRedactsEvidence(t *testing.T) {
 	}
 }
 
+func TestPolicyApprovalRoutesAPIReportsAndRedactsRoutes(t *testing.T) {
+	db := testServerDB(t)
+	if _, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		Source: "gateway", Model: "gpt-5.5", Project: "private-project", Action: "model.call", Target: "openai-chat-completions",
+		Status: "pending", ApproverHint: "desk-lead,risk", EscalationTarget: "research-head",
+		DueAt: time.Now().UTC().Add(30 * time.Minute).Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	srv := New(db, "", Options{})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/policy/approval-routes?due_within=1h&privacy=1", nil)
+	rr := httptest.NewRecorder()
+	srv.handlePolicyApprovalRoutes(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("approval routes status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var report storage.ApprovalRouteSummary
+	if err := json.Unmarshal(rr.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if report.Summary.Pending != 1 || report.Summary.DueSoon != 1 || len(report.Routes) != 1 {
+		t.Fatalf("unexpected approval route summary: %+v", report)
+	}
+	route := report.Routes[0]
+	if route.Approver != "<redacted>" || route.EscalationTarget != "<redacted>" || route.RouteKey == "desk-lead,risk -> research-head" || route.Projects[0] != "<redacted>" {
+		t.Fatalf("approval route privacy failed: %+v", route)
+	}
+}
+
 func TestRepairProjectionAPI(t *testing.T) {
 	db := testServerDB(t)
 	ts := time.Date(2026, 6, 7, 13, 30, 0, 0, time.UTC)

@@ -97,6 +97,28 @@ func (s *Server) handlePolicyEnforcement(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, report)
 }
 
+func (s *Server) handlePolicyApprovalRoutes(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	dueWithin := 24 * time.Hour
+	if raw := strings.TrimSpace(r.URL.Query().Get("due_within")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 || parsed > 30*24*time.Hour {
+			badRequest(w, fmt.Errorf("invalid due_within %q: expected duration from 1ns to 720h", raw))
+			return
+		}
+		dueWithin = parsed
+	}
+	report, err := s.db.GetApprovalRouteSummary(parseLimit(r, 200), dueWithin)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	applyApprovalRoutePrivacy(report, s.privacyFor(r))
+	writeJSON(w, report)
+}
+
 func (s *Server) evaluateOperationPolicy(w http.ResponseWriter, r *http.Request, action, source, model, project, target string) bool {
 	result := ledgerpolicy.Evaluate(s.options.Policies, ledgerpolicy.Request{
 		Source:  source,
@@ -218,6 +240,26 @@ func applyPolicyEnforcementPrivacy(report *storage.PolicyEnforcementReport, priv
 		}
 	}
 	applyAuditEventPrivacy(report.AuditEvents, privacy)
+}
+
+func applyApprovalRoutePrivacy(report *storage.ApprovalRouteSummary, privacy config.PrivacyConfig) {
+	if report == nil || !(privacy.RedactPaths || privacy.HideProjectNames || privacy.HashSessionIDs || privacy.ScreenshotMode) {
+		return
+	}
+	for i := range report.Routes {
+		if privacy.ScreenshotMode || privacy.HashSessionIDs || privacy.HideProjectNames {
+			report.Routes[i].RouteKey = hashValue(report.Routes[i].RouteKey)
+		}
+		if privacy.ScreenshotMode || privacy.HashSessionIDs || privacy.HideProjectNames {
+			report.Routes[i].Approver = "<redacted>"
+			report.Routes[i].EscalationTarget = "<redacted>"
+		}
+		if privacy.HideProjectNames || privacy.RedactPaths || privacy.ScreenshotMode {
+			for j := range report.Routes[i].Projects {
+				report.Routes[i].Projects[j] = "<redacted>"
+			}
+		}
+	}
 }
 
 func (s *Server) createPolicyApprovalRequest(r *http.Request, result ledgerpolicy.Result, action, source, model, project, target string) (string, error) {
