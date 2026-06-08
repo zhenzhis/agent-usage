@@ -413,8 +413,9 @@ If costs differ from a provider invoice:
 - Pricing sync is the expected outbound request.
 - Manual operations are localhost-only by default.
 - Optional RBAC supports `viewer`, `operator`, and `admin` tokens.
-- `rbac.read_only: true` turns the process into an observer: POST/PUT-style write APIs are rejected, CLI write commands fail explicitly, automatic collectors and pricing sync do not run, and reports/exports/anomaly views do not append audit, budget, insight, or bundle records.
+- `rbac.read_only: true` turns the process into an observer: POST/PUT-style write APIs are rejected, CLI/MCP write commands fail explicitly, automatic collectors and pricing sync do not run, and reports/exports/anomaly views do not append audit, budget, insight, or bundle records.
 - Policy rules can match `global`, `source`, `model`, `project`, `repo`, `git_branch`, `team`, `action`, `target`, and `role`.
+- MCP `ledger.get_policy` remains available for advisory reads in observer mode, but calls with `workload_id` would record a policy decision and are rejected as writes.
 - Policy approval requests are local metadata records. They authorize only matching action/target retries and do not include prompt content.
 - Approval queue privacy mode redacts approval routing metadata and payloads across REST, CLI, and MCP. Approval vote audit rows store quorum/vote facts plus `note_present`, not the note text.
 - The optional provider gateway is disabled by default. It forwards prompt content only to the configured upstream in memory, reads API keys from environment variables, and stores usage metadata rather than message content.

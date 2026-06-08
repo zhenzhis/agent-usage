@@ -598,7 +598,7 @@ func prompt(name, description string, args []map[string]string) map[string]inter
 }
 
 func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error) {
-	if s.cfg != nil && s.cfg.RBAC.ReadOnly && mcpToolRequiresWrite(name) {
+	if s.cfg != nil && s.cfg.RBAC.ReadOnly && mcpToolRequiresWrite(name, args) {
 		return nil, fmt.Errorf("read-only mode: MCP tool %q is disabled because it writes local state", name)
 	}
 	switch name {
@@ -673,7 +673,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 	}
 }
 
-func mcpToolRequiresWrite(name string) bool {
+func mcpToolRequiresWrite(name string, args json.RawMessage) bool {
 	switch name {
 	case "ledger.start_workload",
 		"ledger.start_run",
@@ -687,6 +687,12 @@ func mcpToolRequiresWrite(name string) bool {
 		"ledger.record_event",
 		"ledger.resolve_approval":
 		return true
+	case "ledger.get_policy":
+		var in struct {
+			WorkloadID string `json:"workload_id"`
+		}
+		_ = json.Unmarshal(args, &in)
+		return strings.TrimSpace(in.WorkloadID) != ""
 	default:
 		return false
 	}

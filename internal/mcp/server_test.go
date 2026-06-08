@@ -301,14 +301,23 @@ func TestMCPUnknownResourceReturnsError(t *testing.T) {
 
 func TestMCPReadOnlyAllowsReadToolsAndRejectsWriteTools(t *testing.T) {
 	db := openTestDB(t)
+	workloadID, err := db.CreateWorkload("read-only policy guard", "codex", "agent-ledger", "zhenzhis/agent-ledger", "main", "", "infra", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkload: %v", err)
+	}
 	cfg := config.DefaultConfig()
 	cfg.RBAC.ReadOnly = true
+	cfg.Policies.Enabled = true
+	cfg.Policies.Rules = []config.PolicyRule{{
+		Name: "warn-model", Scope: "model", Match: "gpt-5.5", Action: "warn", Message: "review model",
+	}}
 	srv := New(db, cfg)
 	srv.now = func() time.Time { return time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC) }
 
 	readResponses := serveLines(t, srv,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.current_budget","arguments":{"window":"day"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ledger.approvals","arguments":{"status":"pending","privacy":true}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ledger.get_policy","arguments":{"model":"gpt-5.5","action":"model.call"}}}`,
 	)
 	if toolTextPayload(t, readResponses[0])["method"] != "local-estimate" {
 		t.Fatalf("read-only read tool returned unexpected payload: %#v", readResponses[0])
@@ -316,16 +325,30 @@ func TestMCPReadOnlyAllowsReadToolsAndRejectsWriteTools(t *testing.T) {
 	if toolTextPayload(t, readResponses[1])["status"] != "pending" {
 		t.Fatalf("read-only approvals tool returned unexpected payload: %#v", readResponses[1])
 	}
+	if toolTextPayload(t, readResponses[2])["action"] != "warn" {
+		t.Fatalf("read-only policy advisory returned unexpected payload: %#v", readResponses[2])
+	}
 
 	writeResponses := serveRawLines(t, srv,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"blocked","source":"codex"}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.resolve_approval","arguments":{"request_id":"apr_x","status":"approved"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"blocked","source":"codex"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ledger.resolve_approval","arguments":{"request_id":"apr_x","status":"approved"}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ledger.get_policy","arguments":{"workload_id":"`+workloadID+`","model":"gpt-5.5","action":"model.call"}}}`,
 	)
 	if writeResponses[0]["error"] == nil {
 		t.Fatalf("expected read-only write tool error: %#v", writeResponses[0])
 	}
 	if writeResponses[1]["error"] == nil {
 		t.Fatalf("expected read-only approval resolve error: %#v", writeResponses[1])
+	}
+	if writeResponses[2]["error"] == nil {
+		t.Fatalf("expected read-only policy record error: %#v", writeResponses[2])
+	}
+	report, err := db.GetPolicyEnforcementReport(10)
+	if err != nil {
+		t.Fatalf("GetPolicyEnforcementReport: %v", err)
+	}
+	if len(report.Decisions) != 0 {
+		t.Fatalf("read-only MCP get_policy wrote policy decisions: %+v", report.Decisions)
 	}
 }
 
