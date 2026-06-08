@@ -42,6 +42,7 @@ type DiscoveryManifest struct {
 	CanonicalSchemaHash   string              `json:"canonical_schema_hash"`
 	EventExamplesURI      string              `json:"event_examples_uri"`
 	AdapterSpecURI        string              `json:"adapter_spec_uri"`
+	AdapterSpecHash       string              `json:"adapter_spec_hash"`
 	AdapterConformanceURI string              `json:"adapter_conformance_uri"`
 	MCPCommand            string              `json:"mcp_command"`
 	Auth                  string              `json:"auth"`
@@ -96,6 +97,7 @@ func Discovery(opts Options) DiscoveryManifest {
 		CanonicalSchemaHash:   storage.CanonicalEventSchemaFingerprint(),
 		EventExamplesURI:      "/api/event-examples",
 		AdapterSpecURI:        "/api/integrations/adapter-spec",
+		AdapterSpecHash:       AdapterContractFingerprint(),
 		AdapterConformanceURI: "/api/integrations/conformance",
 		MCPCommand:            "agent-ledger mcp",
 		Auth:                  discoveryAuth(opts),

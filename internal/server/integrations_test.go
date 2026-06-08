@@ -30,6 +30,9 @@ func TestDiscoveryEndpoint(t *testing.T) {
 		manifest.CanonicalSchemaHash == "" {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
+	if manifest.AdapterSpecHash == "" || manifest.AdapterSpecHash != integrations.AdapterContractFingerprint() {
+		t.Fatalf("unexpected adapter contract hash: %+v", manifest)
+	}
 	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("missing control-plane protocols: %+v", manifest.Protocols)
 	}

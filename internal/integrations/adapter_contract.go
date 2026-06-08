@@ -1,6 +1,12 @@
 package integrations
 
-import "github.com/zhenzhis/agent-ledger/internal/storage"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+
+	"github.com/zhenzhis/agent-ledger/internal/storage"
+)
 
 // AdapterContract is the machine-readable contract for building Agent Ledger
 // adapters without relying on README prose or product-specific assumptions.
@@ -171,4 +177,15 @@ func AdapterContractSpec() AdapterContract {
 			"future team/server modes should keep the same metadata-only event envelope and add transport auth outside payload",
 		},
 	}
+}
+
+// AdapterContractFingerprint returns a stable hash for lightweight wrappers
+// that need to cache or compare the machine-readable adapter contract.
+func AdapterContractFingerprint() string {
+	raw, err := json.Marshal(AdapterContractSpec())
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

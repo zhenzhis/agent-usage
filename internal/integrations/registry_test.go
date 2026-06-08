@@ -113,6 +113,9 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 	if manifest.CanonicalSchemaHash == "" || !strings.HasPrefix(manifest.CanonicalSchemaHash, "sha256:") {
 		t.Fatalf("discovery missing schema hash: %#v", manifest)
 	}
+	if manifest.AdapterSpecHash == "" || !strings.HasPrefix(manifest.AdapterSpecHash, "sha256:") || manifest.AdapterSpecHash != AdapterContractFingerprint() {
+		t.Fatalf("discovery missing adapter contract hash: %#v", manifest)
+	}
 	if !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("discovery missing agent protocols: %#v", manifest.Protocols)
 	}
@@ -129,6 +132,9 @@ func TestAdapterContractSpecIsMachineReadableAndPrivacySafe(t *testing.T) {
 	spec := AdapterContractSpec()
 	if spec.Contract != "agent-ledger.adapter-contract" || spec.Version != "v1" || spec.SchemaHash == "" {
 		t.Fatalf("unexpected adapter contract identity: %#v", spec)
+	}
+	if fingerprint := AdapterContractFingerprint(); fingerprint == "" || !strings.HasPrefix(fingerprint, "sha256:") {
+		t.Fatalf("adapter contract fingerprint missing: %q", fingerprint)
 	}
 	if len(spec.SupportedInputKinds) < 5 || len(spec.CanonicalEventTypes) == 0 {
 		t.Fatalf("adapter contract missing supported kinds or event types: %#v", spec)
