@@ -109,7 +109,12 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("unexpected schema resource text: %s", resourceText)
 	}
 	runtimeText := resourceTextPayload(t, out[4])
-	if !strings.Contains(runtimeText, `"mode": "control-plane"`) || !strings.Contains(runtimeText, `"write_operations": "enabled"`) {
+	if !strings.Contains(runtimeText, `"contract": "agent-ledger.runtime-status"`) ||
+		!strings.Contains(runtimeText, `"mode": "control-plane"`) ||
+		!strings.Contains(runtimeText, `"write_operations": "enabled"`) ||
+		!strings.Contains(runtimeText, `"capability_catalog_hash": "sha256:`) ||
+		!strings.Contains(runtimeText, `"canonical_schema_hash": "sha256:`) ||
+		!strings.Contains(runtimeText, `"adapter_spec_hash": "sha256:`) {
 		t.Fatalf("unexpected runtime resource text: %s", runtimeText)
 	}
 	discoveryText := resourceTextPayload(t, out[5])
@@ -372,7 +377,10 @@ func TestMCPReadOnlyAllowsReadToolsAndRejectsWriteTools(t *testing.T) {
 		t.Fatalf("read-only policy advisory returned unexpected payload: %#v", readResponses[2])
 	}
 	runtimePayload := toolTextPayload(t, readResponses[3])
-	if runtimePayload["mode"] != "observer" || runtimePayload["read_only"] != true || runtimePayload["write_operations"] != "disabled" {
+	if runtimePayload["contract"] != "agent-ledger.runtime-status" || runtimePayload["mode"] != "observer" ||
+		runtimePayload["read_only"] != true || runtimePayload["write_operations"] != "disabled" ||
+		runtimePayload["capability_catalog_hash"] == "" || runtimePayload["canonical_schema_hash"] == "" ||
+		runtimePayload["adapter_spec_hash"] == "" {
 		t.Fatalf("read-only runtime tool returned unexpected payload: %#v", runtimePayload)
 	}
 	discoveryPayload := toolTextPayload(t, readResponses[4])

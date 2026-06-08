@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
@@ -306,11 +307,11 @@ func (s *Server) appendAuditLog(actor, role, action, target string, params map[s
 }
 
 func (s *Server) runtimeStatus() *storage.RuntimeStatus {
-	return RuntimeStatusFromRBAC(s.options.RBAC)
+	return integrations.EnrichRuntimeStatus(RuntimeStatusFromRBAC(s.options.RBAC), s.integrationOptions())
 }
 
-// RuntimeStatusFromRBAC returns the process-level runtime mode that can be
-// safely exposed through REST, CLI, discovery, Doctor, and UI surfaces.
+// RuntimeStatusFromRBAC returns the process-level runtime mode before
+// config-derived compatibility hashes are attached.
 func RuntimeStatusFromRBAC(rbac config.RBACConfig) *storage.RuntimeStatus {
 	if rbac.ReadOnly {
 		return &storage.RuntimeStatus{
@@ -329,6 +330,15 @@ func RuntimeStatusFromRBAC(rbac config.RBACConfig) *storage.RuntimeStatus {
 		BackgroundTasks: "enabled",
 		Message:         "write operations and background collectors are enabled",
 	}
+}
+
+// RuntimeStatusFromConfig returns runtime status with compatibility hashes
+// derived from the same config used by discovery and integration catalog.
+func RuntimeStatusFromConfig(cfg *config.Config) *storage.RuntimeStatus {
+	if cfg == nil {
+		return integrations.EnrichRuntimeStatus(RuntimeStatusFromRBAC(config.RBACConfig{}), integrations.Options{})
+	}
+	return integrations.EnrichRuntimeStatus(RuntimeStatusFromRBAC(cfg.RBAC), integrations.OptionsFromConfig(cfg))
 }
 
 func isSafeMethod(method string) bool {

@@ -761,22 +761,22 @@ func mcpToolRequiresWrite(name string, args json.RawMessage) bool {
 
 func (s *Server) runtimeStatus() *storage.RuntimeStatus {
 	if s.cfg != nil && s.cfg.RBAC.ReadOnly {
-		return &storage.RuntimeStatus{
+		return integrations.EnrichRuntimeStatus(&storage.RuntimeStatus{
 			Mode:             "observer",
 			ReadOnly:         true,
 			WriteOperations:  "disabled",
 			BackgroundTasks:  "disabled",
 			DisabledFeatures: []string{"background collectors", "pricing sync", "cost recalculation", "manual scans", "imports", "write APIs", "write MCP tools", "derived GET writebacks"},
 			Message:          "read-only observer mode: local state is not mutated by this process",
-		}
+		}, integrations.OptionsFromConfig(s.cfg))
 	}
-	return &storage.RuntimeStatus{
+	return integrations.EnrichRuntimeStatus(&storage.RuntimeStatus{
 		Mode:            "control-plane",
 		ReadOnly:        false,
 		WriteOperations: "enabled",
 		BackgroundTasks: "enabled",
 		Message:         "write operations and background collectors are enabled",
-	}
+	}, integrations.OptionsFromConfig(s.cfg))
 }
 
 func (s *Server) readResource(uri string) (interface{}, error) {

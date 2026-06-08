@@ -192,7 +192,7 @@ func Registry(opts Options) Catalog {
 			Commands:    []string{"agent-ledger runtime"},
 			Tools:       []string{"ledger.runtime_status"},
 			Resources:   []string{"agent-ledger://runtime/status"},
-			DataClasses: []string{"runtime mode", "read-only status", "write-operation status", "background task status", "disabled feature names"},
+			DataClasses: []string{"runtime mode", "read-only status", "write-operation status", "background task status", "compatibility hashes", "disabled feature names"},
 			Limitations: []string{"reports process-local mode only; it is not a cluster health endpoint"},
 		},
 		{

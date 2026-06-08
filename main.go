@@ -440,7 +440,7 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 	case "integrations":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "runtime":
-		return json.NewEncoder(os.Stdout).Encode(server.RuntimeStatusFromRBAC(cfg.RBAC))
+		return json.NewEncoder(os.Stdout).Encode(server.RuntimeStatusFromConfig(cfg))
 	case "otel":
 		return runOTelCLI(args[1:], db)
 	case "a2a":

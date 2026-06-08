@@ -111,7 +111,9 @@ func TestReadOnlyRuntimeVisibleInDashboardAndDoctor(t *testing.T) {
 	if err := json.Unmarshal(runtimeRR.Body.Bytes(), &runtimeStatus); err != nil {
 		t.Fatalf("decode runtime: %v", err)
 	}
-	if !runtimeStatus.ReadOnly || runtimeStatus.Mode != "observer" || runtimeStatus.BackgroundTasks != "disabled" {
+	if !runtimeStatus.ReadOnly || runtimeStatus.Mode != "observer" || runtimeStatus.BackgroundTasks != "disabled" ||
+		runtimeStatus.Contract != "agent-ledger.runtime-status" || runtimeStatus.CapabilityCatalogHash == "" ||
+		runtimeStatus.CanonicalSchemaHash == "" || runtimeStatus.AdapterSpecHash == "" {
 		t.Fatalf("unexpected runtime endpoint status: %+v", runtimeStatus)
 	}
 
@@ -127,7 +129,7 @@ func TestReadOnlyRuntimeVisibleInDashboardAndDoctor(t *testing.T) {
 	if err := json.Unmarshal(dashboardRR.Body.Bytes(), &dashboard); err != nil {
 		t.Fatalf("decode dashboard: %v", err)
 	}
-	if !dashboard.Runtime.ReadOnly || dashboard.Runtime.Mode != "observer" || dashboard.Runtime.WriteOperations != "disabled" {
+	if !dashboard.Runtime.ReadOnly || dashboard.Runtime.Mode != "observer" || dashboard.Runtime.WriteOperations != "disabled" || dashboard.Runtime.CapabilityCatalogHash == "" {
 		t.Fatalf("unexpected dashboard runtime: %+v", dashboard.Runtime)
 	}
 
@@ -141,7 +143,7 @@ func TestReadOnlyRuntimeVisibleInDashboardAndDoctor(t *testing.T) {
 	if err := json.Unmarshal(doctorRR.Body.Bytes(), &report); err != nil {
 		t.Fatalf("decode doctor: %v", err)
 	}
-	if report.Runtime == nil || !report.Runtime.ReadOnly {
+	if report.Runtime == nil || !report.Runtime.ReadOnly || report.Runtime.CapabilityCatalogHash == "" {
 		t.Fatalf("doctor runtime missing: %+v", report.Runtime)
 	}
 	found := false

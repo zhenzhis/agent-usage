@@ -39,6 +39,31 @@ func TestCLICommandRequiresWriteForNotifyDryRun(t *testing.T) {
 	}
 }
 
+func TestRuntimeCLIOutputsCompatibilityHashes(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+	cfg := config.DefaultConfig()
+	cfg.RBAC.ReadOnly = true
+
+	out, err := captureStdout(t, func() error {
+		return runCLI([]string{"runtime"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI runtime: %v", err)
+	}
+	var status storage.RuntimeStatus
+	if err := json.Unmarshal([]byte(out), &status); err != nil {
+		t.Fatalf("decode runtime output: %v\n%s", err, out)
+	}
+	if status.Contract != "agent-ledger.runtime-status" || !status.ReadOnly || status.Mode != "observer" ||
+		status.CapabilityCatalogHash == "" || status.CanonicalSchemaHash == "" || status.AdapterSpecHash == "" {
+		t.Fatalf("unexpected runtime output: %+v", status)
+	}
+}
+
 func TestPolicyRoutesCLIOutputsRedactedSummary(t *testing.T) {
 	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

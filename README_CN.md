@@ -243,7 +243,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 |---|---|
 | `GET /.well-known/agent-ledger.json` | 面向 agent、wrapper、router 的隐私安全本地 discovery manifest |
 | `GET /api/discovery` | API 命名空间下的同一 discovery manifest |
-| `GET /api/runtime/status` | 运行模式、只读状态、后台任务与写操作状态 |
+| `GET /api/runtime/status` | 运行模式、只读状态、后台/写操作状态与兼容性 hash |
 | `GET /api/dashboard` | Web dashboard 的一致性 KPI、token、费用与模型数据包 |
 | `GET /api/stats` | 总览 |
 | `GET /api/workloads` | 服务端分页工作负载账本 |

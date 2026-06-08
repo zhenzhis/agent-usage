@@ -105,12 +105,17 @@ type DashboardConsistencyIssue struct {
 // RuntimeStatus describes process-level operation mode for UI, doctor, and
 // local agent discovery without exposing secrets or local paths.
 type RuntimeStatus struct {
-	Mode             string   `json:"mode"`
-	ReadOnly         bool     `json:"read_only"`
-	WriteOperations  string   `json:"write_operations"`
-	BackgroundTasks  string   `json:"background_tasks"`
-	DisabledFeatures []string `json:"disabled_features,omitempty"`
-	Message          string   `json:"message"`
+	Contract              string   `json:"contract,omitempty"`
+	Version               string   `json:"version,omitempty"`
+	Mode                  string   `json:"mode"`
+	ReadOnly              bool     `json:"read_only"`
+	WriteOperations       string   `json:"write_operations"`
+	BackgroundTasks       string   `json:"background_tasks"`
+	CapabilityCatalogHash string   `json:"capability_catalog_hash,omitempty"`
+	CanonicalSchemaHash   string   `json:"canonical_schema_hash,omitempty"`
+	AdapterSpecHash       string   `json:"adapter_spec_hash,omitempty"`
+	DisabledFeatures      []string `json:"disabled_features,omitempty"`
+	Message               string   `json:"message"`
 }
 
 // DashboardBundle returns the core dashboard modules from one consistent read window.

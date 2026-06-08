@@ -243,7 +243,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 |---|---|
 | `GET /.well-known/agent-ledger.json` | Privacy-safe local discovery manifest for agents, wrappers, and routers |
 | `GET /api/discovery` | Same discovery manifest under the API namespace |
-| `GET /api/runtime/status` | Runtime mode, read-only state, background task, and write-operation status |
+| `GET /api/runtime/status` | Runtime mode, read-only state, background/write status, and compatibility hashes |
 | `GET /api/dashboard` | Consistent KPI, token, cost, and model bundle for the web dashboard |
 | `GET /api/stats` | Summary stats |
 | `GET /api/workloads` | Server-side paginated workload ledger |
