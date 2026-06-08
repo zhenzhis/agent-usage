@@ -78,6 +78,10 @@ const I18N = {
     voteRecorded: "Approval vote recorded",
     noApprovals: "No pending approvals",
     quorum: "quorum",
+    due: "due",
+    overdue: "overdue",
+    route: "route",
+    escalate: "escalate",
     watchdog: "Watchdog",
     auditLog: "Audit Log",
     fleetAttribution: "Fleet Attribution",
@@ -285,6 +289,10 @@ const I18N = {
     voteRecorded: "审批投票已记录",
     noApprovals: "暂无待审批请求",
     quorum: "法定人数",
+    due: "到期",
+    overdue: "已超时",
+    route: "路由",
+    escalate: "升级",
     watchdog: "Watchdog",
     auditLog: "审计日志",
     fleetAttribution: "Fleet Attribution",
@@ -1018,16 +1026,22 @@ function renderApprovalQueue(payload) {
     const required = Math.max(1, Number(row.required_approvals || 1));
     const approved = Number(row.approval_votes || 0);
     const rejected = Number(row.rejection_votes || 0);
+    const due = row.due_at ? `${t(row.overdue ? "overdue" : "due")} ${relTime(row.due_at)}` : "";
+    const approver = row.approver_hint ? `${t("route")} ${privacyLabel(row.approver_hint)}` : "";
+    const escalation = row.escalation_target ? `${t("escalate")} ${privacyLabel(row.escalation_target)}` : "";
     const title = `${row.action || "-"} · ${row.model || privacyLabel(row.target)}`;
     const detail = [
       row.source || "-",
       privacyLabel(row.project),
       `${t("quorum")} ${approved}/${required}`,
+      approver,
+      escalation,
+      due,
       row.created_at ? relTime(row.created_at) : "",
     ].filter(Boolean).join(" · ");
 
     const item = document.createElement("div");
-    item.className = "ops-row approval-row severity-warning";
+    item.className = `ops-row approval-row severity-${row.overdue ? "critical" : "warning"}`;
     const main = document.createElement("div");
     main.className = "ops-main";
     const strong = document.createElement("strong");

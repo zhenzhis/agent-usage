@@ -83,6 +83,10 @@ func TestExportPolicyRequireApprovalCreatesRequestAndApprovedRequestAllows(t *te
 		Enabled: true,
 		Rules: []config.PolicyRule{{
 			Name: "approve-export", Scope: "action", Match: "export", Action: "require_approval", Message: "review export",
+			RequiredApprovals: 2,
+			Approvers:         []string{"alice", "bob"},
+			EscalateAfter:     10 * time.Minute,
+			EscalateTo:        []string{"desk-lead"},
 		}},
 	}})
 	req := httptest.NewRequest(http.MethodGet, "/api/export?type=sessions&format=csv&from=2026-06-07&to=2026-06-07", nil)
@@ -98,12 +102,29 @@ func TestExportPolicyRequireApprovalCreatesRequestAndApprovedRequestAllows(t *te
 	if len(rows) != 1 || rows[0].Action != "export" || rows[0].Target != "sessions" {
 		t.Fatalf("unexpected approvals: %+v", rows)
 	}
-	body, _ := json.Marshal(map[string]string{"request_id": rows[0].RequestID, "status": "approved", "note": "ok"})
+	if rows[0].RequiredApprovals != 2 || rows[0].ApproverHint != "alice,bob" || rows[0].EscalationTarget != "desk-lead" || rows[0].EscalationAfterSeconds != 600 || rows[0].DueAt == "" {
+		t.Fatalf("approval routing metadata missing: %+v", rows[0])
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(rows[0].RequestPayload), &payload); err != nil {
+		t.Fatalf("approval payload should be JSON: %v", err)
+	}
+	if payload["required_approvals"] != float64(2) {
+		t.Fatalf("payload missing required approval evidence: %+v", payload)
+	}
+	body, _ := json.Marshal(map[string]interface{}{"request_id": rows[0].RequestID, "status": "approved", "note": "ok", "voter": "alice"})
 	resolveReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/policy/approvals", bytes.NewReader(body))
 	resolveRR := httptest.NewRecorder()
 	srv.handlePolicyApprovals(resolveRR, resolveReq)
 	if resolveRR.Code != http.StatusOK {
 		t.Fatalf("resolve approval status=%d body=%s", resolveRR.Code, resolveRR.Body.String())
+	}
+	secondBody, _ := json.Marshal(map[string]interface{}{"request_id": rows[0].RequestID, "status": "approved", "note": "ok", "voter": "bob"})
+	secondReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/policy/approvals", bytes.NewReader(secondBody))
+	secondRR := httptest.NewRecorder()
+	srv.handlePolicyApprovals(secondRR, secondReq)
+	if secondRR.Code != http.StatusOK {
+		t.Fatalf("second approval status=%d body=%s", secondRR.Code, secondRR.Body.String())
 	}
 	retry := httptest.NewRequest(http.MethodGet, "/api/export?type=sessions&format=csv&from=2026-06-07&to=2026-06-07&approval_id="+rows[0].RequestID, nil)
 	retryRR := httptest.NewRecorder()

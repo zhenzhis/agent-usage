@@ -155,11 +155,15 @@ type PolicyConfig struct {
 
 // PolicyRule describes a local advisory policy.
 type PolicyRule struct {
-	Name    string `yaml:"name"`
-	Scope   string `yaml:"scope"`
-	Match   string `yaml:"match"`
-	Action  string `yaml:"action"`
-	Message string `yaml:"message"`
+	Name              string        `yaml:"name"`
+	Scope             string        `yaml:"scope"`
+	Match             string        `yaml:"match"`
+	Action            string        `yaml:"action"`
+	Message           string        `yaml:"message"`
+	RequiredApprovals int           `yaml:"required_approvals"`
+	Approvers         []string      `yaml:"approvers"`
+	EscalateAfter     time.Duration `yaml:"escalate_after"`
+	EscalateTo        []string      `yaml:"escalate_to"`
 }
 
 // WebhookConfig is disabled by default and only sends redacted summaries.

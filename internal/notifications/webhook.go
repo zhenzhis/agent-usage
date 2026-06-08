@@ -36,23 +36,26 @@ type WebhookSummary struct {
 
 // WebhookApproval is a redacted local approval request summary.
 type WebhookApproval struct {
-	RequestID         string `json:"request_id"`
-	PolicyDecisionID  string `json:"policy_decision_id,omitempty"`
-	WorkloadID        string `json:"workload_id,omitempty"`
-	RunID             string `json:"run_id,omitempty"`
-	Source            string `json:"source,omitempty"`
-	Model             string `json:"model,omitempty"`
-	Project           string `json:"project"`
-	Action            string `json:"action"`
-	Target            string `json:"target"`
-	ActorRole         string `json:"actor_role,omitempty"`
-	Status            string `json:"status"`
-	RequiredApprovals int    `json:"required_approvals"`
-	ApprovalVotes     int    `json:"approval_votes"`
-	RejectionVotes    int    `json:"rejection_votes"`
-	Reason            string `json:"reason"`
-	CreatedAt         string `json:"created_at,omitempty"`
-	UpdatedAt         string `json:"updated_at,omitempty"`
+	RequestID              string `json:"request_id"`
+	PolicyDecisionID       string `json:"policy_decision_id,omitempty"`
+	WorkloadID             string `json:"workload_id,omitempty"`
+	RunID                  string `json:"run_id,omitempty"`
+	Source                 string `json:"source,omitempty"`
+	Model                  string `json:"model,omitempty"`
+	Project                string `json:"project"`
+	Action                 string `json:"action"`
+	Target                 string `json:"target"`
+	ActorRole              string `json:"actor_role,omitempty"`
+	Status                 string `json:"status"`
+	RequiredApprovals      int    `json:"required_approvals"`
+	ApprovalVotes          int    `json:"approval_votes"`
+	RejectionVotes         int    `json:"rejection_votes"`
+	EscalationAfterSeconds int64  `json:"escalation_after_seconds,omitempty"`
+	DueAt                  string `json:"due_at,omitempty"`
+	Overdue                bool   `json:"overdue"`
+	Reason                 string `json:"reason"`
+	CreatedAt              string `json:"created_at,omitempty"`
+	UpdatedAt              string `json:"updated_at,omitempty"`
 }
 
 // DeliveryResult describes one attempted notification delivery.
@@ -139,23 +142,26 @@ func RedactApprovalRequests(approvals []storage.ApprovalRequest, maxApprovals in
 	for i := 0; i < limit; i++ {
 		approval := approvals[i]
 		out = append(out, WebhookApproval{
-			RequestID:         shortHash(approval.RequestID),
-			PolicyDecisionID:  shortHash(approval.PolicyDecisionID),
-			WorkloadID:        shortHash(approval.WorkloadID),
-			RunID:             shortHash(approval.RunID),
-			Source:            approval.Source,
-			Model:             approval.Model,
-			Project:           "<redacted>",
-			Action:            approval.Action,
-			Target:            "<redacted>",
-			ActorRole:         approval.ActorRole,
-			Status:            approval.Status,
-			RequiredApprovals: approval.RequiredApprovals,
-			ApprovalVotes:     approval.ApprovalVotes,
-			RejectionVotes:    approval.RejectionVotes,
-			Reason:            "<redacted>",
-			CreatedAt:         approval.CreatedAt,
-			UpdatedAt:         approval.UpdatedAt,
+			RequestID:              shortHash(approval.RequestID),
+			PolicyDecisionID:       shortHash(approval.PolicyDecisionID),
+			WorkloadID:             shortHash(approval.WorkloadID),
+			RunID:                  shortHash(approval.RunID),
+			Source:                 approval.Source,
+			Model:                  approval.Model,
+			Project:                "<redacted>",
+			Action:                 approval.Action,
+			Target:                 "<redacted>",
+			ActorRole:              approval.ActorRole,
+			Status:                 approval.Status,
+			RequiredApprovals:      approval.RequiredApprovals,
+			ApprovalVotes:          approval.ApprovalVotes,
+			RejectionVotes:         approval.RejectionVotes,
+			EscalationAfterSeconds: approval.EscalationAfterSeconds,
+			DueAt:                  approval.DueAt,
+			Overdue:                approval.Overdue,
+			Reason:                 "<redacted>",
+			CreatedAt:              approval.CreatedAt,
+			UpdatedAt:              approval.UpdatedAt,
 		})
 	}
 	return out

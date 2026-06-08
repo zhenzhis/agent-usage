@@ -131,6 +131,20 @@ rbac:
   enabled: false
   read_only: false
 
+policies:
+  enabled: false
+  require_privacy_export: false
+  rules:
+    # - name: expensive-model-review
+    #   scope: model
+    #   match: gpt-5.5
+    #   action: require_approval
+    #   message: Review expensive model usage
+    #   required_approvals: 2
+    #   approvers: ["desk-lead", "risk"]
+    #   escalate_after: 30m
+    #   escalate_to: ["research-head"]
+
 webhooks:
   enabled: false
   url: ""
@@ -298,7 +312,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 
 Manual scan, reset, pricing sync, imports, and recalculation require localhost access unless auth tokens are configured. Set `rbac.read_only: true` for observer deployments; Agent Ledger then rejects REST/CLI write operations, disables background scans, pricing sync, cost recalculation, and suppresses derived writebacks from GET endpoints.
 
-When a policy returns `require_approval`, Agent Ledger records a local pending approval request and returns its id. Admins can approve or reject it through `POST /api/policy/approvals` or `agent-ledger policy resolve`; the default quorum is one approval, and `required_approvals` enables multi-actor local approval before the original operation can be retried with `approval_id=<id>` or `X-Agent-Ledger-Approval: <id>`.
+When a policy returns `require_approval`, Agent Ledger records a local pending approval request and returns its id. Admins can approve or reject it through `POST /api/policy/approvals` or `agent-ledger policy resolve`; the default quorum is one approval, and `required_approvals` enables multi-actor local approval before the original operation can be retried with `approval_id=<id>` or `X-Agent-Ledger-Approval: <id>`. Policy rules can also carry `approvers`, `escalate_after`, and `escalate_to`; these are stored as local routing metadata with `due_at` and `overdue` evidence for the dashboard, webhook summaries, and enforcement reports.
 
 ## MCP Tool Surface
 
@@ -421,9 +435,9 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes, approval routing/escalation metadata and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
 
-Planned integrations: OTLP gRPC receiver conformance, provider-native gateway adapters, Postgres team mode, OIDC/SSO, native MCP subscription transport when host clients support it, and approval routing/escalation workflows.
+Planned integrations: OTLP gRPC receiver conformance, provider-native gateway adapters, Postgres team mode, OIDC/SSO, native MCP subscription transport when host clients support it, and approval notification routing adapters.
 
 ## License
 

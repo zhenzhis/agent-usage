@@ -22,10 +22,16 @@ func (d *DB) CreateApprovalRequest(req ApprovalRequest) (string, error) {
 	if req.RequiredApprovals <= 0 {
 		req.RequiredApprovals = 1
 	}
-	_, err := d.db.Exec(`INSERT INTO approval_requests(request_id,policy_decision_id,workload_id,run_id,source,model,project,action,target,actor_role,status,required_approvals,reason,request_payload,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	if req.EscalationAfterSeconds < 0 {
+		req.EscalationAfterSeconds = 0
+	}
+	if strings.TrimSpace(req.DueAt) == "" && req.EscalationAfterSeconds > 0 {
+		req.DueAt = now.Add(time.Duration(req.EscalationAfterSeconds) * time.Second).Format(time.RFC3339Nano)
+	}
+	_, err := d.db.Exec(`INSERT INTO approval_requests(request_id,policy_decision_id,workload_id,run_id,source,model,project,action,target,actor_role,status,required_approvals,approver_hint,escalation_target,escalation_after_seconds,due_at,reason,request_payload,created_at,updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		req.RequestID, req.PolicyDecisionID, req.WorkloadID, req.RunID, req.Source, req.Model, req.Project, req.Action, req.Target,
-		req.ActorRole, normalizeApprovalStatus(req.Status), req.RequiredApprovals, req.Reason, req.RequestPayload, now, now)
+		req.ActorRole, normalizeApprovalStatus(req.Status), req.RequiredApprovals, req.ApproverHint, req.EscalationTarget, req.EscalationAfterSeconds, req.DueAt, req.Reason, req.RequestPayload, now, now)
 	if err != nil {
 		return "", err
 	}
@@ -41,6 +47,7 @@ func (d *DB) ListApprovalRequests(status string, limit int) ([]ApprovalRequest, 
 		COALESCE(required_approvals,1),
 		(SELECT COUNT(*) FROM approval_votes av WHERE av.request_id=approval_requests.request_id AND av.status='approved'),
 		(SELECT COUNT(*) FROM approval_votes av WHERE av.request_id=approval_requests.request_id AND av.status='rejected'),
+		approver_hint,escalation_target,COALESCE(escalation_after_seconds,0),COALESCE(due_at,''),
 		reason,request_payload,created_at,updated_at,COALESCE(decided_at,''),decided_by,decision_note FROM approval_requests`
 	args := []interface{}{}
 	if status != "" && status != "all" {
@@ -58,16 +65,28 @@ func (d *DB) ListApprovalRequests(status string, limit int) ([]ApprovalRequest, 
 	for rows.Next() {
 		var r ApprovalRequest
 		if err := rows.Scan(&r.RequestID, &r.PolicyDecisionID, &r.WorkloadID, &r.RunID, &r.Source, &r.Model, &r.Project,
-			&r.Action, &r.Target, &r.ActorRole, &r.Status, &r.RequiredApprovals, &r.ApprovalVotes, &r.RejectionVotes, &r.Reason, &r.RequestPayload, &r.CreatedAt, &r.UpdatedAt,
+			&r.Action, &r.Target, &r.ActorRole, &r.Status, &r.RequiredApprovals, &r.ApprovalVotes, &r.RejectionVotes, &r.ApproverHint, &r.EscalationTarget, &r.EscalationAfterSeconds, &r.DueAt, &r.Reason, &r.RequestPayload, &r.CreatedAt, &r.UpdatedAt,
 			&r.DecidedAt, &r.DecidedBy, &r.DecisionNote); err != nil {
 			return nil, err
 		}
+		r.Overdue = approvalOverdue(r.Status, r.DueAt, time.Now().UTC())
 		out = append(out, r)
 	}
 	if out == nil {
 		out = []ApprovalRequest{}
 	}
 	return out, rows.Err()
+}
+
+func approvalOverdue(status, dueAt string, now time.Time) bool {
+	if normalizeApprovalStatus(status) != "pending" || strings.TrimSpace(dueAt) == "" {
+		return false
+	}
+	due, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(dueAt))
+	if err != nil {
+		due, err = time.Parse(time.RFC3339, strings.TrimSpace(dueAt))
+	}
+	return err == nil && !due.After(now)
 }
 
 // CastApprovalVote records or updates one local actor vote and resolves the request when quorum is reached.

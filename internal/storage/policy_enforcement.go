@@ -17,6 +17,7 @@ type PolicyEnforcementSummary struct {
 	RejectedApprovals int `json:"rejected_approvals"`
 	ApprovalVotes     int `json:"approval_votes"`
 	RejectionVotes    int `json:"rejection_votes"`
+	OverdueApprovals  int `json:"overdue_approvals"`
 	PolicyAuditEvents int `json:"policy_audit_events"`
 }
 
@@ -67,6 +68,9 @@ func (d *DB) GetPolicyEnforcementReport(limit int) (*PolicyEnforcementReport, er
 		report.Summary.ApprovalRequests++
 		report.Summary.ApprovalVotes += approval.ApprovalVotes
 		report.Summary.RejectionVotes += approval.RejectionVotes
+		if approval.Overdue {
+			report.Summary.OverdueApprovals++
+		}
 		switch strings.ToLower(strings.TrimSpace(approval.Status)) {
 		case "approved":
 			report.Summary.ApprovedApprovals++

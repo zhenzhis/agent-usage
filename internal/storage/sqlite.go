@@ -166,27 +166,32 @@ type AuditLogFilter struct {
 
 // ApprovalRequest is a local policy approval request.
 type ApprovalRequest struct {
-	RequestID         string `json:"request_id"`
-	PolicyDecisionID  string `json:"policy_decision_id"`
-	WorkloadID        string `json:"workload_id"`
-	RunID             string `json:"run_id"`
-	Source            string `json:"source"`
-	Model             string `json:"model"`
-	Project           string `json:"project"`
-	Action            string `json:"action"`
-	Target            string `json:"target"`
-	ActorRole         string `json:"actor_role"`
-	Status            string `json:"status"`
-	RequiredApprovals int    `json:"required_approvals"`
-	ApprovalVotes     int    `json:"approval_votes"`
-	RejectionVotes    int    `json:"rejection_votes"`
-	Reason            string `json:"reason"`
-	RequestPayload    string `json:"request_payload"`
-	CreatedAt         string `json:"created_at"`
-	UpdatedAt         string `json:"updated_at"`
-	DecidedAt         string `json:"decided_at"`
-	DecidedBy         string `json:"decided_by"`
-	DecisionNote      string `json:"decision_note"`
+	RequestID              string `json:"request_id"`
+	PolicyDecisionID       string `json:"policy_decision_id"`
+	WorkloadID             string `json:"workload_id"`
+	RunID                  string `json:"run_id"`
+	Source                 string `json:"source"`
+	Model                  string `json:"model"`
+	Project                string `json:"project"`
+	Action                 string `json:"action"`
+	Target                 string `json:"target"`
+	ActorRole              string `json:"actor_role"`
+	Status                 string `json:"status"`
+	RequiredApprovals      int    `json:"required_approvals"`
+	ApprovalVotes          int    `json:"approval_votes"`
+	RejectionVotes         int    `json:"rejection_votes"`
+	ApproverHint           string `json:"approver_hint"`
+	EscalationTarget       string `json:"escalation_target"`
+	EscalationAfterSeconds int64  `json:"escalation_after_seconds"`
+	DueAt                  string `json:"due_at"`
+	Overdue                bool   `json:"overdue"`
+	Reason                 string `json:"reason"`
+	RequestPayload         string `json:"request_payload"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
+	DecidedAt              string `json:"decided_at"`
+	DecidedBy              string `json:"decided_by"`
+	DecisionNote           string `json:"decision_note"`
 }
 
 // ApprovalVote is one local actor decision on an approval request.
@@ -414,6 +419,10 @@ func migrate(db *sql.DB) error {
 			actor_role TEXT DEFAULT '',
 			status TEXT DEFAULT 'pending',
 			required_approvals INTEGER DEFAULT 1,
+			approver_hint TEXT DEFAULT '',
+			escalation_target TEXT DEFAULT '',
+			escalation_after_seconds INTEGER DEFAULT 0,
+			due_at DATETIME,
 			reason TEXT DEFAULT '',
 			request_payload TEXT DEFAULT '',
 			created_at DATETIME NOT NULL,
@@ -547,6 +556,10 @@ func migrate(db *sql.DB) error {
 	db.Exec("ALTER TABLE agent_runs ADD COLUMN status_message TEXT DEFAULT ''")
 	db.Exec("ALTER TABLE insight_events ADD COLUMN event_key TEXT")
 	db.Exec("ALTER TABLE approval_requests ADD COLUMN required_approvals INTEGER DEFAULT 1")
+	db.Exec("ALTER TABLE approval_requests ADD COLUMN approver_hint TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE approval_requests ADD COLUMN escalation_target TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE approval_requests ADD COLUMN escalation_after_seconds INTEGER DEFAULT 0")
+	db.Exec("ALTER TABLE approval_requests ADD COLUMN due_at DATETIME")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_insight_event_key ON insight_events(event_key)")
 
 	// Versioned migrations: each runs once, tracked via meta table.

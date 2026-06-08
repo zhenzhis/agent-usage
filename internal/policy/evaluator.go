@@ -23,12 +23,16 @@ type Request struct {
 
 // Decision describes one matched policy rule.
 type Decision struct {
-	DecisionID string `json:"decision_id,omitempty"`
-	Rule       string `json:"rule"`
-	Scope      string `json:"scope"`
-	Match      string `json:"match"`
-	Action     string `json:"action"`
-	Message    string `json:"message"`
+	DecisionID           string   `json:"decision_id,omitempty"`
+	Rule                 string   `json:"rule"`
+	Scope                string   `json:"scope"`
+	Match                string   `json:"match"`
+	Action               string   `json:"action"`
+	Message              string   `json:"message"`
+	RequiredApprovals    int      `json:"required_approvals,omitempty"`
+	Approvers            []string `json:"approvers,omitempty"`
+	EscalateAfterSeconds int64    `json:"escalate_after_seconds,omitempty"`
+	EscalateTo           []string `json:"escalate_to,omitempty"`
 }
 
 // Result describes the effective local policy action.
@@ -109,11 +113,15 @@ func Evaluate(cfg config.PolicyConfig, req Request) Result {
 			result.Action = action
 		}
 		result.Decisions = append(result.Decisions, Decision{
-			Rule:    rule.Name,
-			Scope:   NormalizeScope(rule.Scope),
-			Match:   rule.Match,
-			Action:  action,
-			Message: rule.Message,
+			Rule:                 rule.Name,
+			Scope:                NormalizeScope(rule.Scope),
+			Match:                rule.Match,
+			Action:               action,
+			Message:              rule.Message,
+			RequiredApprovals:    rule.RequiredApprovals,
+			Approvers:            normalizedList(rule.Approvers),
+			EscalateAfterSeconds: int64(rule.EscalateAfter.Seconds()),
+			EscalateTo:           normalizedList(rule.EscalateTo),
 		})
 	}
 	return result
@@ -238,4 +246,25 @@ func Rank(action string) int {
 	default:
 		return 0
 	}
+}
+
+func normalizedList(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, value)
+	}
+	if out == nil {
+		return []string{}
+	}
+	return out
 }

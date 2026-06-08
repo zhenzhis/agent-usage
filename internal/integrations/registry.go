@@ -205,7 +205,7 @@ func Registry(opts Options) Catalog {
 			Endpoints: []string{"GET /api/policies/status", "POST /api/policy/evaluate", "GET /api/policy/audit", "GET /api/policy/enforcement", "GET /api/policy/decisions", "GET/POST /api/policy/approvals"},
 			Commands:  []string{"agent-ledger policy evaluate --model gpt-5.5 --action model.call", "agent-ledger policy audit", "agent-ledger policy enforcement --privacy", "agent-ledger policy approvals", "agent-ledger policy resolve --id apr_... --status approved --voter alice --required-approvals 2"},
 			DataClasses: []string{
-				"policy rule metadata", "policy decisions", "approval requests", "quorum approval votes", "redacted audit evidence",
+				"policy rule metadata", "policy decisions", "approval requests", "approval routing metadata", "approval due/overdue evidence", "quorum approval votes", "redacted audit evidence",
 			},
 		},
 		{

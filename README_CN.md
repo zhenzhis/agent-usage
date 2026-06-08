@@ -131,6 +131,20 @@ rbac:
   enabled: false
   read_only: false
 
+policies:
+  enabled: false
+  require_privacy_export: false
+  rules:
+    # - name: expensive-model-review
+    #   scope: model
+    #   match: gpt-5.5
+    #   action: require_approval
+    #   message: Review expensive model usage
+    #   required_approvals: 2
+    #   approvers: ["desk-lead", "risk"]
+    #   escalate_after: 30m
+    #   escalate_to: ["research-head"]
+
 webhooks:
   enabled: false
   url: ""
@@ -298,7 +312,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 手动扫描、清理重扫、价格同步、导入和费用重算默认只允许本机访问；暴露到网络前必须配置 auth token 或反向代理访问控制。
 
-当策略返回 `require_approval` 时，Agent Ledger 会写入本地 pending 审批请求并返回 id。Admin 可通过 `POST /api/policy/approvals` 或 `agent-ledger policy resolve` 投批准/拒绝票；默认法定人数为 1，`required_approvals` 可要求多名审批人达成 quorum 后，原操作再带 `approval_id=<id>` 或 `X-Agent-Ledger-Approval: <id>` 重试。
+当策略返回 `require_approval` 时，Agent Ledger 会写入本地 pending 审批请求并返回 id。Admin 可通过 `POST /api/policy/approvals` 或 `agent-ledger policy resolve` 投批准/拒绝票；默认法定人数为 1，`required_approvals` 可要求多名审批人达成 quorum 后，原操作再带 `approval_id=<id>` 或 `X-Agent-Ledger-Approval: <id>` 重试。Policy rule 还可以携带 `approvers`、`escalate_after` 与 `escalate_to`；这些字段会作为本地审批路由元数据保存，并生成 `due_at` 与 `overdue` 证据，供 Dashboard、Webhook 摘要和执行报告使用。
 
 ## MCP 工具接口
 
@@ -421,9 +435,9 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP JSON/protobuf traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes 与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP JSON/protobuf traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes、审批路由/升级元数据与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
 
-后续路线：OTLP gRPC receiver conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、host client 支持后接入原生 MCP subscription transport、approval routing/escalation workflows。
+后续路线：OTLP gRPC receiver conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、host client 支持后接入原生 MCP subscription transport、审批通知路由适配器。
 
 ## License
 

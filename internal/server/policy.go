@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
@@ -202,6 +203,8 @@ func applyPolicyEnforcementPrivacy(report *storage.PolicyEnforcementReport, priv
 		}
 		for i := range report.ApprovalRequests {
 			report.ApprovalRequests[i].Target = "<redacted>"
+			report.ApprovalRequests[i].ApproverHint = "<redacted>"
+			report.ApprovalRequests[i].EscalationTarget = "<redacted>"
 			report.ApprovalRequests[i].Reason = "<redacted>"
 			report.ApprovalRequests[i].RequestPayload = "<redacted>"
 			report.ApprovalRequests[i].DecisionNote = "<redacted>"
@@ -218,26 +221,85 @@ func (s *Server) createPolicyApprovalRequest(r *http.Request, result ledgerpolic
 			reason = result.Decisions[0].Rule
 		}
 	}
+	routing := approvalRoutingFromDecisions(result.Decisions)
 	raw, _ := json.Marshal(map[string]interface{}{
-		"effective_action": result.Action,
-		"decisions":        result.Decisions,
+		"effective_action":       result.Action,
+		"decisions":              result.Decisions,
+		"required_approvals":     routing.requiredApprovals,
+		"approvers":              routing.approvers,
+		"escalate_after_seconds": routing.escalateAfterSeconds,
+		"escalate_to":            routing.escalateTo,
 	})
 	requestID, err := s.db.CreateApprovalRequest(storage.ApprovalRequest{
-		Source:         source,
-		Model:          model,
-		Project:        project,
-		Action:         action,
-		Target:         target,
-		ActorRole:      s.roleFor(r),
-		Status:         "pending",
-		Reason:         reason,
-		RequestPayload: string(raw),
+		Source:                 source,
+		Model:                  model,
+		Project:                project,
+		Action:                 action,
+		Target:                 target,
+		ActorRole:              s.roleFor(r),
+		Status:                 "pending",
+		RequiredApprovals:      routing.requiredApprovals,
+		ApproverHint:           strings.Join(routing.approvers, ","),
+		EscalationTarget:       strings.Join(routing.escalateTo, ","),
+		EscalationAfterSeconds: routing.escalateAfterSeconds,
+		Reason:                 reason,
+		RequestPayload:         string(raw),
 	})
 	if err != nil {
 		return "", err
 	}
-	s.appendAuditLog("local", s.roleFor(r), "policy.approval.requested", requestID, map[string]string{"action": action, "target": target, "source": source, "model": model, "project": project})
+	s.appendAuditLog("local", s.roleFor(r), "policy.approval.requested", requestID, map[string]string{"action": action, "target": target, "source": source, "model": model, "project": project, "required_approvals": fmt.Sprint(routing.requiredApprovals), "approvers": strings.Join(routing.approvers, ","), "escalate_to": strings.Join(routing.escalateTo, ","), "escalate_after_seconds": fmt.Sprint(routing.escalateAfterSeconds)})
 	return requestID, nil
+}
+
+type approvalRouting struct {
+	requiredApprovals    int
+	approvers            []string
+	escalateAfterSeconds int64
+	escalateTo           []string
+}
+
+func approvalRoutingFromDecisions(decisions []ledgerpolicy.Decision) approvalRouting {
+	routing := approvalRouting{requiredApprovals: 1}
+	approvers := map[string]bool{}
+	escalateTo := map[string]bool{}
+	for _, decision := range decisions {
+		if ledgerpolicy.NormalizeAction(decision.Action) != "require_approval" {
+			continue
+		}
+		if decision.RequiredApprovals > routing.requiredApprovals {
+			routing.requiredApprovals = decision.RequiredApprovals
+		}
+		for _, approver := range decision.Approvers {
+			addUniqueRoutingValue(approver, approvers, &routing.approvers)
+		}
+		for _, target := range decision.EscalateTo {
+			addUniqueRoutingValue(target, escalateTo, &routing.escalateTo)
+		}
+		if decision.EscalateAfterSeconds > 0 && (routing.escalateAfterSeconds == 0 || decision.EscalateAfterSeconds < routing.escalateAfterSeconds) {
+			routing.escalateAfterSeconds = decision.EscalateAfterSeconds
+		}
+	}
+	if routing.requiredApprovals <= 0 {
+		routing.requiredApprovals = 1
+	}
+	if routing.requiredApprovals > 20 {
+		routing.requiredApprovals = 20
+	}
+	return routing
+}
+
+func addUniqueRoutingValue(value string, seen map[string]bool, out *[]string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	key := strings.ToLower(value)
+	if seen[key] {
+		return
+	}
+	seen[key] = true
+	*out = append(*out, value)
 }
 
 func (s *Server) handlePolicyApprovals(w http.ResponseWriter, r *http.Request) {

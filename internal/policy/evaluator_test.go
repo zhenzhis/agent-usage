@@ -2,6 +2,7 @@ package policy
 
 import (
 	"testing"
+	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
 )
@@ -60,6 +61,32 @@ func TestEvaluateAgentOpsScopes(t *testing.T) {
 	}
 	if result.Decisions[2].Scope != "git_branch" {
 		t.Fatalf("branch alias should normalize to git_branch: %#v", result.Decisions)
+	}
+}
+
+func TestEvaluateApprovalRoutingMetadata(t *testing.T) {
+	result := Evaluate(config.PolicyConfig{
+		Enabled: true,
+		Rules: []config.PolicyRule{{
+			Name: "expensive-model-approval", Scope: "model", Match: "gpt-5.5", Action: "require_approval", Message: "review expensive model",
+			RequiredApprovals: 2,
+			Approvers:         []string{"alice", "alice", "bob"},
+			EscalateAfter:     30 * time.Minute,
+			EscalateTo:        []string{"lead", "lead", "security"},
+		}},
+	}, Request{Model: "gpt-5.5", Action: "model.call"})
+	if result.Action != "require_approval" || len(result.Decisions) != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	decision := result.Decisions[0]
+	if decision.RequiredApprovals != 2 || decision.EscalateAfterSeconds != 1800 {
+		t.Fatalf("approval routing numeric fields missing: %+v", decision)
+	}
+	if len(decision.Approvers) != 2 || decision.Approvers[0] != "alice" || decision.Approvers[1] != "bob" {
+		t.Fatalf("approvers should be normalized and deduped: %+v", decision.Approvers)
+	}
+	if len(decision.EscalateTo) != 2 || decision.EscalateTo[0] != "lead" || decision.EscalateTo[1] != "security" {
+		t.Fatalf("escalation targets should be normalized and deduped: %+v", decision.EscalateTo)
 	}
 }
 

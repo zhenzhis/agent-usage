@@ -82,7 +82,16 @@ rbac:
 policies:
   enabled: false
   require_privacy_export: false
-  rules: []
+  rules:
+    # - name: expensive-model-review
+    #   scope: model
+    #   match: gpt-5.5
+    #   action: require_approval
+    #   message: Review expensive model usage before execution
+    #   required_approvals: 2
+    #   approvers: ["desk-lead", "risk"]
+    #   escalate_after: 30m
+    #   escalate_to: ["research-head"]
 
 webhooks:
   enabled: false
