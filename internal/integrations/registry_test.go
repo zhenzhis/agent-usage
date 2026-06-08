@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
 func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
@@ -30,6 +31,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "protocol.canonical_events.http", "implemented", true)
 	assertCapability(t, catalog, "protocol.adapter_conformance", "implemented", true)
 	assertCapability(t, catalog, "protocol.discovery_manifest", "implemented", true)
+	assertCapability(t, catalog, "protocol.contract_bundle", "implemented", true)
 	assertCapability(t, catalog, "protocol.runtime_status", "implemented", true)
 	assertCapability(t, catalog, "protocol.workload_event_feed", "implemented", true)
 	assertCapability(t, catalog, "protocol.opentelemetry_genai", "implemented", true)
@@ -42,9 +44,12 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "notification.redacted_webhook", "implemented", false)
 	assertCapabilityCommand(t, catalog, "protocol.adapter_conformance", "agent-ledger adapter spec")
 	assertCapabilityCommand(t, catalog, "protocol.discovery_manifest", "agent-ledger discovery")
+	assertCapabilityCommand(t, catalog, "protocol.contract_bundle", "agent-ledger contracts")
 	assertCapabilityCommand(t, catalog, "protocol.runtime_status", "agent-ledger runtime")
+	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.contracts")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.discovery")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.runtime_status")
+	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://contracts/bundle")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://discovery/manifest")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://runtime/status")
 
@@ -91,6 +96,7 @@ func TestRegistryAnnotatesReadOnlyRuntimeCapabilities(t *testing.T) {
 	assertRuntimeCapability(t, catalog, "protocol.canonical_events.http", false, true, false)
 	assertRuntimeCapability(t, catalog, "collector.codex", false, true, false)
 	assertRuntimeCapability(t, catalog, "protocol.adapter_conformance", true, false, true)
+	assertRuntimeCapability(t, catalog, "protocol.contract_bundle", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.discovery_manifest", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.runtime_status", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.mcp_stdio", true, true, true)
@@ -113,6 +119,7 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 		t.Fatalf("discovery must keep privacy defaults explicit: %#v", manifest)
 	}
 	if manifest.Auth == "" || manifest.MCPCommand != "agent-ledger mcp" || manifest.CapabilityCatalogURI != "/api/integrations" ||
+		manifest.ContractBundleURI != "/api/contracts" ||
 		manifest.RuntimeStatusURI != "/api/runtime/status" || manifest.CanonicalSchemaURI != "/api/event-schema" ||
 		manifest.EventExamplesURI != "/api/event-examples" || manifest.AdapterSpecURI != "/api/integrations/adapter-spec" ||
 		manifest.AdapterConformanceURI != "/api/integrations/conformance" {
@@ -127,7 +134,7 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 	if manifest.AdapterSpecHash == "" || !strings.HasPrefix(manifest.AdapterSpecHash, "sha256:") || manifest.AdapterSpecHash != AdapterContractFingerprint() {
 		t.Fatalf("discovery missing adapter contract hash: %#v", manifest)
 	}
-	if !hasDiscoveryProtocol(manifest, "protocol.discovery_manifest") || !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
+	if !hasDiscoveryProtocol(manifest, "protocol.discovery_manifest") || !hasDiscoveryProtocol(manifest, "protocol.contract_bundle") || !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("discovery missing agent protocols: %#v", manifest.Protocols)
 	}
 	for _, protocol := range manifest.Protocols {
@@ -137,6 +144,47 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestContractBundleIndexesCoreContracts(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Collectors.Claude.Enabled = true
+	cfg.Collectors.Claude.Paths = []string{"C:/Users/example/.claude/projects"}
+	runtime := EnrichRuntimeStatus(&storage.RuntimeStatus{
+		Mode:            "control-plane",
+		ReadOnly:        false,
+		WriteOperations: "enabled",
+		BackgroundTasks: "enabled",
+		Message:         "test runtime",
+	}, OptionsFromConfig(cfg))
+	bundle := ContractBundleFor(OptionsFromConfig(cfg), runtime)
+	if bundle.Contract != "agent-ledger.contract-bundle" || bundle.Version != "v1" || !bundle.LocalFirst || bundle.BundleHash == "" || !strings.HasPrefix(bundle.BundleHash, "sha256:") {
+		t.Fatalf("unexpected contract bundle identity: %#v", bundle)
+	}
+	for _, id := range []string{"discovery", "contract-bundle", "capability-catalog", "runtime-status", "canonical-event-schema", "adapter-contract"} {
+		if !contractBundleHasDocument(bundle, id) {
+			t.Fatalf("contract bundle missing %s: %#v", id, bundle.Documents)
+		}
+	}
+	for _, doc := range bundle.Documents {
+		if doc.Hash == "" || !strings.HasPrefix(doc.Hash, "sha256:") || doc.PrimaryURI == "" || doc.Revalidation == "" || !doc.ReadOnlySafe || doc.WritesLocalState {
+			t.Fatalf("contract document missing stable metadata: %#v", doc)
+		}
+		for _, value := range append(append(append([]string{doc.PrimaryURI, doc.Privacy}, doc.AlternateURIs...), doc.CLICommands...), doc.MCPResources...) {
+			if value == "C:/Users/example/.claude/projects" {
+				t.Fatalf("raw path leaked in contract bundle document: %#v", doc)
+			}
+		}
+	}
+}
+
+func contractBundleHasDocument(bundle ContractBundle, id string) bool {
+	for _, doc := range bundle.Documents {
+		if doc.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAdapterContractSpecIsMachineReadableAndPrivacySafe(t *testing.T) {

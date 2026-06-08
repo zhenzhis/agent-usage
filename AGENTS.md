@@ -22,6 +22,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger adapter spec                # print machine-readable adapter contract
 ./agent-ledger adapter conformance --kind provider-stream --strict --file fixture.sse # validate adapter fixture output without writing SQLite
 ./agent-ledger discovery                   # print local discovery manifest
+./agent-ledger contracts                   # print REST/CLI/MCP contract bundle with hashes and cache semantics
 ./agent-ledger integrations                # print privacy-safe integration capability catalog
 ./agent-ledger runtime                     # print runtime mode and read-only/write status
 ./agent-ledger notify webhook --dry-run --severity warning --approval-due-within 24h # inspect redacted notification payload

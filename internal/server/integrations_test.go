@@ -25,6 +25,7 @@ func TestDiscoveryEndpoint(t *testing.T) {
 		t.Fatalf("decode discovery: %v", err)
 	}
 	if manifest.Contract != "agent-ledger.discovery" || manifest.WellKnownURI != "/.well-known/agent-ledger.json" ||
+		manifest.ContractBundleURI != "/api/contracts" ||
 		manifest.CanonicalSchemaURI != "/api/event-schema" || manifest.EventExamplesURI != "/api/event-examples" ||
 		manifest.AdapterSpecURI != "/api/integrations/adapter-spec" ||
 		manifest.AdapterConformanceURI != "/api/integrations/conformance" || manifest.RuntimeStatusURI != "/api/runtime/status" ||
@@ -41,6 +42,32 @@ func TestDiscoveryEndpoint(t *testing.T) {
 		t.Fatalf("privacy flags wrong: %+v", manifest)
 	}
 	assertETagRevalidates(t, srv.handleDiscovery, "http://127.0.0.1/.well-known/agent-ledger.json", rr.Header().Get("ETag"))
+}
+
+func TestContractsEndpoint(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{RBAC: config.RBACConfig{Enabled: true}})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/contracts", nil)
+	rr := httptest.NewRecorder()
+	srv.handleContracts(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("contracts status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var bundle integrations.ContractBundle
+	if err := json.Unmarshal(rr.Body.Bytes(), &bundle); err != nil {
+		t.Fatalf("decode contracts: %v", err)
+	}
+	if bundle.Contract != "agent-ledger.contract-bundle" || bundle.BundleHash == "" || !strings.HasPrefix(bundle.BundleHash, "sha256:") {
+		t.Fatalf("unexpected contract bundle: %+v", bundle)
+	}
+	if !contractBundleHasDocument(bundle, "discovery") || !contractBundleHasDocument(bundle, "runtime-status") ||
+		!contractBundleHasDocument(bundle, "canonical-event-schema") || !contractBundleHasDocument(bundle, "adapter-contract") {
+		t.Fatalf("contract bundle missing core documents: %+v", bundle.Documents)
+	}
+	if rr.Header().Get("ETag") != `"`+bundle.BundleHash+`"` {
+		t.Fatalf("contracts ETag=%q want %q", rr.Header().Get("ETag"), `"`+bundle.BundleHash+`"`)
+	}
+	assertETagRevalidates(t, srv.handleContracts, "http://127.0.0.1/api/contracts", rr.Header().Get("ETag"))
 }
 
 func TestAdapterSpecEndpoint(t *testing.T) {
@@ -86,6 +113,7 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 		handler func(http.ResponseWriter, *http.Request)
 	}{
 		{name: "integrations", url: "http://127.0.0.1/api/integrations", handler: srv.handleIntegrations},
+		{name: "contracts", url: "http://127.0.0.1/api/contracts", handler: srv.handleContracts},
 		{name: "runtime-status", url: "http://127.0.0.1/api/runtime/status", handler: srv.handleRuntimeStatus},
 		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
 	}
@@ -121,6 +149,15 @@ func assertETagRevalidates(t *testing.T, handler func(http.ResponseWriter, *http
 	if rr.Body.Len() != 0 {
 		t.Fatalf("304 response should not include a body: %q", rr.Body.String())
 	}
+}
+
+func contractBundleHasDocument(bundle integrations.ContractBundle, id string) bool {
+	for _, doc := range bundle.Documents {
+		if doc.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func adapterSpecHasKind(spec integrations.AdapterContract, kind string) bool {

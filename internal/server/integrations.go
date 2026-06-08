@@ -31,6 +31,15 @@ func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	writeJSONWithETag(w, r, manifest, etag)
 }
 
+func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	bundle := integrations.ContractBundleFor(s.integrationOptions(), s.runtimeStatus())
+	writeJSONWithETag(w, r, bundle, bundle.BundleHash)
+}
+
 func (s *Server) handleRuntimeStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

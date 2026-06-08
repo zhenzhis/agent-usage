@@ -437,6 +437,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runNotifyCLI(args[1:], cfg, db)
 	case "discovery":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Discovery(integrations.OptionsFromConfig(cfg)))
+	case "contracts":
+		return json.NewEncoder(os.Stdout).Encode(integrations.ContractBundleFor(integrations.OptionsFromConfig(cfg), server.RuntimeStatusFromConfig(cfg)))
 	case "integrations":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "runtime":

@@ -64,6 +64,34 @@ func TestRuntimeCLIOutputsCompatibilityHashes(t *testing.T) {
 	}
 }
 
+func TestContractsCLIOutputsBundle(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+	cfg := config.DefaultConfig()
+	cfg.RBAC.ReadOnly = true
+
+	out, err := captureStdout(t, func() error {
+		return runCLI([]string{"contracts"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI contracts: %v", err)
+	}
+	var bundle map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &bundle); err != nil {
+		t.Fatalf("decode contracts output: %v\n%s", err, out)
+	}
+	if bundle["contract"] != "agent-ledger.contract-bundle" || bundle["bundle_hash"] == "" || bundle["read_only"] != true {
+		t.Fatalf("unexpected contracts output: %+v", bundle)
+	}
+	docs, ok := bundle["documents"].([]interface{})
+	if !ok || len(docs) < 5 {
+		t.Fatalf("contracts output missing documents: %+v", bundle)
+	}
+}
+
 func TestPolicyRoutesCLIOutputsRedactedSummary(t *testing.T) {
 	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {
