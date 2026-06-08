@@ -30,8 +30,8 @@ func TestDiscoveryEndpoint(t *testing.T) {
 		manifest.CanonicalSchemaHash == "" {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
-	if !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
-		t.Fatalf("missing workload feed protocol: %+v", manifest.Protocols)
+	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
+		t.Fatalf("missing control-plane protocols: %+v", manifest.Protocols)
 	}
 	if manifest.PromptContentStored || manifest.UsageDataUploaded {
 		t.Fatalf("privacy flags wrong: %+v", manifest)

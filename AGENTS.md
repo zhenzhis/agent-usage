@@ -101,7 +101,7 @@ If a data source reports `input_tokens` as the total (including cache), the coll
 
 ### Deduplication
 
-Usage records are deduped via a unique index on `(session_id, model, timestamp, input_tokens, output_tokens)`. Incremental file scanning uses stored offsets in `file_state` to resume from where it left off. For data sources where session metadata only appears at the top of the file (Codex, OpenClaw), `file_state.scan_context` stores parser state (sessionID, cwd, version, model) as JSON so incremental scans can restore context without re-reading the file from the beginning.
+Usage records are deduped via a unique index on `(source, session_id, model, timestamp, input_tokens, output_tokens)` so the same native session id from different agents cannot collide. Incremental file scanning uses stored offsets in `file_state` to resume from where it left off. For data sources where session metadata only appears at the top of the file (Codex, OpenClaw), `file_state.scan_context` stores parser state (sessionID, cwd, version, model) as JSON so incremental scans can restore context without re-reading the file from the beginning.
 
 ## Conventions
 

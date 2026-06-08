@@ -26,6 +26,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	}
 	assertCapability(t, catalog, "protocol.canonical_events.http", "implemented", true)
 	assertCapability(t, catalog, "protocol.adapter_conformance", "implemented", true)
+	assertCapability(t, catalog, "protocol.runtime_status", "implemented", true)
 	assertCapability(t, catalog, "protocol.workload_event_feed", "implemented", true)
 	assertCapability(t, catalog, "protocol.opentelemetry_genai", "implemented", true)
 	assertCapability(t, catalog, "protocol.otlp_receiver", "experimental", false)
@@ -36,6 +37,9 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "governance.policy_evaluator", "implemented", true)
 	assertCapability(t, catalog, "notification.redacted_webhook", "implemented", false)
 	assertCapabilityCommand(t, catalog, "protocol.adapter_conformance", "agent-ledger adapter spec")
+	assertCapabilityCommand(t, catalog, "protocol.runtime_status", "agent-ledger runtime")
+	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.runtime_status")
+	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://runtime/status")
 
 	cfg.Integrations.OTLPReceiver.Enabled = true
 	cfg.Gateway.Enabled = true
@@ -80,6 +84,7 @@ func TestRegistryAnnotatesReadOnlyRuntimeCapabilities(t *testing.T) {
 	assertRuntimeCapability(t, catalog, "protocol.canonical_events.http", false, true, false)
 	assertRuntimeCapability(t, catalog, "collector.codex", false, true, false)
 	assertRuntimeCapability(t, catalog, "protocol.adapter_conformance", true, false, true)
+	assertRuntimeCapability(t, catalog, "protocol.runtime_status", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.mcp_stdio", true, true, true)
 	assertRuntimeCapability(t, catalog, "protocol.offline_bundle", true, true, true)
 	assertRuntimeCapability(t, catalog, "governance.policy_evaluator", true, true, true)
@@ -108,7 +113,7 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 	if manifest.CanonicalSchemaHash == "" || !strings.HasPrefix(manifest.CanonicalSchemaHash, "sha256:") {
 		t.Fatalf("discovery missing schema hash: %#v", manifest)
 	}
-	if !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
+	if !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("discovery missing agent protocols: %#v", manifest.Protocols)
 	}
 	for _, protocol := range manifest.Protocols {
@@ -181,6 +186,32 @@ func assertCapabilityCommand(t *testing.T, catalog Catalog, id, command string) 
 		if cap.ID == id {
 			if !stringSliceHas(cap.Commands, command) {
 				t.Fatalf("%s missing command %q: %#v", id, command, cap.Commands)
+			}
+			return
+		}
+	}
+	t.Fatalf("capability %s missing", id)
+}
+
+func assertCapabilityTool(t *testing.T, catalog Catalog, id, tool string) {
+	t.Helper()
+	for _, cap := range catalog.Capabilities {
+		if cap.ID == id {
+			if !stringSliceHas(cap.Tools, tool) {
+				t.Fatalf("%s missing tool %q: %#v", id, tool, cap.Tools)
+			}
+			return
+		}
+	}
+	t.Fatalf("capability %s missing", id)
+}
+
+func assertCapabilityResource(t *testing.T, catalog Catalog, id, resource string) {
+	t.Helper()
+	for _, cap := range catalog.Capabilities {
+		if cap.ID == id {
+			if !stringSliceHas(cap.Resources, resource) {
+				t.Fatalf("%s missing resource %q: %#v", id, resource, cap.Resources)
 			}
 			return
 		}
