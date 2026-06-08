@@ -87,6 +87,7 @@ CLI：
 ./agent-ledger policy evaluate --model gpt-5.5 --action model.call
 ./agent-ledger policy approvals
 ./agent-ledger policy enforcement --privacy
+./agent-ledger policy routes --due-within 24h --privacy
 ./agent-ledger policy resolve --id apr_... --status approved
 ./agent-ledger audit --action pricing --role operator --format markdown --privacy
 ./agent-ledger pricing sync

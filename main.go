@@ -1015,7 +1015,7 @@ func runOTelCLI(args []string, db *storage.DB) error {
 
 func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: agent-ledger policy audit|enforcement|evaluate|approvals|resolve")
+		return fmt.Errorf("usage: agent-ledger policy audit|enforcement|routes|evaluate|approvals|resolve")
 	}
 	switch args[0] {
 	case "audit":
@@ -1049,6 +1049,27 @@ func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 			redactPolicyEnforcementReport(report)
 		}
 		return json.NewEncoder(os.Stdout).Encode(report)
+	case "routes":
+		dueWithin := 24 * time.Hour
+		if raw := strings.TrimSpace(cliValue(args[1:], "--due-within")); raw != "" {
+			parsed, err := time.ParseDuration(raw)
+			if err != nil || parsed <= 0 || parsed > 30*24*time.Hour {
+				return fmt.Errorf("invalid --due-within %q: expected duration from 1ns to 720h", raw)
+			}
+			dueWithin = parsed
+		}
+		report, err := db.GetApprovalRouteSummary(cliInt(args[1:], "--limit", 200), dueWithin)
+		if err != nil {
+			return err
+		}
+		if cliBool(args[1:], "--privacy") {
+			redactApprovalRouteSummary(report)
+		}
+		if strings.EqualFold(cliValue(args[1:], "--format"), "markdown") {
+			printApprovalRouteSummaryMarkdown(report)
+			return nil
+		}
+		return json.NewEncoder(os.Stdout).Encode(report)
 	case "approvals":
 		status := cliValue(args[1:], "--status")
 		if status == "" {
@@ -1074,7 +1095,7 @@ func runPolicyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"ok": true, "result": result})
 	case "evaluate":
 	default:
-		return fmt.Errorf("usage: agent-ledger policy audit [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format markdown|json]; agent-ledger policy enforcement [--limit n] [--privacy]; agent-ledger policy evaluate [--source s] [--model m] [--project p] [--repo r] [--branch b] [--team t] [--action a] [--target x] [--workload-id id] [--run-id id] [--role role] [--record]; agent-ledger policy approvals [--status pending|approved|rejected|all]; agent-ledger policy resolve --id id --status approved|rejected [--voter name] [--required-approvals n] [--note text]")
+		return fmt.Errorf("usage: agent-ledger policy audit [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format markdown|json]; agent-ledger policy enforcement [--limit n] [--privacy]; agent-ledger policy routes [--due-within 24h] [--limit n] [--privacy] [--format markdown|json]; agent-ledger policy evaluate [--source s] [--model m] [--project p] [--repo r] [--branch b] [--team t] [--action a] [--target x] [--workload-id id] [--run-id id] [--role role] [--record]; agent-ledger policy approvals [--status pending|approved|rejected|all]; agent-ledger policy resolve --id id --status approved|rejected [--voter name] [--required-approvals n] [--note text]")
 	}
 	req := ledgerpolicy.Request{
 		WorkloadID: firstNonEmptyCLI(cliValue(args[1:], "--workload-id"), cliValue(args[1:], "--workload_id")),
@@ -1161,6 +1182,61 @@ func redactPolicyEnforcementReport(report *storage.PolicyEnforcementReport) {
 		report.ApprovalRequests[i].DecisionNote = "<redacted>"
 	}
 	redactAuditRows(report.AuditEvents)
+}
+
+func redactApprovalRouteSummary(report *storage.ApprovalRouteSummary) {
+	if report == nil {
+		return
+	}
+	for i := range report.Routes {
+		report.Routes[i].RouteKey = "<redacted>"
+		report.Routes[i].Approver = "<redacted>"
+		report.Routes[i].EscalationTarget = "<redacted>"
+		for j := range report.Routes[i].Projects {
+			report.Routes[i].Projects[j] = "<redacted>"
+		}
+	}
+}
+
+func printApprovalRouteSummaryMarkdown(report *storage.ApprovalRouteSummary) {
+	fmt.Println("# Agent Ledger Approval Routes")
+	fmt.Println()
+	if report == nil {
+		fmt.Println("No approval route summary.")
+		return
+	}
+	fmt.Printf("- pending: %d\n", report.Summary.Pending)
+	fmt.Printf("- routes: %d\n", report.Summary.Routes)
+	fmt.Printf("- overdue: %d\n", report.Summary.Overdue)
+	fmt.Printf("- due_soon: %d\n", report.Summary.DueSoon)
+	fmt.Printf("- unassigned: %d\n", report.Summary.Unassigned)
+	fmt.Printf("- due_within: %s\n\n", report.DueWithin)
+	if len(report.Routes) == 0 {
+		fmt.Println("No pending approval routes.")
+		return
+	}
+	fmt.Println("| route | pending | overdue | due soon | approver | escalation | actions | models |")
+	fmt.Println("|---|---:|---:|---:|---|---|---|---|")
+	for _, row := range report.Routes {
+		fmt.Printf("| %s | %d | %d | %d | %s | %s | %s | %s |\n",
+			markdownCell(row.RouteKey),
+			row.Pending,
+			row.Overdue,
+			row.DueSoon,
+			markdownCell(row.Approver),
+			markdownCell(row.EscalationTarget),
+			markdownCell(strings.Join(row.Actions, ", ")),
+			markdownCell(strings.Join(row.Models, ", ")),
+		)
+	}
+}
+
+func markdownCell(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	return strings.ReplaceAll(value, "|", "\\|")
 }
 
 func runAuditCLI(args []string, db *storage.DB) error {

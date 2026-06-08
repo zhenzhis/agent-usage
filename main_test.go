@@ -1,6 +1,16 @@
 package main
 
-import "testing"
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/storage"
+)
 
 func TestCLICommandRequiresWriteForNotifyDryRun(t *testing.T) {
 	cases := []struct {
@@ -13,6 +23,8 @@ func TestCLICommandRequiresWriteForNotifyDryRun(t *testing.T) {
 		{name: "notify webhook dry run with filters is read-only", args: []string{"notify", "webhook", "--severity", "warning", "--dry-run"}, want: false},
 		{name: "notify without subcommand remains write", args: []string{"notify"}, want: true},
 		{name: "notify other subcommand remains write", args: []string{"notify", "other", "--dry-run"}, want: true},
+		{name: "policy routes is read-only", args: []string{"policy", "routes"}, want: false},
+		{name: "policy routes privacy is read-only", args: []string{"policy", "routes", "--privacy"}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -21,4 +33,63 @@ func TestCLICommandRequiresWriteForNotifyDryRun(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPolicyRoutesCLIOutputsRedactedSummary(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		Source:           "gateway",
+		Model:            "gpt-5.5",
+		Project:          "private-project",
+		Action:           "model.call",
+		Target:           "openai-chat-completions",
+		Status:           "pending",
+		ApproverHint:     "desk-lead",
+		EscalationTarget: "research-head",
+		DueAt:            time.Now().UTC().Add(30 * time.Minute).Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+
+	out, err := captureStdout(t, func() error {
+		return runPolicyCLI([]string{"routes", "--due-within", "1h", "--privacy"}, config.DefaultConfig(), db)
+	})
+	if err != nil {
+		t.Fatalf("runPolicyCLI routes: %v", err)
+	}
+	for _, want := range []string{`"pending":1`, `redacted`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q: %s", want, out)
+		}
+	}
+	for _, forbidden := range []string{"private-project", "desk-lead", "research-head"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("output leaked %q: %s", forbidden, out)
+		}
+	}
+}
+
+func captureStdout(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stdout = w
+	runErr := fn()
+	if closeErr := w.Close(); closeErr != nil && runErr == nil {
+		runErr = closeErr
+	}
+	os.Stdout = old
+	out, readErr := io.ReadAll(r)
+	if readErr != nil && runErr == nil {
+		runErr = readErr
+	}
+	return string(out), runErr
 }
