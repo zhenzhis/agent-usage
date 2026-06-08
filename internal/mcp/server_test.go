@@ -34,6 +34,24 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.approvals") || !hasTool(tools, "ledger.resolve_approval") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
+	budgetMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.current_budget"))
+	if budgetMeta["write_mode"] != "none" || budgetMeta["writes_local_state"] != false || budgetMeta["available_in_read_only"] != true {
+		t.Fatalf("budget tool metadata wrong: %#v", budgetMeta)
+	}
+	startMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.start_workload"))
+	if startMeta["write_mode"] != "always" || startMeta["writes_local_state"] != true || startMeta["available_in_read_only"] != false {
+		t.Fatalf("start workload metadata wrong: %#v", startMeta)
+	}
+	policyMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.get_policy"))
+	if policyMeta["write_mode"] != "conditional" || policyMeta["writes_local_state"] != true || policyMeta["available_in_read_only"] != true {
+		t.Fatalf("policy tool metadata wrong: %#v", policyMeta)
+	}
+	if annotations := toolByName(t, tools, "ledger.current_budget")["annotations"].(map[string]interface{}); annotations["readOnlyHint"] != true {
+		t.Fatalf("budget annotations wrong: %#v", annotations)
+	}
+	if annotations := toolByName(t, tools, "ledger.start_workload")["annotations"].(map[string]interface{}); annotations["readOnlyHint"] != false {
+		t.Fatalf("start workload annotations wrong: %#v", annotations)
+	}
 	payload := toolTextPayload(t, out[1])
 	if payload["plan"] != "custom" || payload["method"] != "local-estimate" {
 		t.Fatalf("unexpected budget payload: %#v", payload)
@@ -807,6 +825,31 @@ func hasTool(tools []interface{}, name string) bool {
 		}
 	}
 	return false
+}
+
+func toolByName(t *testing.T, tools []interface{}, name string) map[string]interface{} {
+	t.Helper()
+	for _, raw := range tools {
+		tool := raw.(map[string]interface{})
+		if tool["name"] == name {
+			return tool
+		}
+	}
+	t.Fatalf("tool %q not found in %#v", name, tools)
+	return nil
+}
+
+func agentLedgerToolMeta(t *testing.T, tool map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	meta, ok := tool["_meta"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("tool missing _meta: %#v", tool)
+	}
+	ledger, ok := meta["agent_ledger"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("tool missing agent_ledger metadata: %#v", tool)
+	}
+	return ledger
 }
 
 func resourceTextPayload(t *testing.T, resp map[string]interface{}) string {

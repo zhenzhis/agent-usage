@@ -525,7 +525,8 @@ func tool(name, description string, props map[string]interface{}) map[string]int
 			}
 		}
 	}
-	return map[string]interface{}{
+	access := mcpToolAccessFor(name)
+	out := map[string]interface{}{
 		"name":        name,
 		"description": description,
 		"inputSchema": map[string]interface{}{
@@ -534,6 +535,21 @@ func tool(name, description string, props map[string]interface{}) map[string]int
 			"required":   required,
 		},
 	}
+	out["annotations"] = map[string]interface{}{
+		"readOnlyHint":    access.WriteMode == "none",
+		"destructiveHint": false,
+		"idempotentHint":  access.WriteMode == "none",
+		"openWorldHint":   false,
+	}
+	out["_meta"] = map[string]interface{}{
+		"agent_ledger": map[string]interface{}{
+			"writes_local_state":     access.WritesLocalState,
+			"write_mode":             access.WriteMode,
+			"available_in_read_only": access.AvailableInReadOnly,
+			"read_only_behavior":     access.ReadOnlyBehavior,
+		},
+	}
+	return out
 }
 
 func stringSchema() map[string]interface{} { return map[string]interface{}{"type": "string"} }
@@ -673,7 +689,14 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 	}
 }
 
-func mcpToolRequiresWrite(name string, args json.RawMessage) bool {
+type mcpToolAccess struct {
+	WritesLocalState    bool
+	WriteMode           string
+	AvailableInReadOnly bool
+	ReadOnlyBehavior    string
+}
+
+func mcpToolAccessFor(name string) mcpToolAccess {
 	switch name {
 	case "ledger.start_workload",
 		"ledger.start_run",
@@ -686,8 +709,38 @@ func mcpToolRequiresWrite(name string, args json.RawMessage) bool {
 		"ledger.record_context",
 		"ledger.record_event",
 		"ledger.resolve_approval":
-		return true
+		return mcpToolAccess{
+			WritesLocalState:    true,
+			WriteMode:           "always",
+			AvailableInReadOnly: false,
+			ReadOnlyBehavior:    "disabled in read-only mode",
+		}
 	case "ledger.get_policy":
+		return mcpToolAccess{
+			WritesLocalState:    true,
+			WriteMode:           "conditional",
+			AvailableInReadOnly: true,
+			ReadOnlyBehavior:    "advisory calls are available; calls with workload_id are rejected because they record policy decisions",
+		}
+	default:
+		return mcpToolAccess{
+			WritesLocalState:    false,
+			WriteMode:           "none",
+			AvailableInReadOnly: true,
+			ReadOnlyBehavior:    "available in read-only mode",
+		}
+	}
+}
+
+func mcpToolRequiresWrite(name string, args json.RawMessage) bool {
+	access := mcpToolAccessFor(name)
+	switch access.WriteMode {
+	case "always":
+		return true
+	case "conditional":
+		if name != "ledger.get_policy" {
+			return true
+		}
 		var in struct {
 			WorkloadID string `json:"workload_id"`
 		}
