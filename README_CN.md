@@ -285,8 +285,8 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `POST /api/policy/evaluate` | 评估本地 advisory policy，并可选择写入 policy decision |
 | `GET /api/policy/audit` | 使用本地 policy rules 审计历史 usage、tool call 和 workload |
 | `GET /api/policy/enforcement` | 汇总本地 policy decision、approval request 与 audit event 的执行证据 |
-| `GET /api/policy/approvals?status=pending` | 查看本地 pending、approved、rejected 或全部策略审批请求 |
-| `POST /api/policy/approvals` | 为本地策略审批请求投批准/拒绝票；支持 `required_approvals` 法定人数 |
+| `GET /api/policy/approvals?status=pending&privacy=1` | 查看本地 pending、approved、rejected 或全部策略审批请求；`privacy=1` 会 hash request/workload/run id，并隐藏 project、target、approver、escalation、reason、payload 与 decision note |
+| `POST /api/policy/approvals` | 为本地策略审批请求投批准/拒绝票；支持 `required_approvals` 法定人数，并只在本地审计中记录投票/quorum 元数据，不保存 note 明文 |
 | `GET /api/policy/approval-routes?due_within=24h` | 汇总 pending 审批路由，供本地通知适配器使用 |
 | `GET /api/audit-log?action=pricing&role=operator` | 过滤本地操作审计事件；支持 `from`、`to`、`actor`、`role`、`action`、`target`、`limit` 与隐私模式 |
 | `GET /api/sessions` | 服务端分页会话账本 |
@@ -416,6 +416,7 @@ agent-ledger doctor --format markdown
 - `rbac.read_only: true` 会把进程切到观测模式：拒绝 REST/CLI 写操作，关闭后台 collector、pricing sync 和费用重算，并且报告、导出、异常视图等 GET 端点不会追加 audit、budget、insight 或 bundle 记录。
 - Policy rule 可匹配 `global`、`source`、`model`、`project`、`repo`、`git_branch`、`team`、`action`、`target` 和 `role`。
 - 策略审批请求只保存本地 metadata。批准后只授权相同 action/target 的重试，不包含 prompt 内容。
+- 审批队列隐私模式会在 REST、CLI 与 MCP 中隐藏审批路由元数据和 payload。审批投票审计只记录 quorum/投票事实和 `note_present`，不记录 note 明文。
 - 可选 provider gateway 默认关闭。它只在内存中把 prompt content 转发给配置的上游，只从环境变量读取 API key，并只保存 usage 元数据而不是消息内容。
 - Run command 会作为 metadata 保存，但常见命令行密钥模式，例如 `API_KEY=...`、`--token ...`、`--api-key=...`、`Bearer ...`，会在持久化前做 best-effort 脱敏。敏感值仍建议使用环境变量或密钥管理器，不要放进长期命令参数。
 - 隐私 preset 可隐藏路径、项目、分支、机器名和 session id。

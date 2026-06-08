@@ -214,32 +214,38 @@ func applyPolicyEnforcementPrivacy(report *storage.PolicyEnforcementReport, priv
 			report.Decisions[i].WorkloadID = hashValue(report.Decisions[i].WorkloadID)
 			report.Decisions[i].RunID = hashValue(report.Decisions[i].RunID)
 		}
-		for i := range report.ApprovalRequests {
-			report.ApprovalRequests[i].RequestID = hashValue(report.ApprovalRequests[i].RequestID)
-			report.ApprovalRequests[i].PolicyDecisionID = hashValue(report.ApprovalRequests[i].PolicyDecisionID)
-			report.ApprovalRequests[i].WorkloadID = hashValue(report.ApprovalRequests[i].WorkloadID)
-			report.ApprovalRequests[i].RunID = hashValue(report.ApprovalRequests[i].RunID)
-		}
 	}
-	if privacy.HideProjectNames || privacy.RedactPaths || privacy.ScreenshotMode {
-		for i := range report.ApprovalRequests {
-			report.ApprovalRequests[i].Project = "<redacted>"
-		}
-	}
+	applyApprovalRequestsPrivacy(report.ApprovalRequests, privacy)
 	if privacy.ScreenshotMode {
 		for i := range report.Decisions {
 			report.Decisions[i].Reason = "<redacted>"
 		}
-		for i := range report.ApprovalRequests {
-			report.ApprovalRequests[i].Target = "<redacted>"
-			report.ApprovalRequests[i].ApproverHint = "<redacted>"
-			report.ApprovalRequests[i].EscalationTarget = "<redacted>"
-			report.ApprovalRequests[i].Reason = "<redacted>"
-			report.ApprovalRequests[i].RequestPayload = "<redacted>"
-			report.ApprovalRequests[i].DecisionNote = "<redacted>"
-		}
 	}
 	applyAuditEventPrivacy(report.AuditEvents, privacy)
+}
+
+func applyApprovalRequestsPrivacy(rows []storage.ApprovalRequest, privacy config.PrivacyConfig) {
+	if !(privacy.RedactPaths || privacy.HideProjectNames || privacy.HashSessionIDs || privacy.ScreenshotMode) {
+		return
+	}
+	for i := range rows {
+		if privacy.HashSessionIDs || privacy.ScreenshotMode {
+			rows[i].RequestID = hashValue(rows[i].RequestID)
+			rows[i].PolicyDecisionID = hashValue(rows[i].PolicyDecisionID)
+			rows[i].WorkloadID = hashValue(rows[i].WorkloadID)
+			rows[i].RunID = hashValue(rows[i].RunID)
+		}
+		if privacy.HideProjectNames || privacy.RedactPaths || privacy.ScreenshotMode {
+			rows[i].Project = "<redacted>"
+			rows[i].Target = "<redacted>"
+			rows[i].ApproverHint = "<redacted>"
+			rows[i].EscalationTarget = "<redacted>"
+			rows[i].Reason = "<redacted>"
+			rows[i].RequestPayload = "<redacted>"
+			rows[i].DecidedBy = "<redacted>"
+			rows[i].DecisionNote = "<redacted>"
+		}
+	}
 }
 
 func applyApprovalRoutePrivacy(report *storage.ApprovalRouteSummary, privacy config.PrivacyConfig) {
@@ -369,6 +375,7 @@ func (s *Server) handlePolicyApprovals(w http.ResponseWriter, r *http.Request) {
 			serverError(w, err)
 			return
 		}
+		applyApprovalRequestsPrivacy(rows, s.privacyFor(r))
 		writeJSON(w, map[string]interface{}{"rows": rows, "status": status})
 	case http.MethodPost:
 		if !s.requireRole(w, r, "admin") {
@@ -394,7 +401,14 @@ func (s *Server) handlePolicyApprovals(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, err)
 			return
 		}
-		s.appendAuditLog("local", s.roleFor(r), "policy.approval."+result.Status, payload.RequestID, map[string]string{"note": payload.Note, "voter": voter, "required_approvals": fmt.Sprint(result.RequiredApprovals), "approval_votes": fmt.Sprint(result.ApprovalVotes), "rejection_votes": fmt.Sprint(result.RejectionVotes)})
+		s.appendAuditLog("local", s.roleFor(r), "policy.approval."+result.Status, payload.RequestID, map[string]string{
+			"approval_votes":     fmt.Sprint(result.ApprovalVotes),
+			"decided":            fmt.Sprint(result.Decided),
+			"note_present":       fmt.Sprint(strings.TrimSpace(payload.Note) != ""),
+			"rejection_votes":    fmt.Sprint(result.RejectionVotes),
+			"required_approvals": fmt.Sprint(result.RequiredApprovals),
+			"voter":              voter,
+		})
 		writeJSON(w, map[string]interface{}{"ok": true, "result": result})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

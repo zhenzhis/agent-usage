@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -202,6 +203,99 @@ func TestPolicyApprovalAPISupportsMultiActorQuorum(t *testing.T) {
 	}
 	if ok, err := db.ApprovalAllows(requestID, "model.call", "gpt-5.5"); err != nil || !ok {
 		t.Fatalf("approval should allow after quorum, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestPolicyApprovalsAPIPrivacyAndResolveAudit(t *testing.T) {
+	db := testServerDB(t)
+	requestID, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		PolicyDecisionID:       "dec-rest-private",
+		WorkloadID:             "wl-rest-private",
+		RunID:                  "run-rest-private",
+		Source:                 "gateway",
+		Model:                  "gpt-5.5",
+		Project:                "private-project",
+		Action:                 "model.call",
+		Target:                 "openai-chat-completions",
+		ActorRole:              "operator",
+		Status:                 "pending",
+		RequiredApprovals:      1,
+		ApproverHint:           "desk-lead",
+		EscalationTarget:       "research-head",
+		EscalationAfterSeconds: 1800,
+		DueAt:                  time.Now().UTC().Add(30 * time.Minute).Format(time.RFC3339Nano),
+		Reason:                 "private approval reason",
+		RequestPayload:         `{"prompt":"do-not-send"}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	srv := New(db, "", Options{})
+
+	listReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/policy/approvals?status=pending&privacy=1", nil)
+	listRR := httptest.NewRecorder()
+	srv.handlePolicyApprovals(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("approval list status=%d body=%s", listRR.Code, listRR.Body.String())
+	}
+	body := listRR.Body.String()
+	for _, forbidden := range []string{
+		requestID,
+		"dec-rest-private",
+		"wl-rest-private",
+		"run-rest-private",
+		"private-project",
+		"openai-chat-completions",
+		"desk-lead",
+		"research-head",
+		"private approval reason",
+		"do-not-send",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("approval privacy response leaked %q: %s", forbidden, body)
+		}
+	}
+	var listed struct {
+		Rows []storage.ApprovalRequest `json:"rows"`
+	}
+	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode approval list: %v", err)
+	}
+	if len(listed.Rows) != 1 {
+		t.Fatalf("expected one approval row, got %+v", listed)
+	}
+	if listed.Rows[0].RequestID == "" || listed.Rows[0].RequestID == requestID || listed.Rows[0].Project != "<redacted>" || listed.Rows[0].Target != "<redacted>" || listed.Rows[0].RequestPayload != "<redacted>" {
+		t.Fatalf("approval row not redacted: %+v", listed.Rows[0])
+	}
+
+	resolvePayload, _ := json.Marshal(map[string]interface{}{
+		"request_id": requestID,
+		"status":     "approved",
+		"voter":      "alice",
+		"note":       "private rest approval note",
+	})
+	resolveReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/policy/approvals", bytes.NewReader(resolvePayload))
+	resolveRR := httptest.NewRecorder()
+	srv.handlePolicyApprovals(resolveRR, resolveReq)
+	if resolveRR.Code != http.StatusOK {
+		t.Fatalf("resolve approval status=%d body=%s", resolveRR.Code, resolveRR.Body.String())
+	}
+	audit, err := db.QueryAuditLog(storage.AuditLogFilter{Action: "policy.approval", Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAuditLog: %v", err)
+	}
+	rawAudit, err := json.Marshal(audit)
+	if err != nil {
+		t.Fatalf("Marshal audit: %v", err)
+	}
+	raw := string(rawAudit)
+	for _, want := range []string{"policy.approval.approved", "note_present", "true", "alice"} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("audit output missing %q: %s", want, raw)
+		}
+	}
+	if strings.Contains(raw, "private rest approval note") {
+		t.Fatalf("audit output leaked note text: %s", raw)
 	}
 }
 

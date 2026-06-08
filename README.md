@@ -285,8 +285,8 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `POST /api/policy/evaluate` | Evaluate local advisory policy rules and optionally record decisions |
 | `GET /api/policy/audit` | Audit historical usage, tool calls, and workloads against local policy rules |
 | `GET /api/policy/enforcement` | Local policy enforcement evidence across decisions, approvals, and audit events |
-| `GET /api/policy/approvals?status=pending` | List local pending, approved, rejected, or all policy approval requests |
-| `POST /api/policy/approvals` | Cast an approve/reject vote for a local policy approval request; supports `required_approvals` quorum |
+| `GET /api/policy/approvals?status=pending&privacy=1` | List local pending, approved, rejected, or all policy approval requests; `privacy=1` hashes request/workload/run IDs and redacts project, target, approver, escalation, reason, payload, and decision note |
+| `POST /api/policy/approvals` | Cast an approve/reject vote for a local policy approval request; supports `required_approvals` quorum and records local audit metadata without storing note text in audit params |
 | `GET /api/policy/approval-routes?due_within=24h` | Summarize pending approval routes for local notification adapters |
 | `GET /api/audit-log?action=pricing&role=operator` | Filter local operational audit events; supports `from`, `to`, `actor`, `role`, `action`, `target`, `limit`, and privacy mode |
 | `GET /api/sessions` | Server-side paginated session ledger |
@@ -416,6 +416,7 @@ If costs differ from a provider invoice:
 - `rbac.read_only: true` turns the process into an observer: POST/PUT-style write APIs are rejected, CLI write commands fail explicitly, automatic collectors and pricing sync do not run, and reports/exports/anomaly views do not append audit, budget, insight, or bundle records.
 - Policy rules can match `global`, `source`, `model`, `project`, `repo`, `git_branch`, `team`, `action`, `target`, and `role`.
 - Policy approval requests are local metadata records. They authorize only matching action/target retries and do not include prompt content.
+- Approval queue privacy mode redacts approval routing metadata and payloads across REST, CLI, and MCP. Approval vote audit rows store quorum/vote facts plus `note_present`, not the note text.
 - The optional provider gateway is disabled by default. It forwards prompt content only to the configured upstream in memory, reads API keys from environment variables, and stores usage metadata rather than message content.
 - Run commands are stored as metadata, but common command-line secret patterns such as `API_KEY=...`, `--token ...`, `--api-key=...`, and `Bearer ...` are best-effort redacted before persistence. Prefer environment variables or a secret manager instead of durable command arguments.
 - Privacy presets can hide paths, project names, branches, machine names, and session IDs.
