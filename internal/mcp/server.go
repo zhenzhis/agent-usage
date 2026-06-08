@@ -474,6 +474,19 @@ func tools() []map[string]interface{} {
 			"limit":      integerSchema(),
 			"privacy":    booleanSchema(),
 		}),
+		tool("ledger.approvals", "List local policy approval requests for approval bots and local control-plane agents.", map[string]interface{}{
+			"status":  enumSchema([]string{"pending", "approved", "rejected", "all"}),
+			"limit":   integerSchema(),
+			"privacy": booleanSchema(),
+		}),
+		tool("ledger.resolve_approval", "Cast an approve or reject vote for a local policy approval request.", map[string]interface{}{
+			"request_id":         requiredStringSchema(),
+			"status":             enumSchema([]string{"approved", "rejected"}),
+			"voter":              stringSchema(),
+			"role":               stringSchema(),
+			"note":               stringSchema(),
+			"required_approvals": integerSchema(),
+		}),
 		tool("ledger.audit_log", "Return local operational audit log events with optional privacy redaction.", map[string]interface{}{
 			"from":    stringSchema(),
 			"to":      stringSchema(),
@@ -545,6 +558,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://workloads/recent", "Recent Workloads", "Recent workload summaries and terminal-state snapshots from the local ledger; supports from/to/source/model/project/status/q/limit/offset/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://policies/status", "Policy Status", "Local policy configuration summary without prompt or secret content.", "application/json"),
+		resource("agent-ledger://policy/approvals", "Policy Approvals", "Local policy approval queue; supports status, limit, and privacy query parameters.", "application/json"),
 		resource("agent-ledger://policy/approval-routes", "Policy Approval Routes", "Pending local approval route rollups; supports due_within, limit, and privacy query parameters.", "application/json"),
 	}
 }
@@ -644,6 +658,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolPolicyAudit(args)
 	case "ledger.approval_routes":
 		return s.toolApprovalRoutes(args)
+	case "ledger.approvals":
+		return s.toolApprovals(args)
+	case "ledger.resolve_approval":
+		return s.toolResolveApproval(args)
 	case "ledger.audit_log":
 		return s.toolAuditLog(args)
 	case "ledger.explain_cost":
@@ -666,7 +684,8 @@ func mcpToolRequiresWrite(name string) bool {
 		"ledger.record_artifact",
 		"ledger.record_evaluation",
 		"ledger.record_context",
-		"ledger.record_event":
+		"ledger.record_event",
+		"ledger.resolve_approval":
 		return true
 	default:
 		return false
@@ -721,6 +740,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 			"require_privacy_export": s.cfg.Policies.RequirePrivacyExport,
 			"rules":                  s.cfg.Policies.Rules,
 		}, nil
+	case "agent-ledger://policy/approvals":
+		return s.resourceApprovals(values)
 	case "agent-ledger://policy/approval-routes":
 		return s.resourceApprovalRoutes(values)
 	default:
@@ -824,6 +845,18 @@ func (s *Server) resourceApprovalRoutes(values url.Values) (*storage.ApprovalRou
 		redactMCPApprovalRoutes(report)
 	}
 	return report, nil
+}
+
+func (s *Server) resourceApprovals(values url.Values) (map[string]interface{}, error) {
+	status := firstNonEmpty(values.Get("status"), "pending")
+	rows, err := s.db.ListApprovalRequests(status, boundedQueryInt(values, "limit", 200, 1, 1000))
+	if err != nil {
+		return nil, err
+	}
+	if queryBool(values, "privacy") {
+		redactMCPApprovalRequests(rows)
+	}
+	return map[string]interface{}{"status": status, "rows": rows}, nil
 }
 
 func boundedQueryInt(values url.Values, key string, fallback, min, max int) int {
@@ -1526,6 +1559,54 @@ func (s *Server) toolApprovalRoutes(args json.RawMessage) (interface{}, error) {
 	return report, nil
 }
 
+func (s *Server) toolApprovals(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		Status  string `json:"status"`
+		Limit   int    `json:"limit"`
+		Privacy bool   `json:"privacy"`
+	}
+	_ = json.Unmarshal(args, &in)
+	status := firstNonEmpty(in.Status, "pending")
+	rows, err := s.db.ListApprovalRequests(status, in.Limit)
+	if err != nil {
+		return nil, err
+	}
+	if in.Privacy {
+		redactMCPApprovalRequests(rows)
+	}
+	return map[string]interface{}{"status": status, "rows": rows}, nil
+}
+
+func (s *Server) toolResolveApproval(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		RequestID         string `json:"request_id"`
+		Status            string `json:"status"`
+		Voter             string `json:"voter"`
+		Role              string `json:"role"`
+		Note              string `json:"note"`
+		RequiredApprovals int    `json:"required_approvals"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	status := firstNonEmpty(in.Status, "approved")
+	role := firstNonEmpty(in.Role, "mcp")
+	voter := firstNonEmpty(in.Voter, role)
+	result, err := s.db.CastApprovalVote(in.RequestID, status, voter, role, in.Note, in.RequiredApprovals)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.db.AppendAuditLog("local", role, "policy.approval."+result.Status, in.RequestID, map[string]string{
+		"voter":              voter,
+		"required_approvals": fmt.Sprint(result.RequiredApprovals),
+		"approval_votes":     fmt.Sprint(result.ApprovalVotes),
+		"rejection_votes":    fmt.Sprint(result.RejectionVotes),
+		"decided":            fmt.Sprint(result.Decided),
+		"note_present":       fmt.Sprint(strings.TrimSpace(in.Note) != ""),
+	})
+	return map[string]interface{}{"ok": true, "result": result}, nil
+}
+
 func (s *Server) toolAuditLog(args json.RawMessage) (interface{}, error) {
 	var in struct {
 		From    string `json:"from"`
@@ -1582,6 +1663,32 @@ func redactMCPApprovalRoutes(report *storage.ApprovalRouteSummary) {
 			report.Routes[i].Projects[j] = "<redacted>"
 		}
 	}
+}
+
+func redactMCPApprovalRequests(rows []storage.ApprovalRequest) {
+	for i := range rows {
+		rows[i].RequestID = mcpHashValue(rows[i].RequestID)
+		rows[i].PolicyDecisionID = mcpHashValue(rows[i].PolicyDecisionID)
+		rows[i].WorkloadID = mcpHashValue(rows[i].WorkloadID)
+		rows[i].RunID = mcpHashValue(rows[i].RunID)
+		rows[i].Project = "<redacted>"
+		rows[i].Target = "<redacted>"
+		rows[i].ApproverHint = "<redacted>"
+		rows[i].EscalationTarget = "<redacted>"
+		rows[i].Reason = "<redacted>"
+		rows[i].RequestPayload = "<redacted>"
+		rows[i].DecidedBy = "<redacted>"
+		rows[i].DecisionNote = "<redacted>"
+	}
+}
+
+func mcpHashValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(value))
+	return "sha256:" + hex.EncodeToString(sum[:])[:16]
 }
 
 func (s *Server) toolExplainCost(args json.RawMessage) (interface{}, error) {

@@ -31,7 +31,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 2", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.approvals") || !hasTool(tools, "ledger.resolve_approval") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	payload := toolTextPayload(t, out[1])
@@ -68,7 +68,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("resource subscriptions should be advertised: %#v", resourceCaps)
 	}
 	resources := out[1]["result"].(map[string]interface{})["resources"].([]interface{})
-	if !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
+	if !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
 		t.Fatalf("expected core resources, got %#v", resources)
 	}
 	resourceText := resourceTextPayload(t, out[2])
@@ -308,16 +308,24 @@ func TestMCPReadOnlyAllowsReadToolsAndRejectsWriteTools(t *testing.T) {
 
 	readResponses := serveLines(t, srv,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.current_budget","arguments":{"window":"day"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ledger.approvals","arguments":{"status":"pending","privacy":true}}}`,
 	)
 	if toolTextPayload(t, readResponses[0])["method"] != "local-estimate" {
 		t.Fatalf("read-only read tool returned unexpected payload: %#v", readResponses[0])
 	}
+	if toolTextPayload(t, readResponses[1])["status"] != "pending" {
+		t.Fatalf("read-only approvals tool returned unexpected payload: %#v", readResponses[1])
+	}
 
 	writeResponses := serveRawLines(t, srv,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"blocked","source":"codex"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"blocked","source":"codex"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.resolve_approval","arguments":{"request_id":"apr_x","status":"approved"}}}`,
 	)
 	if writeResponses[0]["error"] == nil {
 		t.Fatalf("expected read-only write tool error: %#v", writeResponses[0])
+	}
+	if writeResponses[1]["error"] == nil {
+		t.Fatalf("expected read-only approval resolve error: %#v", writeResponses[1])
 	}
 }
 
@@ -540,6 +548,78 @@ func TestMCPApprovalRoutesToolAndResource(t *testing.T) {
 		if strings.Contains(resourceText, forbidden) {
 			t.Fatalf("resource approval routes leaked %q: %s", forbidden, resourceText)
 		}
+	}
+}
+
+func TestMCPApprovalsResolveQuorumAndPrivacy(t *testing.T) {
+	db := openTestDB(t)
+	requestID, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		RequestID:         "apr-private-mcp",
+		WorkloadID:        "wl-private-mcp",
+		RunID:             "run-private-mcp",
+		Source:            "gateway",
+		Model:             "gpt-5.5",
+		Project:           "private-project",
+		Action:            "model.call",
+		Target:            "openai-chat-completions",
+		Status:            "pending",
+		RequiredApprovals: 2,
+		ApproverHint:      "desk-lead",
+		EscalationTarget:  "research-head",
+		Reason:            "private approval reason",
+		RequestPayload:    `{"prompt":"do-not-send"}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+
+	listToolLine := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.approvals","arguments":{"status":"pending","limit":10,"privacy":true}}}`
+	listResourceLine := `{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"agent-ledger://policy/approvals?status=pending&limit=10&privacy=1"}}`
+	list := serveLines(t, srv,
+		listToolLine,
+		listResourceLine,
+	)
+	listPayload := toolTextPayload(t, list[0])
+	rows := listPayload["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("expected one approval row: %#v", listPayload)
+	}
+	rawList, _ := json.Marshal(listPayload)
+	resourceText := resourceTextPayload(t, list[1])
+	for _, forbidden := range []string{"apr-private-mcp", "wl-private-mcp", "run-private-mcp", "private-project", "desk-lead", "research-head", "do-not-send"} {
+		if strings.Contains(string(rawList), forbidden) || strings.Contains(resourceText, forbidden) {
+			t.Fatalf("approval listing leaked %q: tool=%s resource=%s", forbidden, string(rawList), resourceText)
+		}
+	}
+
+	firstVoteLine := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ledger.resolve_approval","arguments":{"request_id":"` + requestID + `","status":"approved","voter":"alice","role":"admin","required_approvals":2,"note":"first approval"}}}`
+	firstVote := serveLines(t, srv, firstVoteLine)[0]
+	first := toolTextPayload(t, firstVote)["result"].(map[string]interface{})
+	if first["status"] != "pending" || first["decided"] != false || first["approval_votes"] != float64(1) {
+		t.Fatalf("first vote should not decide quorum: %#v", first)
+	}
+	secondVoteLine := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.resolve_approval","arguments":{"request_id":"` + requestID + `","status":"approved","voter":"bob","role":"admin","required_approvals":2,"note":"second approval"}}}`
+	secondVote := serveLines(t, srv, secondVoteLine)[0]
+	second := toolTextPayload(t, secondVote)["result"].(map[string]interface{})
+	if second["status"] != "approved" || second["decided"] != true || second["approval_votes"] != float64(2) {
+		t.Fatalf("second vote should approve quorum: %#v", second)
+	}
+	allowed, err := db.ApprovalAllowsOperation(storage.ApprovalOperation{RequestID: requestID, Action: "model.call", Target: "openai-chat-completions", Source: "gateway", Model: "gpt-5.5", Project: "private-project"})
+	if err != nil {
+		t.Fatalf("ApprovalAllowsOperation: %v", err)
+	}
+	if !allowed {
+		t.Fatal("approved MCP quorum should authorize matching operation")
+	}
+	audit, err := db.QueryAuditLog(storage.AuditLogFilter{Action: "policy.approval", Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAuditLog: %v", err)
+	}
+	rawAudit, _ := json.Marshal(audit)
+	if !strings.Contains(string(rawAudit), "policy.approval.approved") || strings.Contains(string(rawAudit), "first approval") || strings.Contains(string(rawAudit), "second approval") {
+		t.Fatalf("approval audit missing action or leaked note text: %s", string(rawAudit))
 	}
 }
 

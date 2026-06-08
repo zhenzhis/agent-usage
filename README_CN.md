@@ -318,7 +318,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 ## MCP 工具接口
 
-`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、关联 workload 依赖、在已有 workload 下启动 run、写入 run heartbeat、查询 run liveness 与 terminal-state 快照、读取 cursor-stable workload event feed、记录 tool-call 元数据、context ref、hash 后的 artifact 与质量/evaluation 信号、查询本地策略建议和审批路由聚合、查询预算状态、解释成本、查找相似 workload。Resources 提供 metadata-only 的 schema、integration、budget、workload、feed、terminal-state、policy 上下文；resource URI 支持查询参数，例如 `agent-ledger://workloads/feed?severity=warning&source=codex&project=agent-ledger&limit=50` 与 `agent-ledger://policy/approval-routes?due_within=24h&privacy=1`。`resources/subscribe` 会在本地观察精确订阅的 URI，并在该 scope 变化时用 `notifications/resources/updated` 返回最新 cursor/hash。Prompts 提供可复用的 workload、成本复盘、证据包模板。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
+`agent-ledger mcp` 会启动本地 stdio JSON-RPC 工具服务，供 agent 框架或 wrapper 接入。当前实现保持本地优先和隐私优先：工具可以创建或关闭 workload、关联 workload 依赖、在已有 workload 下启动 run、写入 run heartbeat、查询 run liveness 与 terminal-state 快照、读取 cursor-stable workload event feed、记录 tool-call 元数据、context ref、hash 后的 artifact 与质量/evaluation 信号、查询本地策略建议、列出并投票处理本地审批请求、读取审批路由聚合、查询预算状态、解释成本、查找相似 workload。Resources 提供 metadata-only 的 schema、integration、budget、workload、feed、terminal-state、policy 上下文；resource URI 支持查询参数，例如 `agent-ledger://workloads/feed?severity=warning&source=codex&project=agent-ledger&limit=50`、`agent-ledger://policy/approvals?status=pending&privacy=1` 与 `agent-ledger://policy/approval-routes?due_within=24h&privacy=1`。`resources/subscribe` 会在本地观察精确订阅的 URI，并在该 scope 变化时用 `notifications/resources/updated` 返回最新 cursor/hash。Prompts 提供可复用的 workload、成本复盘、证据包模板。它不会读取 prompt 内容，也不会主动把数据发送到远程 MCP host。MCP、REST 与 CLI 的 policy evaluation 共用同一个本地 evaluator，确保不同接入方式得到一致的 advisory 决策。
 
 `GET /api/integrations`、`GET /.well-known/agent-ledger.json`、`agent-ledger integrations` 和 MCP `ledger.integrations` 会暴露运行时能力字段：`writes_local_state`、`available_in_read_only`、`runtime_status`。Discovery manifest 还会以一等字段暴露 `runtime_status_uri`、`canonical_schema_uri`、`canonical_schema_hash`、`event_examples_uri`、`adapter_spec_uri`、`adapter_conformance_uri`，便于轻量 wrapper 自动接入。`GET /api/integrations/adapter-spec`、`agent-ledger adapter spec`、MCP `ledger.adapter_contract` 和 `agent-ledger://integrations/adapter-contract` 会暴露同一份机器可读 adapter 契约。`GET /api/runtime/status` 与 `agent-ledger runtime` 提供同一个进程级 observer/control-plane 状态，适合探针使用。Agent router 和 wrapper 应读取这些字段，而不是硬编码 endpoint 假设，尤其是在启用 `rbac.read_only` 时。
 
@@ -348,6 +348,8 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `ledger.get_policy`
 - `ledger.policy_audit`
 - `ledger.approval_routes`
+- `ledger.approvals`
+- `ledger.resolve_approval`
 - `ledger.audit_log`
 - `ledger.explain_cost`
 - `ledger.find_similar_workloads`
@@ -362,6 +364,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 - `agent-ledger://workloads/recent`，包含 workload summary rows 与派生 terminal-state snapshots，支持 `from`、`to`、`source`、`model`、`project`、`status`、`q`、`limit`、`offset`、`stale_after`
 - `agent-ledger://workloads/feed`，包含供本地 monitor 和 router 使用的 cursor-stable workload state events，支持 `from`、`to`、`source`、`model`、`project`、`phase`、`severity`、`limit`、`stale_after`
 - `agent-ledger://policies/status`
+- `agent-ledger://policy/approvals`，包含本地审批队列行，支持 `status`、`limit`、`privacy`
 - `agent-ledger://policy/approval-routes`，包含 pending 审批路由聚合，支持 `due_within`、`limit`、`privacy`
 
 当前 prompts：
@@ -416,7 +419,7 @@ agent-ledger doctor --format markdown
 - 可选 provider gateway 默认关闭。它只在内存中把 prompt content 转发给配置的上游，只从环境变量读取 API key，并只保存 usage 元数据而不是消息内容。
 - Run command 会作为 metadata 保存，但常见命令行密钥模式，例如 `API_KEY=...`、`--token ...`、`--api-key=...`、`Bearer ...`，会在持久化前做 best-effort 脱敏。敏感值仍建议使用环境变量或密钥管理器，不要放进长期命令参数。
 - 隐私 preset 可隐藏路径、项目、分支、机器名和 session id。
-- Webhook 默认关闭，只发送脱敏 workload-event 与 pending approval 摘要。
+- Webhook 默认关闭，只发送脱敏 workload-event、pending approval 与 approval-route 摘要。
 - Offline bundle 是本地 JSON 导出。设置 `AGENT_LEDGER_BUNDLE_KEY` 并使用 `signed=1` / `--signed` 可加入 HMAC-SHA256 签名；导入时使用 `verify=1` / `--verify` 可强制验证签名。
 
 ## 开发验证
