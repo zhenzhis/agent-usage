@@ -282,6 +282,7 @@ func tools() []map[string]interface{} {
 		}),
 		tool("ledger.discovery", "Return the local Agent Ledger discovery manifest with runtime, schema, adapter, and conformance entrypoints.", map[string]interface{}{}),
 		tool("ledger.contracts", "Return the Agent Ledger contract bundle with URI, hash, ETag, CLI, and MCP entrypoint metadata.", map[string]interface{}{}),
+		tool("ledger.openapi", "Return the metadata-only OpenAPI 3.1 contract for stable Agent Ledger control-plane endpoints.", map[string]interface{}{}),
 		tool("ledger.runtime_status", "Return process-level runtime mode, read-only state, background task state, and write-operation status.", map[string]interface{}{}),
 		tool("ledger.start_workload", "Create a workload and optionally attach an initial agent run.", map[string]interface{}{
 			"goal":       requiredStringSchema(),
@@ -571,6 +572,7 @@ func resources() []map[string]interface{} {
 	return []map[string]interface{}{
 		resource("agent-ledger://discovery/manifest", "Discovery Manifest", "Privacy-safe local discovery contract for wrappers, routers, and agent frameworks.", "application/json"),
 		resource("agent-ledger://contracts/bundle", "Contract Bundle", "Privacy-safe index of stable Agent Ledger contracts, hashes, cache semantics, CLI commands, and MCP entrypoints.", "application/json"),
+		resource("agent-ledger://contracts/openapi", "Control Plane OpenAPI", "Metadata-only OpenAPI 3.1 document for stable Agent Ledger REST control-plane endpoints.", "application/json"),
 		resource("agent-ledger://schema/canonical-events", "Canonical Event Schema", "Metadata-only event contract for workload, run, model-call, tool-call, artifact, evaluation, and policy events.", "application/json"),
 		resource("agent-ledger://schema/canonical-event-examples", "Canonical Event Examples", "Privacy-safe templates for all supported canonical event types.", "application/json"),
 		resource("agent-ledger://integrations/catalog", "Integration Capability Catalog", "Privacy-safe catalog of implemented, experimental, and planned integration surfaces.", "application/json"),
@@ -630,6 +632,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return integrations.Discovery(integrations.OptionsFromConfig(s.cfg)), nil
 	case "ledger.contracts":
 		return integrations.ContractBundleFor(integrations.OptionsFromConfig(s.cfg), s.runtimeStatus()), nil
+	case "ledger.openapi":
+		return integrations.OpenAPISpecFor(integrations.OptionsFromConfig(s.cfg), s.runtimeStatus()), nil
 	case "ledger.runtime_status":
 		return s.runtimeStatus(), nil
 	case "ledger.start_workload":
@@ -811,6 +815,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		return integrations.Discovery(integrations.OptionsFromConfig(s.cfg)), nil
 	case "agent-ledger://contracts/bundle":
 		return integrations.ContractBundleFor(integrations.OptionsFromConfig(s.cfg), s.runtimeStatus()), nil
+	case "agent-ledger://contracts/openapi":
+		return integrations.OpenAPISpecFor(integrations.OptionsFromConfig(s.cfg), s.runtimeStatus()), nil
 	case "agent-ledger://schema/canonical-events":
 		return storage.CanonicalEventSchema(), nil
 	case "agent-ledger://schema/canonical-event-examples":

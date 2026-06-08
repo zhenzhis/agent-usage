@@ -92,6 +92,34 @@ func TestContractsCLIOutputsBundle(t *testing.T) {
 	}
 }
 
+func TestOpenAPICLIOutputsControlPlaneSpec(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+	cfg := config.DefaultConfig()
+	cfg.RBAC.ReadOnly = true
+
+	out, err := captureStdout(t, func() error {
+		return runCLI([]string{"openapi"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI openapi: %v", err)
+	}
+	var spec map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &spec); err != nil {
+		t.Fatalf("decode openapi output: %v\n%s", err, out)
+	}
+	if spec["openapi"] != "3.1.0" || spec["x-agent-ledger"] == nil {
+		t.Fatalf("unexpected openapi output: %+v", spec)
+	}
+	paths := spec["paths"].(map[string]interface{})
+	if paths["/api/openapi.json"] == nil || paths["/api/events/validate"] == nil {
+		t.Fatalf("openapi output missing expected paths: %+v", paths)
+	}
+}
+
 func TestPolicyRoutesCLIOutputsRedactedSummary(t *testing.T) {
 	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

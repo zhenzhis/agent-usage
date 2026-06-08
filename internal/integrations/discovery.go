@@ -39,6 +39,7 @@ type DiscoveryManifest struct {
 	CapabilityCatalogURI  string              `json:"capability_catalog_uri"`
 	CapabilityCatalogHash string              `json:"capability_catalog_hash"`
 	ContractBundleURI     string              `json:"contract_bundle_uri"`
+	OpenAPIURI            string              `json:"openapi_uri"`
 	RuntimeStatusURI      string              `json:"runtime_status_uri"`
 	CanonicalSchemaURI    string              `json:"canonical_schema_uri"`
 	CanonicalSchemaHash   string              `json:"canonical_schema_hash"`
@@ -96,6 +97,7 @@ func Discovery(opts Options) DiscoveryManifest {
 		CapabilityCatalogURI:  "/api/integrations",
 		CapabilityCatalogHash: CatalogFingerprintFrom(catalog),
 		ContractBundleURI:     "/api/contracts",
+		OpenAPIURI:            "/api/openapi.json",
 		RuntimeStatusURI:      "/api/runtime/status",
 		CanonicalSchemaURI:    "/api/event-schema",
 		CanonicalSchemaHash:   storage.CanonicalEventSchemaFingerprint(),

@@ -65,6 +65,7 @@ CLI:
 ./agent-ledger adapter conformance --kind provider --strict --file fixture.json
 ./agent-ledger discovery
 ./agent-ledger contracts
+./agent-ledger openapi
 ./agent-ledger integrations
 ./agent-ledger runtime
 ./agent-ledger notify webhook --dry-run --severity warning --approval-due-within 24h
@@ -245,6 +246,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /.well-known/agent-ledger.json` | Privacy-safe local discovery manifest for agents, wrappers, and routers |
 | `GET /api/discovery` | Same discovery manifest under the API namespace |
 | `GET /api/contracts` | One-shot contract bundle with stable document URIs, hashes, cache semantics, CLI commands, and MCP entrypoints |
+| `GET /api/openapi.json` | Metadata-only OpenAPI 3.1 control-plane contract for wrapper, router, and CI integration |
 | `GET /api/runtime/status` | Runtime mode, read-only state, background/write status, and compatibility hashes |
 | `GET /api/dashboard` | Consistent KPI, token, cost, and model bundle for the web dashboard |
 | `GET /api/stats` | Summary stats |
@@ -324,13 +326,14 @@ When a policy returns `require_approval`, Agent Ledger records a local pending a
 
 MCP `tools/list` includes standard-style `annotations.readOnlyHint` plus `_meta.agent_ledger` fields: `writes_local_state`, `write_mode` (`none`, `always`, or `conditional`), `available_in_read_only`, and `read_only_behavior`. Routers and multi-agent frameworks should use these fields before calling tools in observer deployments.
 
-`GET /api/integrations`, `GET /.well-known/agent-ledger.json`, `agent-ledger integrations`, MCP `ledger.discovery`, MCP `ledger.integrations`, and `agent-ledger://discovery/manifest` expose runtime capability fields: `writes_local_state`, `available_in_read_only`, and `runtime_status`. The discovery manifest also exposes first-class `contract_bundle_uri`, `capability_catalog_hash`, `runtime_status_uri`, `canonical_schema_uri`, `canonical_schema_hash`, `event_examples_uri`, `adapter_spec_uri`, `adapter_spec_hash`, and `adapter_conformance_uri` fields for lightweight wrappers. `GET /api/contracts`, `agent-ledger contracts`, MCP `ledger.contracts`, and `agent-ledger://contracts/bundle` expose a one-shot contract bundle with document URIs, hashes, cache semantics, CLI commands, and MCP entrypoints. `GET /api/integrations/adapter-spec`, `agent-ledger adapter spec`, MCP `ledger.adapter_contract`, and `agent-ledger://integrations/adapter-contract` expose the same machine-readable adapter contract. `GET /api/runtime/status` and `agent-ledger runtime` provide the same process-level observer/control-plane status for probes. The REST discovery, contract bundle, catalog, runtime status, adapter spec, and event schema endpoints emit strong `ETag` headers and honor `If-None-Match` with `304 Not Modified`, so wrappers can revalidate contracts without reparsing unchanged JSON. Agent routers and wrappers should use these fields instead of hardcoding endpoint assumptions, especially when `rbac.read_only` is enabled.
+`GET /api/integrations`, `GET /.well-known/agent-ledger.json`, `agent-ledger integrations`, MCP `ledger.discovery`, MCP `ledger.integrations`, and `agent-ledger://discovery/manifest` expose runtime capability fields: `writes_local_state`, `available_in_read_only`, and `runtime_status`. The discovery manifest also exposes first-class `contract_bundle_uri`, `openapi_uri`, `capability_catalog_hash`, `runtime_status_uri`, `canonical_schema_uri`, `canonical_schema_hash`, `event_examples_uri`, `adapter_spec_uri`, `adapter_spec_hash`, and `adapter_conformance_uri` fields for lightweight wrappers. `GET /api/contracts`, `agent-ledger contracts`, MCP `ledger.contracts`, and `agent-ledger://contracts/bundle` expose a one-shot contract bundle with document URIs, hashes, cache semantics, CLI commands, and MCP entrypoints. `GET /api/openapi.json`, `agent-ledger openapi`, MCP `ledger.openapi`, and `agent-ledger://contracts/openapi` expose a metadata-only OpenAPI 3.1 document for stable REST control-plane endpoints. `GET /api/integrations/adapter-spec`, `agent-ledger adapter spec`, MCP `ledger.adapter_contract`, and `agent-ledger://integrations/adapter-contract` expose the same machine-readable adapter contract. `GET /api/runtime/status` and `agent-ledger runtime` provide the same process-level observer/control-plane status for probes. The REST discovery, contract bundle, OpenAPI, catalog, runtime status, adapter spec, and event schema endpoints emit strong `ETag` headers and honor `If-None-Match` with `304 Not Modified`, so wrappers can revalidate contracts without reparsing unchanged JSON. Agent routers and wrappers should use these fields instead of hardcoding endpoint assumptions, especially when `rbac.read_only` is enabled.
 
 Current tools:
 
 - `ledger.current_budget`
 - `ledger.discovery`
 - `ledger.contracts`
+- `ledger.openapi`
 - `ledger.runtime_status`
 - `ledger.start_workload`
 - `ledger.start_run`
@@ -365,6 +368,7 @@ Current resources:
 
 - `agent-ledger://discovery/manifest`
 - `agent-ledger://contracts/bundle`
+- `agent-ledger://contracts/openapi`
 - `agent-ledger://schema/canonical-events`
 - `agent-ledger://schema/canonical-event-examples`
 - `agent-ledger://integrations/catalog`
@@ -455,7 +459,7 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, contract bundle index, runtime status probe, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes, approval routing/escalation metadata, approval route summaries and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, contract bundle index, OpenAPI control-plane contract, runtime status probe, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes, approval routing/escalation metadata, approval route summaries and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
 
 Planned integrations: OTLP gRPC receiver conformance, provider-native gateway adapters, Postgres team mode, OIDC/SSO, native MCP subscription transport when host clients support it, and external approval notification adapters.
 

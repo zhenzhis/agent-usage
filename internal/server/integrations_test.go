@@ -26,6 +26,7 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	}
 	if manifest.Contract != "agent-ledger.discovery" || manifest.WellKnownURI != "/.well-known/agent-ledger.json" ||
 		manifest.ContractBundleURI != "/api/contracts" ||
+		manifest.OpenAPIURI != "/api/openapi.json" ||
 		manifest.CanonicalSchemaURI != "/api/event-schema" || manifest.EventExamplesURI != "/api/event-examples" ||
 		manifest.AdapterSpecURI != "/api/integrations/adapter-spec" ||
 		manifest.AdapterConformanceURI != "/api/integrations/conformance" || manifest.RuntimeStatusURI != "/api/runtime/status" ||
@@ -60,7 +61,7 @@ func TestContractsEndpoint(t *testing.T) {
 	if bundle.Contract != "agent-ledger.contract-bundle" || bundle.BundleHash == "" || !strings.HasPrefix(bundle.BundleHash, "sha256:") {
 		t.Fatalf("unexpected contract bundle: %+v", bundle)
 	}
-	if !contractBundleHasDocument(bundle, "discovery") || !contractBundleHasDocument(bundle, "runtime-status") ||
+	if !contractBundleHasDocument(bundle, "discovery") || !contractBundleHasDocument(bundle, "openapi") || !contractBundleHasDocument(bundle, "runtime-status") ||
 		!contractBundleHasDocument(bundle, "canonical-event-schema") || !contractBundleHasDocument(bundle, "adapter-contract") {
 		t.Fatalf("contract bundle missing core documents: %+v", bundle.Documents)
 	}
@@ -68,6 +69,33 @@ func TestContractsEndpoint(t *testing.T) {
 		t.Fatalf("contracts ETag=%q want %q", rr.Header().Get("ETag"), `"`+bundle.BundleHash+`"`)
 	}
 	assertETagRevalidates(t, srv.handleContracts, "http://127.0.0.1/api/contracts", rr.Header().Get("ETag"))
+}
+
+func TestOpenAPIEndpoint(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{RBAC: config.RBACConfig{Enabled: true}})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/openapi.json", nil)
+	rr := httptest.NewRecorder()
+	srv.handleOpenAPI(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("openapi status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var spec map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &spec); err != nil {
+		t.Fatalf("decode openapi: %v", err)
+	}
+	if spec["openapi"] != "3.1.0" {
+		t.Fatalf("unexpected openapi identity: %+v", spec)
+	}
+	meta := spec["x-agent-ledger"].(map[string]interface{})
+	if meta["contract"] != "agent-ledger.control-plane-openapi" || meta["prompt_content_stored"] != false || meta["usage_data_uploaded"] != false {
+		t.Fatalf("unexpected openapi metadata: %+v", meta)
+	}
+	paths := spec["paths"].(map[string]interface{})
+	if paths["/api/contracts"] == nil || paths["/api/openapi.json"] == nil || paths["/api/events/validate"] == nil || paths["/api/workload-events"] == nil {
+		t.Fatalf("openapi missing expected paths: %+v", paths)
+	}
+	assertETagRevalidates(t, srv.handleOpenAPI, "http://127.0.0.1/api/openapi.json", rr.Header().Get("ETag"))
 }
 
 func TestAdapterSpecEndpoint(t *testing.T) {
@@ -114,6 +142,7 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 	}{
 		{name: "integrations", url: "http://127.0.0.1/api/integrations", handler: srv.handleIntegrations},
 		{name: "contracts", url: "http://127.0.0.1/api/contracts", handler: srv.handleContracts},
+		{name: "openapi", url: "http://127.0.0.1/api/openapi.json", handler: srv.handleOpenAPI},
 		{name: "runtime-status", url: "http://127.0.0.1/api/runtime/status", handler: srv.handleRuntimeStatus},
 		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
 	}

@@ -32,6 +32,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "protocol.adapter_conformance", "implemented", true)
 	assertCapability(t, catalog, "protocol.discovery_manifest", "implemented", true)
 	assertCapability(t, catalog, "protocol.contract_bundle", "implemented", true)
+	assertCapability(t, catalog, "protocol.openapi", "implemented", true)
 	assertCapability(t, catalog, "protocol.runtime_status", "implemented", true)
 	assertCapability(t, catalog, "protocol.workload_event_feed", "implemented", true)
 	assertCapability(t, catalog, "protocol.opentelemetry_genai", "implemented", true)
@@ -45,12 +46,15 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapabilityCommand(t, catalog, "protocol.adapter_conformance", "agent-ledger adapter spec")
 	assertCapabilityCommand(t, catalog, "protocol.discovery_manifest", "agent-ledger discovery")
 	assertCapabilityCommand(t, catalog, "protocol.contract_bundle", "agent-ledger contracts")
+	assertCapabilityCommand(t, catalog, "protocol.openapi", "agent-ledger openapi")
 	assertCapabilityCommand(t, catalog, "protocol.runtime_status", "agent-ledger runtime")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.contracts")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.discovery")
+	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.openapi")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.runtime_status")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://contracts/bundle")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://discovery/manifest")
+	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://contracts/openapi")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://runtime/status")
 
 	cfg.Integrations.OTLPReceiver.Enabled = true
@@ -98,6 +102,7 @@ func TestRegistryAnnotatesReadOnlyRuntimeCapabilities(t *testing.T) {
 	assertRuntimeCapability(t, catalog, "protocol.adapter_conformance", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.contract_bundle", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.discovery_manifest", true, false, true)
+	assertRuntimeCapability(t, catalog, "protocol.openapi", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.runtime_status", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.mcp_stdio", true, true, true)
 	assertRuntimeCapability(t, catalog, "protocol.offline_bundle", true, true, true)
@@ -120,6 +125,7 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 	}
 	if manifest.Auth == "" || manifest.MCPCommand != "agent-ledger mcp" || manifest.CapabilityCatalogURI != "/api/integrations" ||
 		manifest.ContractBundleURI != "/api/contracts" ||
+		manifest.OpenAPIURI != "/api/openapi.json" ||
 		manifest.RuntimeStatusURI != "/api/runtime/status" || manifest.CanonicalSchemaURI != "/api/event-schema" ||
 		manifest.EventExamplesURI != "/api/event-examples" || manifest.AdapterSpecURI != "/api/integrations/adapter-spec" ||
 		manifest.AdapterConformanceURI != "/api/integrations/conformance" {
@@ -134,7 +140,7 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 	if manifest.AdapterSpecHash == "" || !strings.HasPrefix(manifest.AdapterSpecHash, "sha256:") || manifest.AdapterSpecHash != AdapterContractFingerprint() {
 		t.Fatalf("discovery missing adapter contract hash: %#v", manifest)
 	}
-	if !hasDiscoveryProtocol(manifest, "protocol.discovery_manifest") || !hasDiscoveryProtocol(manifest, "protocol.contract_bundle") || !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
+	if !hasDiscoveryProtocol(manifest, "protocol.discovery_manifest") || !hasDiscoveryProtocol(manifest, "protocol.contract_bundle") || !hasDiscoveryProtocol(manifest, "protocol.openapi") || !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("discovery missing agent protocols: %#v", manifest.Protocols)
 	}
 	for _, protocol := range manifest.Protocols {
@@ -161,7 +167,7 @@ func TestContractBundleIndexesCoreContracts(t *testing.T) {
 	if bundle.Contract != "agent-ledger.contract-bundle" || bundle.Version != "v1" || !bundle.LocalFirst || bundle.BundleHash == "" || !strings.HasPrefix(bundle.BundleHash, "sha256:") {
 		t.Fatalf("unexpected contract bundle identity: %#v", bundle)
 	}
-	for _, id := range []string{"discovery", "contract-bundle", "capability-catalog", "runtime-status", "canonical-event-schema", "adapter-contract"} {
+	for _, id := range []string{"discovery", "contract-bundle", "openapi", "capability-catalog", "runtime-status", "canonical-event-schema", "adapter-contract"} {
 		if !contractBundleHasDocument(bundle, id) {
 			t.Fatalf("contract bundle missing %s: %#v", id, bundle.Documents)
 		}
@@ -175,6 +181,39 @@ func TestContractBundleIndexesCoreContracts(t *testing.T) {
 				t.Fatalf("raw path leaked in contract bundle document: %#v", doc)
 			}
 		}
+	}
+}
+
+func TestOpenAPISpecIndexesStableControlPlane(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.RBAC.ReadOnly = true
+	runtime := EnrichRuntimeStatus(&storage.RuntimeStatus{
+		Mode:             "observer",
+		ReadOnly:         true,
+		WriteOperations:  "disabled",
+		BackgroundTasks:  "disabled",
+		DisabledFeatures: []string{"background collectors"},
+		Message:          "test read-only runtime",
+	}, OptionsFromConfig(cfg))
+	spec := OpenAPISpecFor(OptionsFromConfig(cfg), runtime)
+	if spec["openapi"] != "3.1.0" || OpenAPIFingerprint(OptionsFromConfig(cfg), runtime) == "" {
+		t.Fatalf("unexpected OpenAPI identity: %#v", spec)
+	}
+	meta := spec["x-agent-ledger"].(map[string]interface{})
+	if meta["contract"] != "agent-ledger.control-plane-openapi" || meta["read_only"] != true ||
+		meta["prompt_content_stored"] != false || meta["usage_data_uploaded"] != false ||
+		meta["canonical_schema_hash"] == "" || meta["adapter_spec_hash"] == "" {
+		t.Fatalf("unexpected OpenAPI metadata: %#v", meta)
+	}
+	paths := spec["paths"].(map[string]interface{})
+	for _, path := range []string{"/api/contracts", "/api/openapi.json", "/api/event-schema", "/api/events/validate", "/api/integrations/conformance", "/api/workload-events"} {
+		if paths[path] == nil {
+			t.Fatalf("OpenAPI missing path %s: %#v", path, paths)
+		}
+	}
+	raw := hashJSONPayload(spec)
+	if !strings.HasPrefix(raw, "sha256:") {
+		t.Fatalf("OpenAPI hash missing: %q", raw)
 	}
 }
 

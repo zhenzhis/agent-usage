@@ -40,6 +40,15 @@ func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
 	writeJSONWithETag(w, r, bundle, bundle.BundleHash)
 }
 
+func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	spec := integrations.OpenAPISpecFor(s.integrationOptions(), s.runtimeStatus())
+	writeJSONWithETag(w, r, spec, integrations.OpenAPIFingerprint(s.integrationOptions(), s.runtimeStatus()))
+}
+
 func (s *Server) handleRuntimeStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

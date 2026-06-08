@@ -439,6 +439,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(integrations.Discovery(integrations.OptionsFromConfig(cfg)))
 	case "contracts":
 		return json.NewEncoder(os.Stdout).Encode(integrations.ContractBundleFor(integrations.OptionsFromConfig(cfg), server.RuntimeStatusFromConfig(cfg)))
+	case "openapi":
+		return json.NewEncoder(os.Stdout).Encode(integrations.OpenAPISpecFor(integrations.OptionsFromConfig(cfg), server.RuntimeStatusFromConfig(cfg)))
 	case "integrations":
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "runtime":
