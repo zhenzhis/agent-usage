@@ -71,6 +71,7 @@ CLI:
 ./agent-ledger integrations
 ./agent-ledger runtime
 ./agent-ledger config status --format markdown
+./agent-ledger readiness --format markdown
 ./agent-ledger notify webhook --dry-run --severity warning --approval-due-within 24h
 ./agent-ledger otel convert --file spans.json
 ./agent-ledger otel ingest --file spans.json
@@ -255,6 +256,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/openapi.json` | Metadata-only OpenAPI 3.1 control-plane contract for wrapper, router, and CI integration |
 | `GET /api/runtime/status` | Runtime mode, read-only state, background/write status, and compatibility hashes |
 | `GET /api/config/status` | Privacy-safe deployment configuration report with risk checks and remediation hints |
+| `GET /api/readiness` | Privacy-safe control-plane readiness report for probes, wrappers, routers, and CI |
 | `GET /api/dashboard` | Consistent KPI, token, cost, and model bundle for the web dashboard |
 | `GET /api/stats` | Summary stats |
 | `GET /api/workloads` | Server-side paginated workload ledger |
@@ -333,7 +335,7 @@ When a policy returns `require_approval`, Agent Ledger records a local pending a
 
 MCP `tools/list` includes standard-style `annotations.readOnlyHint` plus `_meta.agent_ledger` fields: `writes_local_state`, `write_mode` (`none`, `always`, or `conditional`), `available_in_read_only`, and `read_only_behavior`. Routers and multi-agent frameworks should use these fields before calling tools in observer deployments.
 
-`GET /api/integrations`, `GET /.well-known/agent-ledger.json`, `agent-ledger integrations`, MCP `ledger.discovery`, MCP `ledger.integrations`, and `agent-ledger://discovery/manifest` expose runtime capability fields: `writes_local_state`, `available_in_read_only`, and `runtime_status`. The discovery manifest also exposes first-class `contract_bundle_uri`, `openapi_uri`, `capability_catalog_hash`, `runtime_status_uri`, `canonical_schema_uri`, `canonical_schema_hash`, `event_examples_uri`, `adapter_spec_uri`, `adapter_spec_hash`, and `adapter_conformance_uri` fields for lightweight wrappers. `GET /api/contracts`, `agent-ledger contracts`, MCP `ledger.contracts`, and `agent-ledger://contracts/bundle` expose a one-shot contract bundle with document URIs, hashes, cache semantics, CLI commands, and MCP entrypoints. `GET /api/contracts/verify`, `agent-ledger contracts verify`, MCP `ledger.contracts_verify`, and `agent-ledger://contracts/verification` expose a machine-readable self-check report that validates discovery, bundle, OpenAPI, schema, adapter, runtime, read-only, and privacy invariants. `GET /api/openapi.json`, `agent-ledger openapi`, MCP `ledger.openapi`, and `agent-ledger://contracts/openapi` expose a metadata-only OpenAPI 3.1 document for stable REST control-plane endpoints. `GET /api/integrations/adapter-spec`, `agent-ledger adapter spec`, MCP `ledger.adapter_contract`, and `agent-ledger://integrations/adapter-contract` expose the same machine-readable adapter contract. `GET /api/runtime/status` and `agent-ledger runtime` provide the same process-level observer/control-plane status for probes. `GET /api/config/status`, `agent-ledger config status`, MCP `ledger.config_status`, and `agent-ledger://config/status` provide a privacy-safe deployment configuration report for wrappers, CI, and operator checks. The REST discovery, contract bundle, contract verification, OpenAPI, catalog, runtime status, config status, adapter spec, and event schema endpoints emit strong `ETag` headers and honor `If-None-Match` with `304 Not Modified`, so wrappers can revalidate contracts without reparsing unchanged JSON. Agent routers and wrappers should use these fields instead of hardcoding endpoint assumptions, especially when `rbac.read_only` is enabled.
+`GET /api/integrations`, `GET /.well-known/agent-ledger.json`, `agent-ledger integrations`, MCP `ledger.discovery`, MCP `ledger.integrations`, and `agent-ledger://discovery/manifest` expose runtime capability fields: `writes_local_state`, `available_in_read_only`, and `runtime_status`. The discovery manifest also exposes first-class `contract_bundle_uri`, `openapi_uri`, `capability_catalog_hash`, `runtime_status_uri`, `canonical_schema_uri`, `canonical_schema_hash`, `event_examples_uri`, `adapter_spec_uri`, `adapter_spec_hash`, and `adapter_conformance_uri` fields for lightweight wrappers. `GET /api/contracts`, `agent-ledger contracts`, MCP `ledger.contracts`, and `agent-ledger://contracts/bundle` expose a one-shot contract bundle with document URIs, hashes, cache semantics, CLI commands, and MCP entrypoints. `GET /api/contracts/verify`, `agent-ledger contracts verify`, MCP `ledger.contracts_verify`, and `agent-ledger://contracts/verification` expose a machine-readable self-check report that validates discovery, bundle, OpenAPI, schema, adapter, runtime, read-only, and privacy invariants. `GET /api/openapi.json`, `agent-ledger openapi`, MCP `ledger.openapi`, and `agent-ledger://contracts/openapi` expose a metadata-only OpenAPI 3.1 document for stable REST control-plane endpoints. `GET /api/integrations/adapter-spec`, `agent-ledger adapter spec`, MCP `ledger.adapter_contract`, and `agent-ledger://integrations/adapter-contract` expose the same machine-readable adapter contract. `GET /api/runtime/status` and `agent-ledger runtime` provide the same process-level observer/control-plane status for probes. `GET /api/config/status`, `agent-ledger config status`, MCP `ledger.config_status`, and `agent-ledger://config/status` provide a privacy-safe deployment configuration report for wrappers, CI, and operator checks. `GET /api/readiness`, `agent-ledger readiness`, MCP `ledger.readiness`, and `agent-ledger://readiness` provide a privacy-safe readiness report that summarizes database, config, runtime, contract, ingestion, and pricing evidence without leaking local data. The REST discovery, contract bundle, contract verification, OpenAPI, catalog, runtime status, config status, readiness, adapter spec, and event schema endpoints emit strong `ETag` headers and honor `If-None-Match` with `304 Not Modified`, so wrappers can revalidate contracts without reparsing unchanged JSON. Agent routers and wrappers should use these fields instead of hardcoding endpoint assumptions, especially when `rbac.read_only` is enabled.
 
 Current tools:
 
@@ -344,6 +346,7 @@ Current tools:
 - `ledger.openapi`
 - `ledger.runtime_status`
 - `ledger.config_status`
+- `ledger.readiness`
 - `ledger.start_workload`
 - `ledger.start_run`
 - `ledger.close_workload`
@@ -385,6 +388,7 @@ Current resources:
 - `agent-ledger://integrations/adapter-contract`
 - `agent-ledger://runtime/status`
 - `agent-ledger://config/status`
+- `agent-ledger://readiness`
 - `agent-ledger://budget/current` with optional `window`, `source`, `model`, and `project` query parameters
 - `agent-ledger://workloads/recent` with summary rows and derived terminal-state snapshots; supports `from`, `to`, `source`, `model`, `project`, `status`, `q`, `limit`, `offset`, and `stale_after`
 - `agent-ledger://workloads/feed` with cursor-stable workload state events for local monitors and routers; supports `from`, `to`, `source`, `model`, `project`, `phase`, `severity`, `limit`, and `stale_after`
@@ -435,6 +439,7 @@ If costs differ from a provider invoice:
 
 - Binds to `127.0.0.1` by default.
 - `agent-ledger config status`, `GET /api/config/status`, and MCP `ledger.config_status` are designed for deployment checks and never expose raw paths, auth tokens, API keys, webhook URLs, machine names, authors, prompts, responses, or session ids.
+- `agent-ledger readiness`, `GET /api/readiness`, MCP `ledger.readiness`, and `agent-ledger://readiness` are designed for control-plane probes and expose only status, counts, check identifiers, and remediation hints.
 - Reads local agent logs and databases; it does not upload usage data.
 - Pricing sync is the expected outbound request.
 - Manual operations are localhost-only by default.
@@ -471,7 +476,7 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, contract bundle index, OpenAPI control-plane contract, runtime status probe, privacy-safe config status probe, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes, approval routing/escalation metadata, approval route summaries and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection/config commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, contract bundle index, OpenAPI control-plane contract, runtime status probe, privacy-safe config status probe, control-plane readiness probe, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes, approval routing/escalation metadata, approval route summaries and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
 
 Planned integrations: OTLP gRPC receiver conformance, provider-native gateway adapters, Postgres team mode, OIDC/SSO, native MCP subscription transport when host clients support it, and external approval notification adapters.
 

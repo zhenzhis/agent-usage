@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/controlplane"
 	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	ledgerpolicy "github.com/zhenzhis/agent-ledger/internal/policy"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
@@ -286,6 +287,7 @@ func tools() []map[string]interface{} {
 		tool("ledger.openapi", "Return the metadata-only OpenAPI 3.1 contract for stable Agent Ledger control-plane endpoints.", map[string]interface{}{}),
 		tool("ledger.runtime_status", "Return process-level runtime mode, read-only state, background task state, and write-operation status.", map[string]interface{}{}),
 		tool("ledger.config_status", "Return privacy-safe deployment configuration status without paths, secrets, webhook URLs, prompt content, or session ids.", map[string]interface{}{}),
+		tool("ledger.readiness", "Return privacy-safe control-plane readiness for wrappers, routers, CI, and deployment checks.", map[string]interface{}{}),
 		tool("ledger.start_workload", "Create a workload and optionally attach an initial agent run.", map[string]interface{}{
 			"goal":       requiredStringSchema(),
 			"source":     stringSchema(),
@@ -582,6 +584,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://integrations/adapter-contract", "Adapter Contract", "Machine-readable contract for writing privacy-safe Agent Ledger adapters.", "application/json"),
 		resource("agent-ledger://runtime/status", "Runtime Status", "Process-level observer/control-plane mode, read-only state, background task state, and write-operation status.", "application/json"),
 		resource("agent-ledger://config/status", "Config Status", "Privacy-safe deployment configuration status with risk checks and remediation hints.", "application/json"),
+		resource("agent-ledger://readiness", "Readiness", "Privacy-safe control-plane readiness report for local deployment and wrapper checks.", "application/json"),
 		resource("agent-ledger://budget/current", "Current Budget Windows", "Local quota and budget estimate for 5h/day/week/month windows; supports window/source/model/project query parameters.", "application/json"),
 		resource("agent-ledger://workloads/recent", "Recent Workloads", "Recent workload summaries and terminal-state snapshots from the local ledger; supports from/to/source/model/project/status/q/limit/offset/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
@@ -644,6 +647,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.runtimeStatus(), nil
 	case "ledger.config_status":
 		return config.StatusReport(s.cfg), nil
+	case "ledger.readiness":
+		return s.readinessReport(), nil
 	case "ledger.start_workload":
 		return s.toolStartWorkload(args)
 	case "ledger.start_run":
@@ -795,6 +800,17 @@ func (s *Server) runtimeStatus() *storage.RuntimeStatus {
 	}, integrations.OptionsFromConfig(s.cfg))
 }
 
+func (s *Server) readinessReport() *controlplane.ReadinessReport {
+	runtime := s.runtimeStatus()
+	return controlplane.BuildReadinessReport(
+		s.db,
+		s.cfg,
+		runtime,
+		integrations.ContractVerificationReportFor(integrations.OptionsFromConfig(s.cfg), runtime),
+		s.now().UTC(),
+	)
+}
+
 func (s *Server) readResource(uri string) (interface{}, error) {
 	payload, err := s.resourcePayload(uri)
 	if err != nil {
@@ -843,6 +859,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		return s.runtimeStatus(), nil
 	case "agent-ledger://config/status":
 		return config.StatusReport(s.cfg), nil
+	case "agent-ledger://readiness":
+		return s.readinessReport(), nil
 	case "agent-ledger://budget/current":
 		return s.resourceBudget(values)
 	case "agent-ledger://workloads/recent":

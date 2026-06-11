@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/controlplane"
 	"github.com/zhenzhis/agent-ledger/internal/integrations"
 )
 
@@ -36,7 +37,7 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	if manifest.AdapterSpecHash == "" || manifest.AdapterSpecHash != integrations.AdapterContractFingerprint() {
 		t.Fatalf("unexpected adapter contract hash: %+v", manifest)
 	}
-	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.config_status") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
+	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.config_status") || !discoveryHasProtocol(manifest, "protocol.readiness") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("missing control-plane protocols: %+v", manifest.Protocols)
 	}
 	if manifest.PromptContentStored || manifest.UsageDataUploaded {
@@ -115,7 +116,7 @@ func TestOpenAPIEndpoint(t *testing.T) {
 		t.Fatalf("unexpected openapi metadata: %+v", meta)
 	}
 	paths := spec["paths"].(map[string]interface{})
-	if paths["/api/contracts"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/openapi.json"] == nil || paths["/api/config/status"] == nil || paths["/api/events/validate"] == nil || paths["/api/workload-events"] == nil {
+	if paths["/api/contracts"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/openapi.json"] == nil || paths["/api/config/status"] == nil || paths["/api/readiness"] == nil || paths["/api/events/validate"] == nil || paths["/api/workload-events"] == nil {
 		t.Fatalf("openapi missing expected paths: %+v", paths)
 	}
 	assertETagRevalidates(t, srv.handleOpenAPI, "http://127.0.0.1/api/openapi.json", rr.Header().Get("ETag"))
@@ -155,6 +156,39 @@ func TestConfigStatusEndpointIsPrivacySafe(t *testing.T) {
 		}
 	}
 	assertETagRevalidates(t, srv.handleConfigStatus, "http://127.0.0.1/api/config/status", rr.Header().Get("ETag"))
+}
+
+func TestReadinessEndpointIsPrivacySafe(t *testing.T) {
+	db := testServerDB(t)
+	cfg := config.DefaultConfig()
+	cfg.Server.AuthToken = "secret-auth-token"
+	cfg.Collectors.Codex.Paths = []string{"C:/Users/zhang/private/.codex/sessions"}
+	cfg.Storage.Path = "C:/Users/zhang/private/agent-ledger.db"
+	cfg.Webhooks.Enabled = true
+	cfg.Webhooks.URL = "https://hooks.example.test/secret-webhook"
+	cfg.Teams.MachineName = "private-machine"
+	srv := New(db, "", Options{Config: cfg})
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/readiness", nil)
+	rr := httptest.NewRecorder()
+	srv.handleReadiness(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("readiness status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var report controlplane.ReadinessReport
+	if err := json.Unmarshal(rr.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode readiness: %v", err)
+	}
+	if report.Contract != "agent-ledger.readiness" || report.PromptContentStored || report.UsageDataUploaded {
+		t.Fatalf("unexpected readiness: %+v", report)
+	}
+	body := rr.Body.String()
+	for _, forbidden := range []string{"secret-auth-token", "secret-webhook", "C:/Users/zhang/private", "private-machine"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("readiness leaked %q: %s", forbidden, body)
+		}
+	}
+	assertETagRevalidates(t, srv.handleReadiness, "http://127.0.0.1/api/readiness", rr.Header().Get("ETag"))
 }
 
 func TestAdapterSpecEndpoint(t *testing.T) {
@@ -205,6 +239,7 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 		{name: "openapi", url: "http://127.0.0.1/api/openapi.json", handler: srv.handleOpenAPI},
 		{name: "runtime-status", url: "http://127.0.0.1/api/runtime/status", handler: srv.handleRuntimeStatus},
 		{name: "config-status", url: "http://127.0.0.1/api/config/status", handler: srv.handleConfigStatus},
+		{name: "readiness", url: "http://127.0.0.1/api/readiness", handler: srv.handleReadiness},
 		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
 	}
 	for _, tc := range cases {

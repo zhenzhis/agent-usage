@@ -47,6 +47,7 @@ type SourceOption struct {
 
 // Options provides optional operational capabilities for the HTTP server.
 type Options struct {
+	Config       *config.Config
 	AuthToken    string
 	AdminToken   string
 	ViewerToken  string
@@ -112,6 +113,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/integrations/conformance", s.handleAdapterConformance)
 	mux.HandleFunc("/api/runtime/status", s.handleRuntimeStatus)
 	mux.HandleFunc("/api/config/status", s.handleConfigStatus)
+	mux.HandleFunc("/api/readiness", s.handleReadiness)
 	mux.HandleFunc("/api/event-schema", s.handleCanonicalEventSchema)
 	mux.HandleFunc("/api/event-examples", s.handleCanonicalEventExamples)
 	mux.HandleFunc("/api/events/validate", s.handleCanonicalEventValidate)

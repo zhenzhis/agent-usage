@@ -16,6 +16,7 @@ import (
 
 	"github.com/zhenzhis/agent-ledger/internal/collector"
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/controlplane"
 	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	"github.com/zhenzhis/agent-ledger/internal/mcp"
 	"github.com/zhenzhis/agent-ledger/internal/notifications"
@@ -200,6 +201,7 @@ func main() {
 	// Start web server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.BindAddress, cfg.Server.Port)
 	srv := server.New(db, addr, server.Options{
+		Config:       cfg,
 		AuthToken:    cfg.Server.AuthToken,
 		AdminToken:   cfg.Server.AdminToken,
 		ViewerToken:  cfg.Server.ViewerToken,
@@ -448,6 +450,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(server.RuntimeStatusFromConfig(cfg))
 	case "config":
 		return runConfigCLI(args[1:], cfg)
+	case "readiness":
+		return runReadinessCLI(args[1:], cfg, db)
 	case "otel":
 		return runOTelCLI(args[1:], db)
 	case "a2a":
@@ -471,6 +475,22 @@ func runConfigCLI(args []string, cfg *config.Config) error {
 	report := config.StatusReport(cfg)
 	if strings.EqualFold(cliValue(args[1:], "--format"), "markdown") {
 		_, err := os.Stdout.Write([]byte(config.FormatStatusMarkdown(report)))
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(report)
+}
+
+func runReadinessCLI(args []string, cfg *config.Config, db *storage.DB) error {
+	runtime := server.RuntimeStatusFromConfig(cfg)
+	report := controlplane.BuildReadinessReport(
+		db,
+		cfg,
+		runtime,
+		integrations.ContractVerificationReportFor(integrations.OptionsFromConfig(cfg), runtime),
+		time.Now().UTC(),
+	)
+	if strings.EqualFold(cliValue(args, "--format"), "markdown") {
+		_, err := os.Stdout.Write([]byte(controlplane.FormatReadinessMarkdown(report)))
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(report)

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/controlplane"
 	"github.com/zhenzhis/agent-ledger/internal/integrations"
 )
 
@@ -93,6 +95,15 @@ func (s *Server) handleConfigStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSONWithETag(w, r, status, etag)
 }
 
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	report := s.readinessReport()
+	writeJSONWithETag(w, r, report, controlplane.ReadinessFingerprint(report))
+}
+
 func (s *Server) handleAdapterSpec(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -161,6 +172,24 @@ func (s *Server) configStatus() *config.ConfigStatusReport {
 		report := *s.options.ConfigStatus
 		return &report
 	}
+	return config.StatusReport(s.statusConfig())
+}
+
+func (s *Server) readinessReport() *controlplane.ReadinessReport {
+	runtime := s.runtimeStatus()
+	return controlplane.BuildReadinessReport(
+		s.db,
+		s.statusConfig(),
+		runtime,
+		integrations.ContractVerificationReportFor(s.integrationOptions(), runtime),
+		time.Now().UTC(),
+	)
+}
+
+func (s *Server) statusConfig() *config.Config {
+	if s.options.Config != nil {
+		return s.options.Config
+	}
 	cfg := config.DefaultConfig()
 	cfg.Server.AuthToken = s.options.AuthToken
 	cfg.Server.AdminToken = s.options.AdminToken
@@ -177,7 +206,7 @@ func (s *Server) configStatus() *config.ConfigStatusReport {
 	cfg.Gateway = s.options.Gateway
 	cfg.Pricing = s.options.Pricing
 	cfg.Collectors = collectorsFromSourceOptions(s.options.Sources)
-	return config.StatusReport(cfg)
+	return cfg
 }
 
 func collectorsFromSourceOptions(sources []SourceOption) config.CollectorConfigs {
