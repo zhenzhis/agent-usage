@@ -285,6 +285,7 @@ func tools() []map[string]interface{} {
 		tool("ledger.contracts_verify", "Return the Agent Ledger control-plane contract self-check report for CI, wrappers, and routers.", map[string]interface{}{}),
 		tool("ledger.openapi", "Return the metadata-only OpenAPI 3.1 contract for stable Agent Ledger control-plane endpoints.", map[string]interface{}{}),
 		tool("ledger.runtime_status", "Return process-level runtime mode, read-only state, background task state, and write-operation status.", map[string]interface{}{}),
+		tool("ledger.config_status", "Return privacy-safe deployment configuration status without paths, secrets, webhook URLs, prompt content, or session ids.", map[string]interface{}{}),
 		tool("ledger.start_workload", "Create a workload and optionally attach an initial agent run.", map[string]interface{}{
 			"goal":       requiredStringSchema(),
 			"source":     stringSchema(),
@@ -580,6 +581,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://integrations/catalog", "Integration Capability Catalog", "Privacy-safe catalog of implemented, experimental, and planned integration surfaces.", "application/json"),
 		resource("agent-ledger://integrations/adapter-contract", "Adapter Contract", "Machine-readable contract for writing privacy-safe Agent Ledger adapters.", "application/json"),
 		resource("agent-ledger://runtime/status", "Runtime Status", "Process-level observer/control-plane mode, read-only state, background task state, and write-operation status.", "application/json"),
+		resource("agent-ledger://config/status", "Config Status", "Privacy-safe deployment configuration status with risk checks and remediation hints.", "application/json"),
 		resource("agent-ledger://budget/current", "Current Budget Windows", "Local quota and budget estimate for 5h/day/week/month windows; supports window/source/model/project query parameters.", "application/json"),
 		resource("agent-ledger://workloads/recent", "Recent Workloads", "Recent workload summaries and terminal-state snapshots from the local ledger; supports from/to/source/model/project/status/q/limit/offset/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
@@ -640,6 +642,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return integrations.OpenAPISpecFor(integrations.OptionsFromConfig(s.cfg), s.runtimeStatus()), nil
 	case "ledger.runtime_status":
 		return s.runtimeStatus(), nil
+	case "ledger.config_status":
+		return config.StatusReport(s.cfg), nil
 	case "ledger.start_workload":
 		return s.toolStartWorkload(args)
 	case "ledger.start_run":
@@ -837,6 +841,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		return integrations.AdapterContractSpec(), nil
 	case "agent-ledger://runtime/status":
 		return s.runtimeStatus(), nil
+	case "agent-ledger://config/status":
+		return config.StatusReport(s.cfg), nil
 	case "agent-ledger://budget/current":
 		return s.resourceBudget(values)
 	case "agent-ledger://workloads/recent":

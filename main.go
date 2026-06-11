@@ -214,6 +214,7 @@ func main() {
 		Integrations: cfg.Integrations,
 		Gateway:      cfg.Gateway,
 		Pricing:      cfg.Pricing,
+		ConfigStatus: config.StatusReport(cfg),
 		Sources:      sourceOptions,
 		Scan:         scanSource,
 		Recalc:       func() error { return recalcCostsMode(db, "zero") },
@@ -445,6 +446,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "runtime":
 		return json.NewEncoder(os.Stdout).Encode(server.RuntimeStatusFromConfig(cfg))
+	case "config":
+		return runConfigCLI(args[1:], cfg)
 	case "otel":
 		return runOTelCLI(args[1:], db)
 	case "a2a":
@@ -459,6 +462,18 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	return nil
+}
+
+func runConfigCLI(args []string, cfg *config.Config) error {
+	if len(args) == 0 || args[0] != "status" {
+		return fmt.Errorf("usage: agent-ledger config status [--format json|markdown]")
+	}
+	report := config.StatusReport(cfg)
+	if strings.EqualFold(cliValue(args[1:], "--format"), "markdown") {
+		_, err := os.Stdout.Write([]byte(config.FormatStatusMarkdown(report)))
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(report)
 }
 
 func runContractsCLI(args []string, cfg *config.Config) error {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -45,6 +46,88 @@ policies:
 	if len(rule.EscalateTo) != 1 || rule.EscalateTo[0] != "research-head" {
 		t.Fatalf("escalation targets not parsed: %+v", rule.EscalateTo)
 	}
+}
+
+func TestStatusReportIsPrivacySafe(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Server.BindAddress = "private-hostname.internal"
+	cfg.Server.AuthToken = "secret-auth-token"
+	cfg.Server.AdminToken = "secret-admin-token"
+	cfg.Collectors.Codex.Paths = []string{"C:/Users/zhang/private/.codex/sessions"}
+	cfg.Storage.Path = "C:/Users/zhang/private/agent-ledger.db"
+	cfg.Webhooks.Enabled = true
+	cfg.Webhooks.URL = "https://hooks.example.test/secret-webhook"
+	cfg.Teams.MachineName = "private-machine"
+	cfg.Teams.GitAuthor = "private-author"
+
+	report := StatusReport(cfg)
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	if report.Contract != "agent-ledger.config-status" || report.PathValuesExposed || report.SecretValuesExposed {
+		t.Fatalf("unexpected report identity/privacy flags: %+v", report)
+	}
+	if report.Summary.EnabledCollectors == 0 || report.Summary.CollectorPathCount == 0 {
+		t.Fatalf("collector summary missing counts: %+v", report.Summary)
+	}
+	for _, forbidden := range []string{
+		"secret-auth-token",
+		"secret-admin-token",
+		"secret-webhook",
+		"private-hostname.internal",
+		"C:/Users/zhang/private",
+		"agent-ledger.db",
+		"private-machine",
+		"private-author",
+	} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("config status leaked %q: %s", forbidden, raw)
+		}
+	}
+	if !report.Auth.AnyTokenConfigured || !report.Outbound.WebhookURLConfigured {
+		t.Fatalf("status should expose token/url presence without values: auth=%+v outbound=%+v", report.Auth, report.Outbound)
+	}
+	if report.Bind.Address != "non-loopback-hostname" {
+		t.Fatalf("bind address should be classified, not exposed: %+v", report.Bind)
+	}
+}
+
+func TestStatusReportFlagsPublicBindWithoutAuth(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Server.BindAddress = "0.0.0.0"
+	cfg.Server.AuthToken = ""
+	cfg.Server.AdminToken = ""
+	cfg.Server.ViewerToken = ""
+	cfg.RBAC.Enabled = false
+
+	report := StatusReport(cfg)
+	if report.LocalFirst || report.Bind.LoopbackOnly || !report.Bind.PubliclyBound {
+		t.Fatalf("public bind should not be local-first: %+v", report.Bind)
+	}
+	if !hasConfigIssue(report, "server.public_bind_without_auth", "critical") {
+		t.Fatalf("expected critical public-bind issue: %+v", report.Issues)
+	}
+}
+
+func TestStatusReportFlagsEnabledCollectorWithoutPaths(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Collectors.Codex.Enabled = true
+	cfg.Collectors.Codex.Paths = nil
+
+	report := StatusReport(cfg)
+	if !hasConfigIssue(report, "collector.codex.paths_missing", "warning") {
+		t.Fatalf("expected collector path warning: %+v", report.Issues)
+	}
+}
+
+func hasConfigIssue(report *ConfigStatusReport, name, severity string) bool {
+	for _, issue := range report.Issues {
+		if issue.Name == name && issue.Severity == severity {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExampleConfigLoadsAndStaysLocalFirst(t *testing.T) {

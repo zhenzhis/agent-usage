@@ -30,12 +30,13 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ledger.contracts","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ledger.contracts_verify","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ledger.openapi","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ledger.config_status","arguments":{}}}`,
 	)
-	if len(out) != 6 {
-		t.Fatalf("responses=%d want 6", len(out))
+	if len(out) != 7 {
+		t.Fatalf("responses=%d want 7", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.approvals") || !hasTool(tools, "ledger.resolve_approval") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") || !hasTool(tools, "ledger.discovery") || !hasTool(tools, "ledger.contracts") || !hasTool(tools, "ledger.contracts_verify") || !hasTool(tools, "ledger.openapi") || !hasTool(tools, "ledger.runtime_status") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.approvals") || !hasTool(tools, "ledger.resolve_approval") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") || !hasTool(tools, "ledger.discovery") || !hasTool(tools, "ledger.contracts") || !hasTool(tools, "ledger.contracts_verify") || !hasTool(tools, "ledger.openapi") || !hasTool(tools, "ledger.runtime_status") || !hasTool(tools, "ledger.config_status") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	budgetMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.current_budget"))
@@ -70,6 +71,10 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 	if openAPIMeta["write_mode"] != "none" || openAPIMeta["writes_local_state"] != false || openAPIMeta["available_in_read_only"] != true {
 		t.Fatalf("openapi tool metadata wrong: %#v", openAPIMeta)
 	}
+	configMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.config_status"))
+	if configMeta["write_mode"] != "none" || configMeta["writes_local_state"] != false || configMeta["available_in_read_only"] != true {
+		t.Fatalf("config status tool metadata wrong: %#v", configMeta)
+	}
 	if annotations := toolByName(t, tools, "ledger.current_budget")["annotations"].(map[string]interface{}); annotations["readOnlyHint"] != true {
 		t.Fatalf("budget annotations wrong: %#v", annotations)
 	}
@@ -100,6 +105,10 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 	if openAPIPayload["openapi"] != "3.1.0" || openAPIPayload["x-agent-ledger"] == nil {
 		t.Fatalf("unexpected openapi payload: %#v", openAPIPayload)
 	}
+	configPayload := toolTextPayload(t, out[6])
+	if configPayload["contract"] != "agent-ledger.config-status" || configPayload["path_values_exposed"] != false || configPayload["secret_values_exposed"] != false {
+		t.Fatalf("unexpected config status payload: %#v", configPayload)
+	}
 }
 
 func TestMCPResourcesAndPrompts(t *testing.T) {
@@ -119,8 +128,9 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		`{"jsonrpc":"2.0","id":7,"method":"resources/read","params":{"uri":"agent-ledger://contracts/bundle"}}`,
 		`{"jsonrpc":"2.0","id":8,"method":"resources/read","params":{"uri":"agent-ledger://contracts/verification"}}`,
 		`{"jsonrpc":"2.0","id":9,"method":"resources/read","params":{"uri":"agent-ledger://contracts/openapi"}}`,
-		`{"jsonrpc":"2.0","id":10,"method":"prompts/list"}`,
-		`{"jsonrpc":"2.0","id":11,"method":"prompts/get","params":{"name":"agent-ledger/workload-brief","arguments":{"goal":"ship router","project":"quant","constraints":"privacy strict"}}}`,
+		`{"jsonrpc":"2.0","id":10,"method":"resources/read","params":{"uri":"agent-ledger://config/status"}}`,
+		`{"jsonrpc":"2.0","id":11,"method":"prompts/list"}`,
+		`{"jsonrpc":"2.0","id":12,"method":"prompts/get","params":{"name":"agent-ledger/workload-brief","arguments":{"goal":"ship router","project":"quant","constraints":"privacy strict"}}}`,
 	)
 	caps := out[0]["result"].(map[string]interface{})["capabilities"].(map[string]interface{})
 	if caps["resources"] == nil || caps["prompts"] == nil {
@@ -131,7 +141,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("resource subscriptions should be advertised: %#v", resourceCaps)
 	}
 	resources := out[1]["result"].(map[string]interface{})["resources"].([]interface{})
-	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
+	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://config/status") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
 		t.Fatalf("expected core resources, got %#v", resources)
 	}
 	resourceText := resourceTextPayload(t, out[2])
@@ -169,15 +179,21 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		!strings.Contains(openAPIText, `"agent-ledger.control-plane-openapi"`) {
 		t.Fatalf("unexpected openapi resource text: %s", openAPIText)
 	}
+	configText := resourceTextPayload(t, out[9])
+	if !strings.Contains(configText, `"contract": "agent-ledger.config-status"`) ||
+		!strings.Contains(configText, `"path_values_exposed": false`) ||
+		!strings.Contains(configText, `"secret_values_exposed": false`) {
+		t.Fatalf("unexpected config status resource text: %s", configText)
+	}
 	adapterText := resourceTextPayload(t, out[3])
 	if !strings.Contains(adapterText, "agent-ledger.adapter-contract") || !strings.Contains(adapterText, "provider") || !strings.Contains(adapterText, "forbidden_payload_keys") {
 		t.Fatalf("unexpected adapter contract resource text: %s", adapterText)
 	}
-	prompts := out[9]["result"].(map[string]interface{})["prompts"].([]interface{})
+	prompts := out[10]["result"].(map[string]interface{})["prompts"].([]interface{})
 	if !hasPrompt(prompts, "agent-ledger/workload-brief") || !hasPrompt(prompts, "agent-ledger/cost-review") {
 		t.Fatalf("expected prompts, got %#v", prompts)
 	}
-	promptText := promptTextPayload(t, out[10])
+	promptText := promptTextPayload(t, out[11])
 	if !strings.Contains(promptText, "ship router") || !strings.Contains(promptText, "privacy strict") {
 		t.Fatalf("prompt did not interpolate arguments: %s", promptText)
 	}

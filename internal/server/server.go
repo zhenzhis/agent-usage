@@ -61,6 +61,7 @@ type Options struct {
 	Integrations config.IntegrationsConfig
 	Gateway      config.GatewayConfig
 	Pricing      config.PricingConfig
+	ConfigStatus *config.ConfigStatusReport
 	Sources      []SourceOption
 	Scan         func(source string, reset bool) error
 	Recalc       func() error
@@ -110,6 +111,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/integrations/adapter-spec", s.handleAdapterSpec)
 	mux.HandleFunc("/api/integrations/conformance", s.handleAdapterConformance)
 	mux.HandleFunc("/api/runtime/status", s.handleRuntimeStatus)
+	mux.HandleFunc("/api/config/status", s.handleConfigStatus)
 	mux.HandleFunc("/api/event-schema", s.handleCanonicalEventSchema)
 	mux.HandleFunc("/api/event-examples", s.handleCanonicalEventExamples)
 	mux.HandleFunc("/api/events/validate", s.handleCanonicalEventValidate)

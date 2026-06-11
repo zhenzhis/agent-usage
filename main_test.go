@@ -144,8 +144,52 @@ func TestOpenAPICLIOutputsControlPlaneSpec(t *testing.T) {
 		t.Fatalf("unexpected openapi output: %+v", spec)
 	}
 	paths := spec["paths"].(map[string]interface{})
-	if paths["/api/openapi.json"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/events/validate"] == nil {
+	if paths["/api/openapi.json"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/config/status"] == nil || paths["/api/events/validate"] == nil {
 		t.Fatalf("openapi output missing expected paths: %+v", paths)
+	}
+}
+
+func TestConfigCLIStatusOutputsPrivacySafeReport(t *testing.T) {
+	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+	cfg := config.DefaultConfig()
+	cfg.Server.AuthToken = "secret-auth-token"
+	cfg.Collectors.Codex.Paths = []string{"C:/Users/zhang/private/.codex/sessions"}
+	cfg.Storage.Path = "C:/Users/zhang/private/agent-ledger.db"
+	cfg.Webhooks.Enabled = true
+	cfg.Webhooks.URL = "https://hooks.example.test/secret-webhook"
+	cfg.Teams.MachineName = "private-machine"
+
+	out, err := captureStdout(t, func() error {
+		return runCLI([]string{"config", "status"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI config status: %v", err)
+	}
+	var report config.ConfigStatusReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("decode config status output: %v\n%s", err, out)
+	}
+	if report.Contract != "agent-ledger.config-status" || !report.Auth.AnyTokenConfigured || !report.Outbound.WebhookURLConfigured {
+		t.Fatalf("unexpected config status output: %+v", report)
+	}
+	for _, forbidden := range []string{"secret-auth-token", "secret-webhook", "C:/Users/zhang/private", "private-machine"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("config status leaked %q: %s", forbidden, out)
+		}
+	}
+
+	md, err := captureStdout(t, func() error {
+		return runCLI([]string{"config", "status", "--format", "markdown"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI config status markdown: %v", err)
+	}
+	if !strings.Contains(md, "Agent Ledger Config Status") || strings.Contains(md, "secret-auth-token") || strings.Contains(md, "C:/Users/zhang/private") {
+		t.Fatalf("unexpected markdown output: %s", md)
 	}
 }
 

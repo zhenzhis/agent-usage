@@ -50,6 +50,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"/api/openapi.json":              getOperation("contracts", "Get OpenAPI document", "OpenAPI 3.1 control-plane contract document.", "OpenAPI"),
 			"/api/integrations":              getOperation("contracts", "Get integration catalog", "Privacy-safe integration capability catalog.", "CapabilityCatalog"),
 			"/api/runtime/status":            getOperation("contracts", "Get runtime status", "Process-local observer/control-plane mode and compatibility hashes.", "RuntimeStatus"),
+			"/api/config/status":             getOperation("contracts", "Get config status", "Privacy-safe deployment configuration status without paths, secrets, webhook URLs, prompt content, or session ids.", "ConfigStatusReport"),
 			"/api/event-schema":              getOperation("canonical-events", "Get canonical event schema", "Metadata-only canonical event contract and supported event types.", "CanonicalEventSchema"),
 			"/api/event-examples":            eventExamplesOperation(),
 			"/api/events/validate":           canonicalEventPostOperation("canonical-events", "Validate canonical events", "Validate one or more canonical events without writing SQLite.", false),
@@ -145,6 +146,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				},
 				"CapabilityCatalog":    looseObjectSchema("Integration capability catalog."),
 				"RuntimeStatus":        looseObjectSchema("Process-local runtime mode and compatibility hashes."),
+				"ConfigStatusReport":   looseObjectSchema("Privacy-safe deployment configuration status."),
 				"CanonicalEventSchema": looseObjectSchema("Canonical event contract metadata."),
 				"AdapterContract":      looseObjectSchema("Machine-readable adapter contract."),
 				"CanonicalEvent": map[string]interface{}{

@@ -27,6 +27,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger openapi                     # print metadata-only OpenAPI 3.1 control-plane contract
 ./agent-ledger integrations                # print privacy-safe integration capability catalog
 ./agent-ledger runtime                     # print runtime mode and read-only/write status
+./agent-ledger config status --format markdown # print privacy-safe deployment config report
 ./agent-ledger notify webhook --dry-run --severity warning --approval-due-within 24h # inspect redacted notification payload
 ./agent-ledger otel convert/ingest         # map OpenTelemetry GenAI JSON spans to canonical events
 ./agent-ledger a2a convert/ingest          # map A2A task snapshots/events to canonical events
@@ -82,7 +83,7 @@ Single-binary Go application that collects AI coding agent token usage from loca
 - `internal/storage` — SQLite layer. `sqlite.go` has schema + versioned migrations (tracked via `meta` table with `migration_{id}` keys, each runs once), `queries.go` handles writes, `api.go` handles reads, `costs.go` does cost recalculation. All DB access serialized through a mutex (`DB.mu`). Key tables: `usage_records` (per-API-call token/cost data), `sessions` (session metadata), `prompt_events` (per-prompt timestamps for time-range queries), `pricing` (model prices), `file_state` (scan offsets and parser context for incremental scanning).
 - `internal/pricing` — Syncs LiteLLM fallback prices and applies official OpenAI/Anthropic seed rows plus local overrides. Cost formula: `input × input_price + cache_creation × cache_creation_price + cache_read × cache_read_price + output × output_price`.
 - `internal/server` — HTTP server with REST API endpoints (`/api/stats`, `/api/cost-intelligence`, `/api/pricing/status`, etc.) and `go:embed` static files (HTML + ECharts dashboard). Endpoints accept `from`, `to`, `source`, `model`, `project`, and privacy filters where applicable. Invalid dates or reversed ranges return `400` with a JSON error message.
-- `internal/config` — YAML config loader. Search order: `--config` flag → `/etc/agent-ledger/config.yaml` → `./config.yaml`. Supports `~` expansion in paths.
+- `internal/config` — YAML config loader and privacy-safe config status report. Search order: `--config` flag → `/etc/agent-ledger/config.yaml` → `./config.yaml`. Supports `~` expansion in paths. Config status must expose counts, booleans, and remediation hints only; never raw paths, tokens, API keys, webhook URLs, machine names, authors, prompts, responses, or session ids.
 
 ### Token semantics
 

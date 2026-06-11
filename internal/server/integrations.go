@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/integrations"
 )
 
@@ -78,6 +79,20 @@ func (s *Server) handleRuntimeStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSONWithETag(w, r, status, etag)
 }
 
+func (s *Server) handleConfigStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	status := s.configStatus()
+	etag, err := jsonPayloadETag(status)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSONWithETag(w, r, status, etag)
+}
+
 func (s *Server) handleAdapterSpec(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -139,4 +154,51 @@ func (s *Server) integrationOptions() integrations.Options {
 		OTLPReceiverEnabled: s.options.Integrations.OTLPReceiver.Enabled,
 		GatewayEnabled:      s.options.Gateway.Enabled,
 	}
+}
+
+func (s *Server) configStatus() *config.ConfigStatusReport {
+	if s.options.ConfigStatus != nil {
+		report := *s.options.ConfigStatus
+		return &report
+	}
+	cfg := config.DefaultConfig()
+	cfg.Server.AuthToken = s.options.AuthToken
+	cfg.Server.AdminToken = s.options.AdminToken
+	cfg.Server.ViewerToken = s.options.ViewerToken
+	cfg.RBAC = s.options.RBAC
+	cfg.Privacy = s.options.Privacy
+	cfg.Budgets = s.options.Budgets
+	cfg.Quota = s.options.Quota
+	cfg.Watchdog = s.options.Watchdog
+	cfg.Policies = s.options.Policies
+	cfg.Webhooks = s.options.Webhooks
+	cfg.Teams = s.options.Teams
+	cfg.Integrations = s.options.Integrations
+	cfg.Gateway = s.options.Gateway
+	cfg.Pricing = s.options.Pricing
+	cfg.Collectors = collectorsFromSourceOptions(s.options.Sources)
+	return config.StatusReport(cfg)
+}
+
+func collectorsFromSourceOptions(sources []SourceOption) config.CollectorConfigs {
+	cfg := config.CollectorConfigs{}
+	for _, source := range sources {
+		collector := config.CollectorConfig{Enabled: source.Enabled, Paths: make([]string, len(source.Paths))}
+		copy(collector.Paths, source.Paths)
+		switch source.Source {
+		case "claude":
+			cfg.Claude = collector
+		case "codex":
+			cfg.Codex = collector
+		case "openclaw":
+			cfg.OpenClaw = collector
+		case "opencode":
+			cfg.OpenCode = collector
+		case "kiro":
+			cfg.Kiro = collector
+		case "pi":
+			cfg.Pi = collector
+		}
+	}
+	return cfg
 }

@@ -36,7 +36,7 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	if manifest.AdapterSpecHash == "" || manifest.AdapterSpecHash != integrations.AdapterContractFingerprint() {
 		t.Fatalf("unexpected adapter contract hash: %+v", manifest)
 	}
-	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
+	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.config_status") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("missing control-plane protocols: %+v", manifest.Protocols)
 	}
 	if manifest.PromptContentStored || manifest.UsageDataUploaded {
@@ -115,10 +115,46 @@ func TestOpenAPIEndpoint(t *testing.T) {
 		t.Fatalf("unexpected openapi metadata: %+v", meta)
 	}
 	paths := spec["paths"].(map[string]interface{})
-	if paths["/api/contracts"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/openapi.json"] == nil || paths["/api/events/validate"] == nil || paths["/api/workload-events"] == nil {
+	if paths["/api/contracts"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/openapi.json"] == nil || paths["/api/config/status"] == nil || paths["/api/events/validate"] == nil || paths["/api/workload-events"] == nil {
 		t.Fatalf("openapi missing expected paths: %+v", paths)
 	}
 	assertETagRevalidates(t, srv.handleOpenAPI, "http://127.0.0.1/api/openapi.json", rr.Header().Get("ETag"))
+}
+
+func TestConfigStatusEndpointIsPrivacySafe(t *testing.T) {
+	db := testServerDB(t)
+	cfg := config.DefaultConfig()
+	cfg.Server.AuthToken = "secret-auth-token"
+	cfg.Server.AdminToken = "secret-admin-token"
+	cfg.Collectors.Codex.Paths = []string{"C:/Users/zhang/private/.codex/sessions"}
+	cfg.Storage.Path = "C:/Users/zhang/private/agent-ledger.db"
+	cfg.Webhooks.Enabled = true
+	cfg.Webhooks.URL = "https://hooks.example.test/secret-webhook"
+	cfg.Teams.MachineName = "private-machine"
+	cfg.Teams.GitAuthor = "private-author"
+	srv := New(db, "", Options{ConfigStatus: config.StatusReport(cfg)})
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/config/status", nil)
+	rr := httptest.NewRecorder()
+	srv.handleConfigStatus(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("config status status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var report config.ConfigStatusReport
+	if err := json.Unmarshal(rr.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode config status: %v", err)
+	}
+	if report.Contract != "agent-ledger.config-status" || report.PathValuesExposed || report.SecretValuesExposed ||
+		!report.Auth.AnyTokenConfigured || !report.Outbound.WebhookURLConfigured {
+		t.Fatalf("unexpected config status: %+v", report)
+	}
+	body := rr.Body.String()
+	for _, forbidden := range []string{"secret-auth-token", "secret-admin-token", "secret-webhook", "C:/Users/zhang/private", "private-machine", "private-author"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("config status leaked %q: %s", forbidden, body)
+		}
+	}
+	assertETagRevalidates(t, srv.handleConfigStatus, "http://127.0.0.1/api/config/status", rr.Header().Get("ETag"))
 }
 
 func TestAdapterSpecEndpoint(t *testing.T) {
@@ -168,6 +204,7 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 		{name: "contract-verification", url: "http://127.0.0.1/api/contracts/verify", handler: srv.handleContractVerification},
 		{name: "openapi", url: "http://127.0.0.1/api/openapi.json", handler: srv.handleOpenAPI},
 		{name: "runtime-status", url: "http://127.0.0.1/api/runtime/status", handler: srv.handleRuntimeStatus},
+		{name: "config-status", url: "http://127.0.0.1/api/config/status", handler: srv.handleConfigStatus},
 		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
 	}
 	for _, tc := range cases {
