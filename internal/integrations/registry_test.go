@@ -38,6 +38,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "protocol.runtime_status", "implemented", true)
 	assertCapability(t, catalog, "protocol.config_status", "implemented", true)
 	assertCapability(t, catalog, "protocol.readiness", "implemented", true)
+	assertCapability(t, catalog, "protocol.admission_check", "implemented", true)
 	assertCapability(t, catalog, "protocol.workload_event_feed", "implemented", true)
 	assertCapability(t, catalog, "protocol.opentelemetry_genai", "implemented", true)
 	assertCapability(t, catalog, "protocol.otlp_receiver", "experimental", false)
@@ -55,6 +56,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapabilityCommand(t, catalog, "protocol.runtime_status", "agent-ledger runtime")
 	assertCapabilityCommand(t, catalog, "protocol.config_status", "agent-ledger config status")
 	assertCapabilityCommand(t, catalog, "protocol.readiness", "agent-ledger readiness")
+	assertCapabilityCommand(t, catalog, "protocol.admission_check", "agent-ledger admission check")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.contracts")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.contracts_verify")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.discovery")
@@ -62,6 +64,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.runtime_status")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.config_status")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.readiness")
+	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.admission_check")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://contracts/bundle")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://contracts/verification")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://discovery/manifest")
@@ -69,6 +72,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://runtime/status")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://config/status")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://readiness")
+	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://admission/check")
 
 	cfg.Integrations.OTLPReceiver.Enabled = true
 	cfg.Gateway.Enabled = true
@@ -120,6 +124,7 @@ func TestRegistryAnnotatesReadOnlyRuntimeCapabilities(t *testing.T) {
 	assertRuntimeCapability(t, catalog, "protocol.runtime_status", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.config_status", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.readiness", true, false, true)
+	assertRuntimeCapability(t, catalog, "protocol.admission_check", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.mcp_stdio", true, true, true)
 	assertRuntimeCapability(t, catalog, "protocol.offline_bundle", true, true, true)
 	assertRuntimeCapability(t, catalog, "governance.policy_evaluator", true, true, true)
@@ -156,7 +161,7 @@ func TestDiscoveryManifestIsPrivacySafe(t *testing.T) {
 	if manifest.AdapterSpecHash == "" || !strings.HasPrefix(manifest.AdapterSpecHash, "sha256:") || manifest.AdapterSpecHash != AdapterContractFingerprint() {
 		t.Fatalf("discovery missing adapter contract hash: %#v", manifest)
 	}
-	if !hasDiscoveryProtocol(manifest, "protocol.discovery_manifest") || !hasDiscoveryProtocol(manifest, "protocol.contract_bundle") || !hasDiscoveryProtocol(manifest, "protocol.contract_verification") || !hasDiscoveryProtocol(manifest, "protocol.openapi") || !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.config_status") || !hasDiscoveryProtocol(manifest, "protocol.readiness") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
+	if !hasDiscoveryProtocol(manifest, "protocol.discovery_manifest") || !hasDiscoveryProtocol(manifest, "protocol.contract_bundle") || !hasDiscoveryProtocol(manifest, "protocol.contract_verification") || !hasDiscoveryProtocol(manifest, "protocol.openapi") || !hasDiscoveryProtocol(manifest, "protocol.mcp_stdio") || !hasDiscoveryProtocol(manifest, "protocol.runtime_status") || !hasDiscoveryProtocol(manifest, "protocol.config_status") || !hasDiscoveryProtocol(manifest, "protocol.readiness") || !hasDiscoveryProtocol(manifest, "protocol.admission_check") || !hasDiscoveryProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("discovery missing agent protocols: %#v", manifest.Protocols)
 	}
 	for _, protocol := range manifest.Protocols {

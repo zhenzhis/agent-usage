@@ -452,6 +452,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return runConfigCLI(args[1:], cfg)
 	case "readiness":
 		return runReadinessCLI(args[1:], cfg, db)
+	case "admission":
+		return runAdmissionCLI(args[1:], cfg)
 	case "otel":
 		return runOTelCLI(args[1:], db)
 	case "a2a":
@@ -494,6 +496,32 @@ func runReadinessCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(report)
+}
+
+func runAdmissionCLI(args []string, cfg *config.Config) error {
+	if len(args) == 0 || args[0] != "check" {
+		return fmt.Errorf("usage: agent-ledger admission check [--surface http|cli|mcp] [--method GET|POST] [--path /api/...] [--command \"agent-ledger ...\"] [--tool ledger.name] [--role viewer|operator|admin] [--dry-run] [--record] [--has-workload-id] [--format json|markdown]")
+	}
+	input := controlplane.AdmissionInput{
+		Surface:        cliValue(args[1:], "--surface"),
+		Method:         cliValue(args[1:], "--method"),
+		Path:           cliValue(args[1:], "--path"),
+		Command:        cliValue(args[1:], "--command"),
+		Tool:           cliValue(args[1:], "--tool"),
+		Role:           cliValue(args[1:], "--role"),
+		RBACEnabled:    cfg != nil && cfg.RBAC.Enabled,
+		AuthConfigured: cfg != nil && (cfg.Server.AuthToken != "" || cfg.Server.AdminToken != "" || cfg.Server.ViewerToken != ""),
+		ReadOnly:       cfg != nil && cfg.RBAC.ReadOnly,
+		DryRun:         cliBool(args[1:], "--dry-run") || cliBool(args[1:], "--dry_run"),
+		Record:         cliBool(args[1:], "--record"),
+		HasWorkloadID:  cliBool(args[1:], "--has-workload-id") || cliBool(args[1:], "--has_workload_id") || cliValue(args[1:], "--workload-id") != "" || cliValue(args[1:], "--workload_id") != "",
+	}
+	decision := controlplane.EvaluateAdmission(input, time.Now().UTC())
+	if strings.EqualFold(cliValue(args[1:], "--format"), "markdown") {
+		_, err := os.Stdout.Write([]byte(controlplane.FormatAdmissionMarkdown(decision)))
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(decision)
 }
 
 func runContractsCLI(args []string, cfg *config.Config) error {

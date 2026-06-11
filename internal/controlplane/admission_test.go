@@ -1,0 +1,120 @@
+package controlplane
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestAdmissionAllowsReadOnlyValidation(t *testing.T) {
+	decision := EvaluateAdmission(AdmissionInput{
+		Surface:     "http",
+		Method:      "POST",
+		Path:        "/api/events/validate",
+		Role:        "viewer",
+		RBACEnabled: true,
+		ReadOnly:    true,
+	}, fixedAdmissionTime())
+	if !decision.Allowed || decision.WritesLocalState || decision.RequiredRole != "viewer" || !decision.AvailableInReadOnly {
+		t.Fatalf("unexpected validation admission: %+v", decision)
+	}
+}
+
+func TestAdmissionRejectsWriteInReadOnly(t *testing.T) {
+	decision := EvaluateAdmission(AdmissionInput{
+		Surface:     "http",
+		Method:      "POST",
+		Path:        "/api/events",
+		Role:        "operator",
+		RBACEnabled: true,
+		ReadOnly:    true,
+	}, fixedAdmissionTime())
+	if decision.Allowed || decision.Status != "denied" || !strings.Contains(decision.Reason, "read-only") {
+		t.Fatalf("expected read-only denial: %+v", decision)
+	}
+}
+
+func TestAdmissionDetectsConditionalPolicyWrite(t *testing.T) {
+	readOnlyDecision := EvaluateAdmission(AdmissionInput{
+		Surface:       "mcp",
+		Tool:          "ledger.get_policy",
+		Role:          "viewer",
+		RBACEnabled:   true,
+		ReadOnly:      true,
+		HasWorkloadID: true,
+	}, fixedAdmissionTime())
+	if readOnlyDecision.Allowed || readOnlyDecision.AvailableInReadOnly {
+		t.Fatalf("policy with workload_id must be rejected in read-only mode: %+v", readOnlyDecision)
+	}
+	controlDecision := EvaluateAdmission(AdmissionInput{
+		Surface:       "mcp",
+		Tool:          "ledger.get_policy",
+		Role:          "viewer",
+		RBACEnabled:   true,
+		HasWorkloadID: true,
+	}, fixedAdmissionTime())
+	if !controlDecision.Allowed || !controlDecision.WritesLocalState || controlDecision.WriteMode != "conditional" {
+		t.Fatalf("policy with workload_id should be conditional write in control-plane mode: %+v", controlDecision)
+	}
+}
+
+func TestAdmissionRoleAndUnknownOperation(t *testing.T) {
+	roleDenied := EvaluateAdmission(AdmissionInput{
+		Surface:     "http",
+		Method:      "POST",
+		Path:        "/api/recalculate-costs",
+		Role:        "operator",
+		RBACEnabled: true,
+	}, fixedAdmissionTime())
+	if roleDenied.Allowed || !strings.Contains(roleDenied.Reason, "below required role") || roleDenied.RequiredRole != "admin" {
+		t.Fatalf("expected role denial: %+v", roleDenied)
+	}
+	unknown := EvaluateAdmission(AdmissionInput{Surface: "mcp", Tool: "private.tool", Role: "admin"}, fixedAdmissionTime())
+	if unknown.Allowed || unknown.KnownOperation {
+		t.Fatalf("unknown operation should be denied: %+v", unknown)
+	}
+}
+
+func TestAdmissionClassifiesReadOnlyCLISubcommands(t *testing.T) {
+	for _, command := range []string{"agent-ledger workload feed --limit 10", "agent-ledger workload liveness", "agent-ledger reconcile status", "agent-ledger provider convert --file provider.json"} {
+		decision := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: command, Role: "viewer", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
+		if !decision.Allowed || decision.WritesLocalState {
+			t.Fatalf("expected read-only CLI command to be allowed: command=%q decision=%+v", command, decision)
+		}
+	}
+	writeDecision := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: "agent-ledger workload heartbeat --run-id run_1", Role: "operator", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
+	if writeDecision.Allowed || writeDecision.AvailableInReadOnly {
+		t.Fatalf("expected workload heartbeat to be rejected in read-only mode: %+v", writeDecision)
+	}
+}
+
+func TestAdmissionPrivacyAndFingerprint(t *testing.T) {
+	decision := EvaluateAdmission(AdmissionInput{
+		Surface: "cli",
+		Command: "agent-ledger event validate --file C:/Users/zhang/private/fixture.json --token secret",
+		Role:    "admin",
+	}, fixedAdmissionTime())
+	raw, err := json.Marshal(decision)
+	if err != nil {
+		t.Fatalf("marshal admission: %v", err)
+	}
+	for _, forbidden := range []string{"C:/Users/zhang/private", "fixture.json", "--token secret"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("admission leaked %q: %s", forbidden, raw)
+		}
+	}
+	again := decision
+	again.GeneratedAt = fixedAdmissionTime().Add(time.Minute).Format(time.RFC3339Nano)
+	if AdmissionFingerprint(decision) != AdmissionFingerprint(again) {
+		t.Fatalf("fingerprint should ignore generated_at")
+	}
+	md := FormatAdmissionMarkdown(decision)
+	if !strings.Contains(md, "Agent Ledger Admission") || strings.Contains(md, "C:/Users/zhang/private") {
+		t.Fatalf("unexpected markdown: %s", md)
+	}
+}
+
+func fixedAdmissionTime() time.Time {
+	return time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+}

@@ -104,6 +104,18 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	writeJSONWithETag(w, r, report, controlplane.ReadinessFingerprint(report))
 }
 
+func (s *Server) handleAdmissionCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	decision := controlplane.EvaluateAdmission(
+		controlplane.AdmissionInputFromValues(r.URL.Query(), s.admissionDefaults()),
+		time.Now().UTC(),
+	)
+	writeJSONWithETag(w, r, decision, controlplane.AdmissionFingerprint(decision))
+}
+
 func (s *Server) handleAdapterSpec(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -207,6 +219,14 @@ func (s *Server) statusConfig() *config.Config {
 	cfg.Pricing = s.options.Pricing
 	cfg.Collectors = collectorsFromSourceOptions(s.options.Sources)
 	return cfg
+}
+
+func (s *Server) admissionDefaults() controlplane.AdmissionInput {
+	return controlplane.AdmissionInput{
+		RBACEnabled:    s.options.RBAC.Enabled,
+		AuthConfigured: s.options.AuthToken != "" || s.options.AdminToken != "" || s.options.ViewerToken != "",
+		ReadOnly:       s.options.RBAC.ReadOnly,
+	}
 }
 
 func collectorsFromSourceOptions(sources []SourceOption) config.CollectorConfigs {

@@ -37,7 +37,7 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	if manifest.AdapterSpecHash == "" || manifest.AdapterSpecHash != integrations.AdapterContractFingerprint() {
 		t.Fatalf("unexpected adapter contract hash: %+v", manifest)
 	}
-	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.config_status") || !discoveryHasProtocol(manifest, "protocol.readiness") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
+	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.config_status") || !discoveryHasProtocol(manifest, "protocol.readiness") || !discoveryHasProtocol(manifest, "protocol.admission_check") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("missing control-plane protocols: %+v", manifest.Protocols)
 	}
 	if manifest.PromptContentStored || manifest.UsageDataUploaded {
@@ -116,7 +116,7 @@ func TestOpenAPIEndpoint(t *testing.T) {
 		t.Fatalf("unexpected openapi metadata: %+v", meta)
 	}
 	paths := spec["paths"].(map[string]interface{})
-	if paths["/api/contracts"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/openapi.json"] == nil || paths["/api/config/status"] == nil || paths["/api/readiness"] == nil || paths["/api/events/validate"] == nil || paths["/api/workload-events"] == nil {
+	if paths["/api/contracts"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/openapi.json"] == nil || paths["/api/config/status"] == nil || paths["/api/readiness"] == nil || paths["/api/admission/check"] == nil || paths["/api/events/validate"] == nil || paths["/api/workload-events"] == nil {
 		t.Fatalf("openapi missing expected paths: %+v", paths)
 	}
 	assertETagRevalidates(t, srv.handleOpenAPI, "http://127.0.0.1/api/openapi.json", rr.Header().Get("ETag"))
@@ -191,6 +191,28 @@ func TestReadinessEndpointIsPrivacySafe(t *testing.T) {
 	assertETagRevalidates(t, srv.handleReadiness, "http://127.0.0.1/api/readiness", rr.Header().Get("ETag"))
 }
 
+func TestAdmissionEndpointChecksReadOnlyAccess(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{RBAC: config.RBACConfig{Enabled: true, ReadOnly: true}, ViewerToken: "secret-viewer-token"})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/admission/check?surface=http&method=POST&path=/api/events&role=operator", nil)
+	rr := httptest.NewRecorder()
+	srv.handleAdmissionCheck(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("admission status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var decision map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &decision); err != nil {
+		t.Fatalf("decode admission: %v", err)
+	}
+	if decision["contract"] != "agent-ledger.admission-check" || decision["allowed"] != false || decision["status"] != "denied" || decision["read_only"] != true {
+		t.Fatalf("unexpected admission decision: %+v", decision)
+	}
+	if strings.Contains(rr.Body.String(), "secret-viewer-token") {
+		t.Fatalf("admission leaked token: %s", rr.Body.String())
+	}
+	assertETagRevalidates(t, srv.handleAdmissionCheck, "http://127.0.0.1/api/admission/check?surface=http&method=POST&path=/api/events&role=operator", rr.Header().Get("ETag"))
+}
+
 func TestAdapterSpecEndpoint(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{})
@@ -240,6 +262,7 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 		{name: "runtime-status", url: "http://127.0.0.1/api/runtime/status", handler: srv.handleRuntimeStatus},
 		{name: "config-status", url: "http://127.0.0.1/api/config/status", handler: srv.handleConfigStatus},
 		{name: "readiness", url: "http://127.0.0.1/api/readiness", handler: srv.handleReadiness},
+		{name: "admission", url: "http://127.0.0.1/api/admission/check?surface=mcp&tool=ledger.discovery&role=viewer", handler: srv.handleAdmissionCheck},
 		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
 	}
 	for _, tc := range cases {

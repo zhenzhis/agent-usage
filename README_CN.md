@@ -72,6 +72,7 @@ CLI：
 ./agent-ledger runtime
 ./agent-ledger config status --format markdown
 ./agent-ledger readiness --format markdown
+./agent-ledger admission check --surface http --method POST --path /api/events --role operator
 ./agent-ledger notify webhook --dry-run --severity warning --approval-due-within 24h
 ./agent-ledger otel convert --file spans.json
 ./agent-ledger otel ingest --file spans.json
@@ -257,6 +258,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/runtime/status` | 运行模式、只读状态、后台/写操作状态与兼容性 hash |
 | `GET /api/config/status` | 隐私安全部署配置报告，包含风险检查与修复建议 |
 | `GET /api/readiness` | 面向探针、wrapper、router 与 CI 的隐私安全控制面就绪报告 |
+| `GET /api/admission/check` | 在当前 read-only/RBAC 规则下对 HTTP、CLI 或 MCP 操作做隐私安全 dry-run |
 | `GET /api/dashboard` | Web dashboard 的一致性 KPI、token、费用与模型数据包 |
 | `GET /api/stats` | 总览 |
 | `GET /api/workloads` | 服务端分页工作负载账本 |
@@ -335,7 +337,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 MCP `tools/list` 会返回标准风格的 `annotations.readOnlyHint`，以及 `_meta.agent_ledger` 字段：`writes_local_state`、`write_mode`（`none`、`always` 或 `conditional`）、`available_in_read_only`、`read_only_behavior`。Router 和多智能体框架应在观测部署中调用工具前读取这些字段。
 
-`GET /api/integrations`、`GET /.well-known/agent-ledger.json`、`agent-ledger integrations`、MCP `ledger.discovery`、MCP `ledger.integrations` 和 `agent-ledger://discovery/manifest` 会暴露运行时能力字段：`writes_local_state`、`available_in_read_only`、`runtime_status`。Discovery manifest 还会以一等字段暴露 `contract_bundle_uri`、`openapi_uri`、`capability_catalog_hash`、`runtime_status_uri`、`canonical_schema_uri`、`canonical_schema_hash`、`event_examples_uri`、`adapter_spec_uri`、`adapter_spec_hash`、`adapter_conformance_uri`，便于轻量 wrapper 自动接入。`GET /api/contracts`、`agent-ledger contracts`、MCP `ledger.contracts` 和 `agent-ledger://contracts/bundle` 会暴露单次握手的 contract bundle，包含文档 URI、hash、缓存语义、CLI 命令与 MCP 入口。`GET /api/contracts/verify`、`agent-ledger contracts verify`、MCP `ledger.contracts_verify` 和 `agent-ledger://contracts/verification` 会暴露机器可读自检报告，用于校验 discovery、bundle、OpenAPI、schema、adapter、runtime、只读语义与隐私不变量。`GET /api/openapi.json`、`agent-ledger openapi`、MCP `ledger.openapi` 和 `agent-ledger://contracts/openapi` 会暴露 metadata-only OpenAPI 3.1 文档，用于稳定 REST 控制面接口。`GET /api/integrations/adapter-spec`、`agent-ledger adapter spec`、MCP `ledger.adapter_contract` 和 `agent-ledger://integrations/adapter-contract` 会暴露同一份机器可读 adapter 契约。`GET /api/runtime/status` 与 `agent-ledger runtime` 提供同一个进程级 observer/control-plane 状态，适合探针使用。`GET /api/config/status`、`agent-ledger config status`、MCP `ledger.config_status` 与 `agent-ledger://config/status` 提供隐私安全的部署配置状态报告，适合 wrapper、CI 和运维检查。`GET /api/readiness`、`agent-ledger readiness`、MCP `ledger.readiness` 与 `agent-ledger://readiness` 提供隐私安全的就绪报告，汇总数据库、配置、运行模式、契约、采集和价格证据，但不泄露本地数据。REST discovery、contract bundle、contract verification、OpenAPI、catalog、runtime status、config status、readiness、adapter spec 和 event schema 端点会返回强 `ETag`，并支持 `If-None-Match` 返回 `304 Not Modified`，让 wrapper 不必重复解析未变化的契约 JSON。Agent router 和 wrapper 应读取这些字段，而不是硬编码 endpoint 假设，尤其是在启用 `rbac.read_only` 时。
+`GET /api/integrations`、`GET /.well-known/agent-ledger.json`、`agent-ledger integrations`、MCP `ledger.discovery`、MCP `ledger.integrations` 和 `agent-ledger://discovery/manifest` 会暴露运行时能力字段：`writes_local_state`、`available_in_read_only`、`runtime_status`。Discovery manifest 还会以一等字段暴露 `contract_bundle_uri`、`openapi_uri`、`capability_catalog_hash`、`runtime_status_uri`、`canonical_schema_uri`、`canonical_schema_hash`、`event_examples_uri`、`adapter_spec_uri`、`adapter_spec_hash`、`adapter_conformance_uri`，便于轻量 wrapper 自动接入。`GET /api/contracts`、`agent-ledger contracts`、MCP `ledger.contracts` 和 `agent-ledger://contracts/bundle` 会暴露单次握手的 contract bundle，包含文档 URI、hash、缓存语义、CLI 命令与 MCP 入口。`GET /api/contracts/verify`、`agent-ledger contracts verify`、MCP `ledger.contracts_verify` 和 `agent-ledger://contracts/verification` 会暴露机器可读自检报告，用于校验 discovery、bundle、OpenAPI、schema、adapter、runtime、只读语义与隐私不变量。`GET /api/openapi.json`、`agent-ledger openapi`、MCP `ledger.openapi` 和 `agent-ledger://contracts/openapi` 会暴露 metadata-only OpenAPI 3.1 文档，用于稳定 REST 控制面接口。`GET /api/integrations/adapter-spec`、`agent-ledger adapter spec`、MCP `ledger.adapter_contract` 和 `agent-ledger://integrations/adapter-contract` 会暴露同一份机器可读 adapter 契约。`GET /api/runtime/status` 与 `agent-ledger runtime` 提供同一个进程级 observer/control-plane 状态，适合探针使用。`GET /api/config/status`、`agent-ledger config status`、MCP `ledger.config_status` 与 `agent-ledger://config/status` 提供隐私安全的部署配置状态报告，适合 wrapper、CI 和运维检查。`GET /api/readiness`、`agent-ledger readiness`、MCP `ledger.readiness` 与 `agent-ledger://readiness` 提供隐私安全的就绪报告，汇总数据库、配置、运行模式、契约、采集和价格证据，但不泄露本地数据。`GET /api/admission/check`、`agent-ledger admission check`、MCP `ledger.admission_check` 与 `agent-ledger://admission/check` 可让 wrapper 和 router 在真正调用前，按当前 role/read-only 规则 dry-run HTTP、CLI 与 MCP 操作。REST discovery、contract bundle、contract verification、OpenAPI、catalog、runtime status、config status、readiness、admission、adapter spec 和 event schema 端点会返回强 `ETag`，并支持 `If-None-Match` 返回 `304 Not Modified`，让 wrapper 不必重复解析未变化的契约 JSON。Agent router 和 wrapper 应读取这些字段，而不是硬编码 endpoint 假设，尤其是在启用 `rbac.read_only` 时。
 
 当前工具：
 
@@ -347,6 +349,7 @@ MCP `tools/list` 会返回标准风格的 `annotations.readOnlyHint`，以及 `_
 - `ledger.runtime_status`
 - `ledger.config_status`
 - `ledger.readiness`
+- `ledger.admission_check`
 - `ledger.start_workload`
 - `ledger.start_run`
 - `ledger.close_workload`
@@ -389,6 +392,7 @@ MCP `tools/list` 会返回标准风格的 `annotations.readOnlyHint`，以及 `_
 - `agent-ledger://runtime/status`
 - `agent-ledger://config/status`
 - `agent-ledger://readiness`
+- `agent-ledger://admission/check`
 - `agent-ledger://budget/current`，支持 `window`、`source`、`model`、`project` 查询参数
 - `agent-ledger://workloads/recent`，包含 workload summary rows 与派生 terminal-state snapshots，支持 `from`、`to`、`source`、`model`、`project`、`status`、`q`、`limit`、`offset`、`stale_after`
 - `agent-ledger://workloads/feed`，包含供本地 monitor 和 router 使用的 cursor-stable workload state events，支持 `from`、`to`、`source`、`model`、`project`、`phase`、`severity`、`limit`、`stale_after`
@@ -440,6 +444,7 @@ agent-ledger doctor --format markdown
 - 默认绑定 `127.0.0.1`。
 - `agent-ledger config status`、`GET /api/config/status` 和 MCP `ledger.config_status` 用于部署检查，不暴露原始路径、auth token、API key、webhook URL、机器名、作者、prompt、response 或 session id。
 - `agent-ledger readiness`、`GET /api/readiness`、MCP `ledger.readiness` 与 `agent-ledger://readiness` 用于控制面探针，只暴露状态、计数、检查标识和修复建议。
+- `agent-ledger admission check`、`GET /api/admission/check`、MCP `ledger.admission_check` 与 `agent-ledger://admission/check` 只暴露操作访问决策；不暴露 request body、完整 CLI 参数、原始路径、token、prompt、session、项目、分支、机器名或作者。
 - 只读取本地 agent 日志和数据库，不上传 usage 数据。
 - pricing sync 是默认唯一出站请求。
 - 副作用操作默认 localhost-only。
@@ -476,7 +481,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、contract bundle index、OpenAPI control-plane contract、runtime status probe、隐私安全 config status probe、control-plane readiness probe、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP JSON/protobuf traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes、审批路由/升级元数据、审批路由摘要与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、contract bundle index、OpenAPI control-plane contract、runtime status probe、隐私安全 config status probe、control-plane readiness probe、operation admission dry-run、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP JSON/protobuf traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes、审批路由/升级元数据、审批路由摘要与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness/admission 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
 
 后续路线：OTLP gRPC receiver conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、host client 支持后接入原生 MCP subscription transport、外部审批通知适配器。
 

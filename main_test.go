@@ -144,7 +144,7 @@ func TestOpenAPICLIOutputsControlPlaneSpec(t *testing.T) {
 		t.Fatalf("unexpected openapi output: %+v", spec)
 	}
 	paths := spec["paths"].(map[string]interface{})
-	if paths["/api/openapi.json"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/config/status"] == nil || paths["/api/readiness"] == nil || paths["/api/events/validate"] == nil {
+	if paths["/api/openapi.json"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/config/status"] == nil || paths["/api/readiness"] == nil || paths["/api/admission/check"] == nil || paths["/api/events/validate"] == nil {
 		t.Fatalf("openapi output missing expected paths: %+v", paths)
 	}
 }
@@ -233,6 +233,40 @@ func TestReadinessCLIOutputsPrivacySafeReport(t *testing.T) {
 	}
 	if !strings.Contains(md, "Agent Ledger Readiness") || strings.Contains(md, "secret-auth-token") || strings.Contains(md, "C:/Users/zhang/private") {
 		t.Fatalf("unexpected readiness markdown: %s", md)
+	}
+}
+
+func TestAdmissionCLIOutputsPrivacySafeDecision(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.RBAC.Enabled = true
+	cfg.RBAC.ReadOnly = true
+	cfg.Server.ViewerToken = "secret-viewer-token"
+	out, err := captureStdout(t, func() error {
+		return runCLI([]string{"admission", "check", "--surface", "cli", "--command", "agent-ledger event validate --file C:/Users/zhang/private/event.json --token secret", "--role", "viewer"}, cfg, nil)
+	})
+	if err != nil {
+		t.Fatalf("runCLI admission: %v", err)
+	}
+	var decision map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &decision); err != nil {
+		t.Fatalf("decode admission output: %v\n%s", err, out)
+	}
+	if decision["contract"] != "agent-ledger.admission-check" || decision["allowed"] != true || decision["writes_local_state"] != false {
+		t.Fatalf("unexpected admission output: %+v", decision)
+	}
+	for _, forbidden := range []string{"secret-viewer-token", "C:/Users/zhang/private", "event.json", "--token secret"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("admission leaked %q: %s", forbidden, out)
+		}
+	}
+	md, err := captureStdout(t, func() error {
+		return runCLI([]string{"admission", "check", "--surface", "http", "--method", "POST", "--path", "/api/events", "--role", "operator", "--format", "markdown"}, cfg, nil)
+	})
+	if err != nil {
+		t.Fatalf("runCLI admission markdown: %v", err)
+	}
+	if !strings.Contains(md, "Agent Ledger Admission") || !strings.Contains(md, "denied") {
+		t.Fatalf("unexpected admission markdown: %s", md)
 	}
 }
 

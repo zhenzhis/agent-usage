@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/controlplane"
 	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
@@ -114,6 +115,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/runtime/status", s.handleRuntimeStatus)
 	mux.HandleFunc("/api/config/status", s.handleConfigStatus)
 	mux.HandleFunc("/api/readiness", s.handleReadiness)
+	mux.HandleFunc("/api/admission/check", s.handleAdmissionCheck)
 	mux.HandleFunc("/api/event-schema", s.handleCanonicalEventSchema)
 	mux.HandleFunc("/api/event-examples", s.handleCanonicalEventExamples)
 	mux.HandleFunc("/api/events/validate", s.handleCanonicalEventValidate)
@@ -351,21 +353,11 @@ func RuntimeStatusFromConfig(cfg *config.Config) *storage.RuntimeStatus {
 }
 
 func isSafeMethod(method string) bool {
-	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
+	return controlplane.IsHTTPSafeMethod(method)
 }
 
 func isReadOnlyAllowedRequest(r *http.Request) bool {
-	if r.Method != http.MethodPost {
-		return false
-	}
-	switch r.URL.Path {
-	case "/api/events/validate", "/api/integrations/conformance", "/api/policy/evaluate":
-		return true
-	case "/api/notifications/webhook":
-		return r.URL.Query().Get("dry_run") == "1" || r.URL.Query().Get("dry_run") == "true"
-	default:
-		return false
-	}
+	return controlplane.IsReadOnlyAllowedHTTP(r.Method, r.URL.Path, r.URL.Query().Get("dry_run") == "1" || r.URL.Query().Get("dry_run") == "true")
 }
 
 func (s *Server) requireLocalOrAuth(w http.ResponseWriter, r *http.Request) bool {

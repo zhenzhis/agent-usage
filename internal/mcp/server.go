@@ -288,6 +288,17 @@ func tools() []map[string]interface{} {
 		tool("ledger.runtime_status", "Return process-level runtime mode, read-only state, background task state, and write-operation status.", map[string]interface{}{}),
 		tool("ledger.config_status", "Return privacy-safe deployment configuration status without paths, secrets, webhook URLs, prompt content, or session ids.", map[string]interface{}{}),
 		tool("ledger.readiness", "Return privacy-safe control-plane readiness for wrappers, routers, CI, and deployment checks.", map[string]interface{}{}),
+		tool("ledger.admission_check", "Dry-run whether an HTTP, CLI, or MCP operation is allowed in the current runtime.", map[string]interface{}{
+			"surface":         enumSchema([]string{"http", "cli", "mcp"}),
+			"method":          stringSchema(),
+			"path":            stringSchema(),
+			"command":         stringSchema(),
+			"tool":            stringSchema(),
+			"role":            stringSchema(),
+			"dry_run":         booleanSchema(),
+			"record":          booleanSchema(),
+			"has_workload_id": booleanSchema(),
+		}),
 		tool("ledger.start_workload", "Create a workload and optionally attach an initial agent run.", map[string]interface{}{
 			"goal":       requiredStringSchema(),
 			"source":     stringSchema(),
@@ -533,7 +544,7 @@ func tool(name, description string, props map[string]interface{}) map[string]int
 			}
 		}
 	}
-	access := mcpToolAccessFor(name)
+	access := controlplane.MCPToolAccessFor(name)
 	out := map[string]interface{}{
 		"name":        name,
 		"description": description,
@@ -585,6 +596,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://runtime/status", "Runtime Status", "Process-level observer/control-plane mode, read-only state, background task state, and write-operation status.", "application/json"),
 		resource("agent-ledger://config/status", "Config Status", "Privacy-safe deployment configuration status with risk checks and remediation hints.", "application/json"),
 		resource("agent-ledger://readiness", "Readiness", "Privacy-safe control-plane readiness report for local deployment and wrapper checks.", "application/json"),
+		resource("agent-ledger://admission/check", "Admission Check", "Privacy-safe dry-run for HTTP, CLI, and MCP operations; supports surface/method/path/command/tool/role/dry_run/record/has_workload_id query parameters.", "application/json"),
 		resource("agent-ledger://budget/current", "Current Budget Windows", "Local quota and budget estimate for 5h/day/week/month windows; supports window/source/model/project query parameters.", "application/json"),
 		resource("agent-ledger://workloads/recent", "Recent Workloads", "Recent workload summaries and terminal-state snapshots from the local ledger; supports from/to/source/model/project/status/q/limit/offset/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
@@ -649,6 +661,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return config.StatusReport(s.cfg), nil
 	case "ledger.readiness":
 		return s.readinessReport(), nil
+	case "ledger.admission_check":
+		return s.toolAdmissionCheck(args)
 	case "ledger.start_workload":
 		return s.toolStartWorkload(args)
 	case "ledger.start_run":
@@ -718,51 +732,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 	}
 }
 
-type mcpToolAccess struct {
-	WritesLocalState    bool
-	WriteMode           string
-	AvailableInReadOnly bool
-	ReadOnlyBehavior    string
-}
-
-func mcpToolAccessFor(name string) mcpToolAccess {
-	switch name {
-	case "ledger.start_workload",
-		"ledger.start_run",
-		"ledger.close_workload",
-		"ledger.link_workloads",
-		"ledger.heartbeat_run",
-		"ledger.record_tool_call",
-		"ledger.record_artifact",
-		"ledger.record_evaluation",
-		"ledger.record_context",
-		"ledger.record_event",
-		"ledger.resolve_approval":
-		return mcpToolAccess{
-			WritesLocalState:    true,
-			WriteMode:           "always",
-			AvailableInReadOnly: false,
-			ReadOnlyBehavior:    "disabled in read-only mode",
-		}
-	case "ledger.get_policy":
-		return mcpToolAccess{
-			WritesLocalState:    true,
-			WriteMode:           "conditional",
-			AvailableInReadOnly: true,
-			ReadOnlyBehavior:    "advisory calls are available; calls with workload_id are rejected because they record policy decisions",
-		}
-	default:
-		return mcpToolAccess{
-			WritesLocalState:    false,
-			WriteMode:           "none",
-			AvailableInReadOnly: true,
-			ReadOnlyBehavior:    "available in read-only mode",
-		}
-	}
-}
-
 func mcpToolRequiresWrite(name string, args json.RawMessage) bool {
-	access := mcpToolAccessFor(name)
+	access := controlplane.MCPToolAccessFor(name)
 	switch access.WriteMode {
 	case "always":
 		return true
@@ -809,6 +780,32 @@ func (s *Server) readinessReport() *controlplane.ReadinessReport {
 		integrations.ContractVerificationReportFor(integrations.OptionsFromConfig(s.cfg), runtime),
 		s.now().UTC(),
 	)
+}
+
+func (s *Server) toolAdmissionCheck(args json.RawMessage) (interface{}, error) {
+	input := s.admissionDefaults()
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &input); err != nil {
+			return nil, err
+		}
+		defaults := s.admissionDefaults()
+		input.RBACEnabled = defaults.RBACEnabled
+		input.AuthConfigured = defaults.AuthConfigured
+		input.ReadOnly = defaults.ReadOnly
+	}
+	decision := controlplane.EvaluateAdmission(input, s.now().UTC())
+	return decision, nil
+}
+
+func (s *Server) admissionDefaults() controlplane.AdmissionInput {
+	if s.cfg == nil {
+		return controlplane.AdmissionInput{}
+	}
+	return controlplane.AdmissionInput{
+		RBACEnabled:    s.cfg.RBAC.Enabled,
+		AuthConfigured: s.cfg.Server.AuthToken != "" || s.cfg.Server.AdminToken != "" || s.cfg.Server.ViewerToken != "",
+		ReadOnly:       s.cfg.RBAC.ReadOnly,
+	}
 }
 
 func (s *Server) readResource(uri string) (interface{}, error) {
@@ -861,6 +858,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		return config.StatusReport(s.cfg), nil
 	case "agent-ledger://readiness":
 		return s.readinessReport(), nil
+	case "agent-ledger://admission/check":
+		return controlplane.EvaluateAdmission(controlplane.AdmissionInputFromValues(values, s.admissionDefaults()), s.now().UTC()), nil
 	case "agent-ledger://budget/current":
 		return s.resourceBudget(values)
 	case "agent-ledger://workloads/recent":
