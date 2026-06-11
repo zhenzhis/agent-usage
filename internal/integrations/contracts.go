@@ -164,6 +164,22 @@ func ContractBundleFor(opts Options, runtime *storage.RuntimeStatus) ContractBun
 				WritesLocalState: false,
 			},
 			{
+				ID:               "admission-check",
+				Name:             "Operation Admission Check",
+				Contract:         "agent-ledger.admission-check",
+				Version:          "v1",
+				Hash:             admissionCheckContractHash(),
+				PrimaryURI:       "/api/admission/check",
+				HTTPMethods:      []string{"GET"},
+				CLICommands:      []string{"agent-ledger admission check"},
+				MCPTools:         []string{"ledger.admission_check"},
+				MCPResources:     []string{"agent-ledger://admission/check"},
+				Revalidation:     "ETag + If-None-Match",
+				Privacy:          "operation metadata, role requirements, read-only behavior, and remediation hints only",
+				ReadOnlySafe:     true,
+				WritesLocalState: false,
+			},
+			{
 				ID:               "canonical-event-schema",
 				Name:             "Canonical Event Schema",
 				Contract:         "agent-ledger.canonical-event-schema",
@@ -245,6 +261,7 @@ func ContractVerificationReportFor(opts Options, runtime *storage.RuntimeStatus)
 		{id: "openapi", hash: openAPIHash},
 		{id: "capability-catalog", hash: catalogHash},
 		{id: "runtime-status", hash: hashJSONPayload(runtime)},
+		{id: "admission-check", hash: admissionCheckContractHash()},
 		{id: "canonical-event-schema", hash: storage.CanonicalEventSchemaFingerprint()},
 		{id: "adapter-contract", hash: AdapterContractFingerprint()},
 	}
@@ -312,6 +329,16 @@ func contractDocument(bundle ContractBundle, id string) (ContractDocument, bool)
 
 func contractDocAccess(doc ContractDocument) string {
 	return "read_only_safe=" + boolString(doc.ReadOnlySafe) + ",writes_local_state=" + boolString(doc.WritesLocalState)
+}
+
+func admissionCheckContractHash() string {
+	return hashJSONPayload(map[string]interface{}{
+		"contract":    "agent-ledger.admission-check",
+		"version":     "v1",
+		"surfaces":    []string{"http", "cli", "mcp"},
+		"entrypoints": []string{"/api/admission/check", "agent-ledger admission check", "ledger.admission_check", "agent-ledger://admission/check"},
+		"privacy":     "operation metadata, role requirements, read-only behavior, and remediation hints only",
+	})
 }
 
 func openAPIIdentity(openAPI map[string]interface{}, meta map[string]interface{}) string {

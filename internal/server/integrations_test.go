@@ -63,7 +63,7 @@ func TestContractsEndpoint(t *testing.T) {
 		t.Fatalf("unexpected contract bundle: %+v", bundle)
 	}
 	if !contractBundleHasDocument(bundle, "discovery") || !contractBundleHasDocument(bundle, "openapi") || !contractBundleHasDocument(bundle, "runtime-status") ||
-		!contractBundleHasDocument(bundle, "canonical-event-schema") || !contractBundleHasDocument(bundle, "adapter-contract") {
+		!contractBundleHasDocument(bundle, "admission-check") || !contractBundleHasDocument(bundle, "canonical-event-schema") || !contractBundleHasDocument(bundle, "adapter-contract") {
 		t.Fatalf("contract bundle missing core documents: %+v", bundle.Documents)
 	}
 	if rr.Header().Get("ETag") != `"`+bundle.BundleHash+`"` {

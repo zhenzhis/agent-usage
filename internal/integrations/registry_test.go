@@ -188,7 +188,7 @@ func TestContractBundleIndexesCoreContracts(t *testing.T) {
 	if bundle.Contract != "agent-ledger.contract-bundle" || bundle.Version != "v1" || !bundle.LocalFirst || bundle.BundleHash == "" || !strings.HasPrefix(bundle.BundleHash, "sha256:") {
 		t.Fatalf("unexpected contract bundle identity: %#v", bundle)
 	}
-	for _, id := range []string{"discovery", "contract-bundle", "openapi", "capability-catalog", "runtime-status", "canonical-event-schema", "adapter-contract"} {
+	for _, id := range []string{"discovery", "contract-bundle", "openapi", "capability-catalog", "runtime-status", "admission-check", "canonical-event-schema", "adapter-contract"} {
 		if !contractBundleHasDocument(bundle, id) {
 			t.Fatalf("contract bundle missing %s: %#v", id, bundle.Documents)
 		}
@@ -227,7 +227,7 @@ func TestOpenAPISpecIndexesStableControlPlane(t *testing.T) {
 		t.Fatalf("unexpected OpenAPI metadata: %#v", meta)
 	}
 	paths := spec["paths"].(map[string]interface{})
-	for _, path := range []string{"/api/contracts", "/api/contracts/verify", "/api/openapi.json", "/api/event-schema", "/api/events/validate", "/api/integrations/conformance", "/api/workload-events"} {
+	for _, path := range []string{"/api/contracts", "/api/contracts/verify", "/api/openapi.json", "/api/admission/check", "/api/event-schema", "/api/events/validate", "/api/integrations/conformance", "/api/workload-events"} {
 		if paths[path] == nil {
 			t.Fatalf("OpenAPI missing path %s: %#v", path, paths)
 		}

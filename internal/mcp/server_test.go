@@ -184,6 +184,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 	contractsText := resourceTextPayload(t, out[6])
 	if !strings.Contains(contractsText, `"contract": "agent-ledger.contract-bundle"`) ||
 		!strings.Contains(contractsText, `"bundle_hash": "sha256:`) ||
+		!strings.Contains(contractsText, `"primary_uri": "/api/admission/check"`) ||
 		!strings.Contains(contractsText, `"primary_uri": "/api/event-schema"`) {
 		t.Fatalf("unexpected contracts resource text: %s", contractsText)
 	}
