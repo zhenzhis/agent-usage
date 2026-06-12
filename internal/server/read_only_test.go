@@ -53,6 +53,11 @@ func TestReadOnlyWorkloadLeaseAccess(t *testing.T) {
 	if claimRR.Code != http.StatusForbidden {
 		t.Fatalf("expected read-only claim-next rejection, got %d body=%s", claimRR.Code, claimRR.Body.String())
 	}
+	queueRR := httptest.NewRecorder()
+	srv.handleWorkloadQueue(queueRR, httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/workloads/queue", nil))
+	if queueRR.Code != http.StatusOK {
+		t.Fatalf("read-only queue status=%d body=%s", queueRR.Code, queueRR.Body.String())
+	}
 	readRR := httptest.NewRecorder()
 	srv.handleWorkloadLeases(readRR, httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/workloads/leases?include_inactive=1", nil))
 	if readRR.Code != http.StatusOK {

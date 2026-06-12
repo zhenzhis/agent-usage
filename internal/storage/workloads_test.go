@@ -257,6 +257,13 @@ func TestClaimNextWorkloadLifecycle(t *testing.T) {
 	if err := db.CloseWorkload(closedID, "completed", "done"); err != nil {
 		t.Fatalf("CloseWorkload: %v", err)
 	}
+	initialStats, err := db.GetWorkloadQueueStats(WorkloadClaimFilter{})
+	if err != nil {
+		t.Fatalf("GetWorkloadQueueStats initial: %v", err)
+	}
+	if initialStats.Claimable != 2 || initialStats.NonTerminal != 2 || initialStats.ByStatus["active"] != 2 || len(initialStats.ClaimStatuses) != 2 {
+		t.Fatalf("unexpected initial queue stats: %+v", initialStats)
+	}
 	first, err := db.ClaimNextWorkload("router-a", "execute private task", time.Minute, WorkloadClaimFilter{Source: "codex"})
 	if err != nil {
 		t.Fatalf("ClaimNextWorkload first: %v", err)
@@ -270,6 +277,13 @@ func TestClaimNextWorkloadLifecycle(t *testing.T) {
 	}
 	if tokenHash == first.Lease.LeaseToken || !strings.HasPrefix(tokenHash, "sha256:") {
 		t.Fatalf("lease token was not hashed: token=%q hash=%q", first.Lease.LeaseToken, tokenHash)
+	}
+	codexStats, err := db.GetWorkloadQueueStats(WorkloadClaimFilter{Source: "codex"})
+	if err != nil {
+		t.Fatalf("GetWorkloadQueueStats codex: %v", err)
+	}
+	if codexStats.Claimable != 0 || codexStats.ActiveLeases != 1 || codexStats.ExpiredLeases != 0 || codexStats.OldestClaimableAt != "" || codexStats.NextLeaseExpiryAt == "" {
+		t.Fatalf("unexpected codex queue stats after claim: %+v", codexStats)
 	}
 	emptyCodex, err := db.ClaimNextWorkload("router-b", "execute", time.Minute, WorkloadClaimFilter{Source: "codex"})
 	if err != nil {

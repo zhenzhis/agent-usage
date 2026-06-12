@@ -345,6 +345,15 @@ func tools() []map[string]interface{} {
 			"status":      stringSchema(),
 			"q":           stringSchema(),
 		}),
+		tool("ledger.workload_queue", "Return read-only workload queue claimability and lease pressure stats.", map[string]interface{}{
+			"source":  stringSchema(),
+			"project": stringSchema(),
+			"repo":    stringSchema(),
+			"team":    stringSchema(),
+			"owner":   stringSchema(),
+			"status":  stringSchema(),
+			"q":       stringSchema(),
+		}),
 		tool("ledger.renew_workload_lease", "Renew an active workload lease using its lease token.", map[string]interface{}{
 			"lease_id":    requiredStringSchema(),
 			"lease_token": requiredStringSchema(),
@@ -711,6 +720,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return s.toolAcquireWorkloadLease(args)
 	case "ledger.claim_next_workload":
 		return s.toolClaimNextWorkload(args)
+	case "ledger.workload_queue":
+		return s.toolWorkloadQueue(args)
 	case "ledger.renew_workload_lease":
 		return s.toolRenewWorkloadLease(args)
 	case "ledger.release_workload_lease":
@@ -1364,6 +1375,28 @@ func (s *Server) toolClaimNextWorkload(args json.RawMessage) (interface{}, error
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *Server) toolWorkloadQueue(args json.RawMessage) (interface{}, error) {
+	var in struct {
+		Source  string `json:"source"`
+		Project string `json:"project"`
+		Repo    string `json:"repo"`
+		Team    string `json:"team"`
+		Owner   string `json:"owner"`
+		Status  string `json:"status"`
+		Query   string `json:"q"`
+	}
+	_ = json.Unmarshal(args, &in)
+	return s.db.GetWorkloadQueueStats(storage.WorkloadClaimFilter{
+		Source:  in.Source,
+		Project: in.Project,
+		Repo:    in.Repo,
+		Team:    in.Team,
+		Owner:   in.Owner,
+		Status:  in.Status,
+		Query:   in.Query,
+	})
 }
 
 func (s *Server) toolRenewWorkloadLease(args json.RawMessage) (interface{}, error) {

@@ -62,6 +62,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"/api/integrations/conformance":  adapterConformanceOperation(),
 			"/api/workloads":                 workloadsOperation(),
 			"/api/workloads/claim-next":      workloadClaimNextOperation(),
+			"/api/workloads/queue":           workloadQueueOperation(),
 			"/api/workloads/lease":           workloadLeaseAcquireOperation(),
 			"/api/workloads/lease/renew":     workloadLeaseRenewOperation(),
 			"/api/workloads/lease/release":   workloadLeaseReleaseOperation(),
@@ -309,6 +310,23 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 						"lease":       refSchema("WorkloadLease"),
 					},
 				},
+				"WorkloadQueueStats": map[string]interface{}{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"ok", "generated_at", "claim_statuses", "claimable", "non_terminal", "active_leases", "expired_leases", "by_status"},
+					"properties": map[string]interface{}{
+						"ok":                   boolSchema(),
+						"generated_at":         stringSchema(),
+						"claim_statuses":       map[string]interface{}{"type": "array", "items": stringSchema()},
+						"claimable":            map[string]interface{}{"type": "integer"},
+						"non_terminal":         map[string]interface{}{"type": "integer"},
+						"active_leases":        map[string]interface{}{"type": "integer"},
+						"expired_leases":       map[string]interface{}{"type": "integer"},
+						"by_status":            map[string]interface{}{"type": "object", "additionalProperties": map[string]interface{}{"type": "integer"}},
+						"oldest_claimable_at":  stringSchema(),
+						"next_lease_expiry_at": stringSchema(),
+					},
+				},
 				"WorkloadLeaseListResponse": map[string]interface{}{
 					"type":                 "object",
 					"additionalProperties": false,
@@ -485,6 +503,35 @@ func workloadClaimNextOperation() map[string]interface{} {
 			"WorkloadClaimNextRequest",
 			"WorkloadClaimNextResponse",
 		),
+	}
+}
+
+func workloadQueueOperation() map[string]interface{} {
+	return map[string]interface{}{
+		"get": map[string]interface{}{
+			"tags":        []string{"workload-control"},
+			"summary":     "Get workload queue stats",
+			"description": "Return read-only queue claimability and lease pressure stats for local routers and operators. This endpoint does not mutate expired lease rows.",
+			"x-agent-ledger": map[string]interface{}{
+				"writes_local_state": false,
+				"read_only_safe":     true,
+				"prompt_content":     false,
+				"lease_tokens":       "not_returned",
+			},
+			"parameters": []map[string]interface{}{
+				queryParam("source", "Optional source filter."),
+				queryParam("project", "Optional project filter."),
+				queryParam("repo", "Optional repo filter."),
+				queryParam("team", "Optional team filter."),
+				queryParam("owner", "Optional owner filter."),
+				queryParam("status", "Claim status set. Empty defaults to queued,active; use any for non-terminal statuses."),
+				queryParam("q", "Optional text filter."),
+			},
+			"responses": map[string]interface{}{
+				"200": jsonResponse("WorkloadQueueStats"),
+				"400": jsonResponse("Error"),
+			},
+		},
 	}
 }
 

@@ -122,11 +122,13 @@ The first request writes the workload/run and records only the operation, key sc
 Async routers and long-running agents can acquire a short-lived workload lease before executing a workload:
 
 - REST: `POST /api/workloads/claim-next`, `POST /api/workloads/lease`, `POST /api/workloads/lease/renew`, `POST /api/workloads/lease/release`, and `GET /api/workloads/leases`.
-- CLI: `agent-ledger workload claim-next --holder router-a`, plus `agent-ledger workload lease acquire|renew|release|list`.
-- MCP: `ledger.claim_next_workload`, `ledger.acquire_workload_lease`, `ledger.renew_workload_lease`, `ledger.release_workload_lease`, and `ledger.workload_leases`.
+- CLI: `agent-ledger workload queue`, `agent-ledger workload claim-next --holder router-a`, plus `agent-ledger workload lease acquire|renew|release|list`.
+- MCP: `ledger.workload_queue`, `ledger.claim_next_workload`, `ledger.acquire_workload_lease`, `ledger.renew_workload_lease`, `ledger.release_workload_lease`, and `ledger.workload_leases`.
 - OpenAPI: `GET /api/openapi.json` includes lease request/response schemas and `409 Conflict` for an already active lease.
 
 `claim-next` atomically selects one queue-eligible workload and creates the lease in the same SQLite transaction, so multiple local workers do not need to list and race. By default it claims `queued` or `active` workloads; pass `status=any` or a comma-separated non-terminal status list only when a router intentionally handles stalled or blocked work.
+
+`GET /api/workloads/queue`, `agent-ledger workload queue`, and MCP `ledger.workload_queue` are read-only queue probes. They report claimable workload count, non-terminal status distribution, active/expired lease pressure, oldest claimable workload time, and next lease expiry without mutating expired lease rows.
 
 Only one active lease is allowed per workload. `lease_token` is returned only from acquire/claim responses; list, renew, release, readiness, doctor, audit, and contract surfaces never expose it. SQLite stores a SHA-256 token hash, not the plaintext token. Read paths derive expired status without mutating SQLite, so observer/read-only mode remains read-only.
 
@@ -296,6 +298,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `POST /api/workloads/close` | Close a workload with status/outcome |
 | `POST /api/workloads/link` | Create a metadata-only dependency or lineage edge between workloads |
 | `POST /api/workloads/claim-next` | Atomically claim the next queue-eligible workload and return a lease |
+| `GET /api/workloads/queue` | Read-only queue claimability and lease pressure stats |
 | `POST /api/workloads/lease` | Acquire one short-lived execution lease for a workload |
 | `POST /api/workloads/lease/renew` | Renew an active workload lease using its lease token |
 | `POST /api/workloads/lease/release` | Release an active workload lease using its lease token |
@@ -390,6 +393,7 @@ Current tools:
 - `ledger.close_workload`
 - `ledger.link_workloads`
 - `ledger.claim_next_workload`
+- `ledger.workload_queue`
 - `ledger.acquire_workload_lease`
 - `ledger.renew_workload_lease`
 - `ledger.release_workload_lease`

@@ -77,7 +77,7 @@ func TestAdmissionRoleAndUnknownOperation(t *testing.T) {
 }
 
 func TestAdmissionClassifiesReadOnlyCLISubcommands(t *testing.T) {
-	for _, command := range []string{"agent-ledger workload feed --limit 10", "agent-ledger workload liveness", "agent-ledger reconcile status", "agent-ledger provider convert --file provider.json"} {
+	for _, command := range []string{"agent-ledger workload feed --limit 10", "agent-ledger workload liveness", "agent-ledger workload queue --source codex", "agent-ledger reconcile status", "agent-ledger provider convert --file provider.json"} {
 		decision := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: command, Role: "viewer", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
 		if !decision.Allowed || decision.WritesLocalState {
 			t.Fatalf("expected read-only CLI command to be allowed: command=%q decision=%+v", command, decision)

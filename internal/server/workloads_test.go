@@ -323,6 +323,18 @@ func TestWorkloadClaimNextAPI(t *testing.T) {
 		t.Fatalf("CreateWorkload: %v", err)
 	}
 	srv := New(db, "", Options{})
+	queueBefore := httptest.NewRecorder()
+	srv.handleWorkloadQueue(queueBefore, httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/workloads/queue?source=codex", nil))
+	if queueBefore.Code != http.StatusOK {
+		t.Fatalf("queue status before claim=%d body=%s", queueBefore.Code, queueBefore.Body.String())
+	}
+	var beforeStats storage.WorkloadQueueStats
+	if err := json.Unmarshal(queueBefore.Body.Bytes(), &beforeStats); err != nil {
+		t.Fatalf("decode queue before: %v", err)
+	}
+	if beforeStats.Claimable != 1 || beforeStats.ActiveLeases != 0 {
+		t.Fatalf("unexpected queue before claim: %+v", beforeStats)
+	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"holder":      "router-a",
 		"purpose":     "private execution purpose",
@@ -340,6 +352,18 @@ func TestWorkloadClaimNextAPI(t *testing.T) {
 	}
 	if !claimed.OK || claimed.Empty || claimed.WorkloadID != workloadID || claimed.Workload == nil || claimed.Lease == nil || claimed.Lease.LeaseToken == "" {
 		t.Fatalf("unexpected claim-next response: %+v", claimed)
+	}
+	queueAfter := httptest.NewRecorder()
+	srv.handleWorkloadQueue(queueAfter, httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/workloads/queue?source=codex", nil))
+	if queueAfter.Code != http.StatusOK {
+		t.Fatalf("queue status after claim=%d body=%s", queueAfter.Code, queueAfter.Body.String())
+	}
+	var afterStats storage.WorkloadQueueStats
+	if err := json.Unmarshal(queueAfter.Body.Bytes(), &afterStats); err != nil {
+		t.Fatalf("decode queue after: %v", err)
+	}
+	if afterStats.Claimable != 0 || afterStats.ActiveLeases != 1 || afterStats.NextLeaseExpiryAt == "" {
+		t.Fatalf("unexpected queue after claim: %+v", afterStats)
 	}
 	emptyResp := httptest.NewRecorder()
 	srv.handleWorkloadClaimNext(emptyResp, httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/workloads/claim-next", bytes.NewReader(body)))

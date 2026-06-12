@@ -62,6 +62,20 @@ type WorkloadClaimResult struct {
 	Lease      *WorkloadLease   `json:"lease,omitempty"`
 }
 
+// WorkloadQueueStats summarizes queue claimability without mutating lease rows.
+type WorkloadQueueStats struct {
+	OK                bool           `json:"ok"`
+	GeneratedAt       string         `json:"generated_at"`
+	ClaimStatuses     []string       `json:"claim_statuses"`
+	Claimable         int            `json:"claimable"`
+	NonTerminal       int            `json:"non_terminal"`
+	ActiveLeases      int            `json:"active_leases"`
+	ExpiredLeases     int            `json:"expired_leases"`
+	ByStatus          map[string]int `json:"by_status"`
+	OldestClaimableAt string         `json:"oldest_claimable_at,omitempty"`
+	NextLeaseExpiryAt string         `json:"next_lease_expiry_at,omitempty"`
+}
+
 // WorkloadLeaseConflictError reports that a workload has a non-expired active lease.
 type WorkloadLeaseConflictError struct {
 	WorkloadID string
@@ -244,6 +258,88 @@ func (d *DB) ClaimNextWorkload(holder, purpose string, ttl time.Duration, filter
 		return nil, err
 	}
 	return &WorkloadClaimResult{OK: true, Empty: false, WorkloadID: workloadID, Workload: summary, Lease: lease}, nil
+}
+
+// GetWorkloadQueueStats returns read-only queue health for routers and probes.
+func (d *DB) GetWorkloadQueueStats(filter WorkloadClaimFilter) (*WorkloadQueueStats, error) {
+	if err := validateWorkloadClaimFilter(filter); err != nil {
+		return nil, err
+	}
+	statuses, err := workloadClaimStatuses(filter.Status)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	filter = normalizeWorkloadClaimFilter(filter)
+	baseWhere, baseArgs := workloadClaimFilterPredicates(filter)
+	if len(baseWhere) == 0 {
+		baseWhere = []string{"1=1"}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	stats := &WorkloadQueueStats{
+		OK:            true,
+		GeneratedAt:   now.Format(time.RFC3339Nano),
+		ClaimStatuses: statuses,
+		ByStatus:      map[string]int{},
+	}
+	nonTerminalStatuses := []string{"queued", "active", "running", "waiting_approval", "evaluating", "blocked", "stalled"}
+	statusArgs := append([]interface{}{}, baseArgs...)
+	for _, status := range nonTerminalStatuses {
+		statusArgs = append(statusArgs, status)
+	}
+	rows, err := d.db.Query(`SELECT w.status,COUNT(*)
+		FROM workloads w
+		WHERE `+strings.Join(baseWhere, " AND ")+` AND w.status IN (`+placeholders(len(nonTerminalStatuses))+`)
+		GROUP BY w.status`, statusArgs...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		stats.ByStatus[status] = count
+		stats.NonTerminal += count
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	claimWhere := append([]string{}, baseWhere...)
+	claimWhere = append(claimWhere, `w.status IN (`+placeholders(len(statuses))+`)`, `NOT EXISTS (
+		SELECT 1 FROM workload_leases wl
+		WHERE wl.workload_id=w.workload_id AND wl.status='active' AND wl.expires_at > ?
+	)`)
+	claimArgs := append([]interface{}{}, baseArgs...)
+	for _, status := range statuses {
+		claimArgs = append(claimArgs, status)
+	}
+	claimArgs = append(claimArgs, now)
+	if err := d.db.QueryRow(`SELECT COUNT(*),COALESCE(MIN(w.created_at),'')
+		FROM workloads w
+		WHERE `+strings.Join(claimWhere, " AND "), claimArgs...).Scan(&stats.Claimable, &stats.OldestClaimableAt); err != nil {
+		return nil, err
+	}
+	leaseWhere := append([]string{}, baseWhere...)
+	activeArgs := append([]interface{}{}, baseArgs...)
+	activeArgs = append(activeArgs, now)
+	if err := d.db.QueryRow(`SELECT COUNT(*),COALESCE(MIN(wl.expires_at),'')
+		FROM workload_leases wl JOIN workloads w ON w.workload_id=wl.workload_id
+		WHERE `+strings.Join(leaseWhere, " AND ")+` AND wl.status='active' AND wl.expires_at > ?`, activeArgs...).Scan(&stats.ActiveLeases, &stats.NextLeaseExpiryAt); err != nil {
+		return nil, err
+	}
+	expiredArgs := append([]interface{}{}, baseArgs...)
+	expiredArgs = append(expiredArgs, now)
+	if err := d.db.QueryRow(`SELECT COUNT(*)
+		FROM workload_leases wl JOIN workloads w ON w.workload_id=wl.workload_id
+		WHERE `+strings.Join(leaseWhere, " AND ")+` AND (wl.status='expired' OR (wl.status='active' AND wl.expires_at <= ?))`, expiredArgs...).Scan(&stats.ExpiredLeases); err != nil {
+		return nil, err
+	}
+	return stats, nil
 }
 
 // RenewWorkloadLease extends an active lease after validating its token.
@@ -463,6 +559,48 @@ func validateWorkloadClaimFilter(filter WorkloadClaimFilter) error {
 		}
 	}
 	return nil
+}
+
+func normalizeWorkloadClaimFilter(filter WorkloadClaimFilter) WorkloadClaimFilter {
+	filter.Source = strings.TrimSpace(filter.Source)
+	filter.Project = strings.TrimSpace(filter.Project)
+	filter.Repo = strings.TrimSpace(filter.Repo)
+	filter.Team = strings.TrimSpace(filter.Team)
+	filter.Owner = strings.TrimSpace(filter.Owner)
+	filter.Status = strings.TrimSpace(filter.Status)
+	filter.Query = strings.TrimSpace(filter.Query)
+	return filter
+}
+
+func workloadClaimFilterPredicates(filter WorkloadClaimFilter) ([]string, []interface{}) {
+	where := []string{}
+	args := []interface{}{}
+	if filter.Source != "" {
+		where = append(where, "w.source=?")
+		args = append(args, filter.Source)
+	}
+	if filter.Project != "" {
+		where = append(where, "w.project=?")
+		args = append(args, filter.Project)
+	}
+	if filter.Repo != "" {
+		where = append(where, "w.repo=?")
+		args = append(args, filter.Repo)
+	}
+	if filter.Team != "" {
+		where = append(where, "w.team=?")
+		args = append(args, filter.Team)
+	}
+	if filter.Owner != "" {
+		where = append(where, "w.owner=?")
+		args = append(args, filter.Owner)
+	}
+	if filter.Query != "" {
+		like := "%" + strings.ToLower(filter.Query) + "%"
+		where = append(where, `(LOWER(w.goal) LIKE ? OR LOWER(w.project) LIKE ? OR LOWER(w.repo) LIKE ? OR LOWER(w.team) LIKE ? OR LOWER(w.owner) LIKE ?)`)
+		args = append(args, like, like, like, like, like)
+	}
+	return where, args
 }
 
 func placeholders(n int) string {

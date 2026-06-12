@@ -241,6 +241,30 @@ func (s *Server) handleWorkloadClaimNext(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, result)
 }
 
+func (s *Server) handleWorkloadQueue(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireRole(w, r, "viewer") {
+		return
+	}
+	stats, err := s.db.GetWorkloadQueueStats(storage.WorkloadClaimFilter{
+		Source:  r.URL.Query().Get("source"),
+		Project: r.URL.Query().Get("project"),
+		Repo:    r.URL.Query().Get("repo"),
+		Team:    r.URL.Query().Get("team"),
+		Owner:   r.URL.Query().Get("owner"),
+		Status:  r.URL.Query().Get("status"),
+		Query:   r.URL.Query().Get("q"),
+	})
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	writeJSON(w, stats)
+}
+
 func (s *Server) handleWorkloadLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

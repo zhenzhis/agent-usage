@@ -38,7 +38,7 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 		t.Fatalf("responses=%d want 9", len(out))
 	}
 	tools := out[0]["result"].(map[string]interface{})["tools"].([]interface{})
-	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.claim_next_workload") || !hasTool(tools, "ledger.acquire_workload_lease") || !hasTool(tools, "ledger.renew_workload_lease") || !hasTool(tools, "ledger.release_workload_lease") || !hasTool(tools, "ledger.workload_leases") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.approvals") || !hasTool(tools, "ledger.resolve_approval") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") || !hasTool(tools, "ledger.discovery") || !hasTool(tools, "ledger.contracts") || !hasTool(tools, "ledger.contracts_verify") || !hasTool(tools, "ledger.openapi") || !hasTool(tools, "ledger.runtime_status") || !hasTool(tools, "ledger.config_status") || !hasTool(tools, "ledger.readiness") || !hasTool(tools, "ledger.admission_check") {
+	if !hasTool(tools, "ledger.start_workload") || !hasTool(tools, "ledger.start_run") || !hasTool(tools, "ledger.link_workloads") || !hasTool(tools, "ledger.claim_next_workload") || !hasTool(tools, "ledger.workload_queue") || !hasTool(tools, "ledger.acquire_workload_lease") || !hasTool(tools, "ledger.renew_workload_lease") || !hasTool(tools, "ledger.release_workload_lease") || !hasTool(tools, "ledger.workload_leases") || !hasTool(tools, "ledger.get_policy") || !hasTool(tools, "ledger.policy_audit") || !hasTool(tools, "ledger.approval_routes") || !hasTool(tools, "ledger.approvals") || !hasTool(tools, "ledger.resolve_approval") || !hasTool(tools, "ledger.audit_log") || !hasTool(tools, "ledger.workload_timeline") || !hasTool(tools, "ledger.workload_state") || !hasTool(tools, "ledger.workload_feed") || !hasTool(tools, "ledger.record_tool_call") || !hasTool(tools, "ledger.record_context") || !hasTool(tools, "ledger.record_evaluation") || !hasTool(tools, "ledger.record_event") || !hasTool(tools, "ledger.validate_event") || !hasTool(tools, "ledger.event_schema") || !hasTool(tools, "ledger.event_examples") || !hasTool(tools, "ledger.adapter_contract") || !hasTool(tools, "ledger.adapter_conformance") || !hasTool(tools, "ledger.integrations") || !hasTool(tools, "ledger.discovery") || !hasTool(tools, "ledger.contracts") || !hasTool(tools, "ledger.contracts_verify") || !hasTool(tools, "ledger.openapi") || !hasTool(tools, "ledger.runtime_status") || !hasTool(tools, "ledger.config_status") || !hasTool(tools, "ledger.readiness") || !hasTool(tools, "ledger.admission_check") {
 		t.Fatalf("expected workload and policy tools, got %#v", tools)
 	}
 	budgetMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.current_budget"))
@@ -56,6 +56,10 @@ func TestMCPToolsListAndBudget(t *testing.T) {
 	claimMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.claim_next_workload"))
 	if claimMeta["write_mode"] != "always" || claimMeta["writes_local_state"] != true || claimMeta["available_in_read_only"] != false {
 		t.Fatalf("claim-next metadata wrong: %#v", claimMeta)
+	}
+	queueMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.workload_queue"))
+	if queueMeta["write_mode"] != "none" || queueMeta["writes_local_state"] != false || queueMeta["available_in_read_only"] != true {
+		t.Fatalf("workload queue metadata wrong: %#v", queueMeta)
 	}
 	leaseListMeta := agentLedgerToolMeta(t, toolByName(t, tools, "ledger.workload_leases"))
 	if leaseListMeta["write_mode"] != "none" || leaseListMeta["writes_local_state"] != false || leaseListMeta["available_in_read_only"] != true {
@@ -479,6 +483,7 @@ func TestMCPReadOnlyAllowsReadToolsAndRejectsWriteTools(t *testing.T) {
 		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"ledger.contracts_verify","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"ledger.openapi","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"ledger.workload_leases","arguments":{"limit":10}}}`,
+		`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"ledger.workload_queue","arguments":{"source":"codex"}}}`,
 	)
 	if toolTextPayload(t, readResponses[0])["method"] != "local-estimate" {
 		t.Fatalf("read-only read tool returned unexpected payload: %#v", readResponses[0])
@@ -516,13 +521,17 @@ func TestMCPReadOnlyAllowsReadToolsAndRejectsWriteTools(t *testing.T) {
 	if _, ok := leaseListPayload["rows"].([]interface{}); !ok {
 		t.Fatalf("read-only lease list returned unexpected payload: %#v", leaseListPayload)
 	}
+	queuePayload := toolTextPayload(t, readResponses[9])
+	if queuePayload["ok"] != true {
+		t.Fatalf("read-only workload queue returned unexpected payload: %#v", queuePayload)
+	}
 
 	writeResponses := serveRawLines(t, srv,
-		`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"blocked","source":"codex"}}}`,
-		`{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"ledger.resolve_approval","arguments":{"request_id":"apr_x","status":"approved"}}}`,
-		`{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"ledger.get_policy","arguments":{"workload_id":"`+workloadID+`","model":"gpt-5.5","action":"model.call"}}}`,
-		`{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"ledger.acquire_workload_lease","arguments":{"workload_id":"`+workloadID+`","holder":"router-a"}}}`,
-		`{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"ledger.claim_next_workload","arguments":{"holder":"router-a"}}}`,
+		`{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"blocked","source":"codex"}}}`,
+		`{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"ledger.resolve_approval","arguments":{"request_id":"apr_x","status":"approved"}}}`,
+		`{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"ledger.get_policy","arguments":{"workload_id":"`+workloadID+`","model":"gpt-5.5","action":"model.call"}}}`,
+		`{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"ledger.acquire_workload_lease","arguments":{"workload_id":"`+workloadID+`","holder":"router-a"}}}`,
+		`{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"ledger.claim_next_workload","arguments":{"holder":"router-a"}}}`,
 	)
 	if writeResponses[0]["error"] == nil {
 		t.Fatalf("expected read-only write tool error: %#v", writeResponses[0])
@@ -1089,6 +1098,7 @@ func serveRawLines(t *testing.T, srv *Server, lines ...string) []map[string]inte
 		t.Fatalf("serve: %v", err)
 	}
 	scanner := bufio.NewScanner(&output)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	var responses []map[string]interface{}
 	for scanner.Scan() {
 		var resp map[string]interface{}

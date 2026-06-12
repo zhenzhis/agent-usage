@@ -320,7 +320,7 @@ func CLICommandAccessFor(command string, input AdmissionInput) OperationAccess {
 			}
 			return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "operator", Reason: "workload lease command writes local ledger state"}
 		}
-		if len(parts) == 1 || readOnlySubcommand(parts[1], []string{"list", "show", "timeline", "state", "status", "feed", "events", "liveness"}) {
+		if len(parts) == 1 || readOnlySubcommand(parts[1], []string{"list", "show", "timeline", "state", "status", "queue", "queue-status", "feed", "events", "liveness"}) {
 			return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "workload query commands are available in read-only mode", RequiredRole: "viewer", Reason: "workload command reads local ledger state"}
 		}
 		return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "operator", Reason: "workload command writes local ledger state"}

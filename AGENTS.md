@@ -12,6 +12,7 @@ go build -o agent-ledger .                 # build binary
 ./agent-ledger doctor --format markdown    # local diagnostics
 ./agent-ledger today                       # CLI summary
 ./agent-ledger workload start-run --workload-id <id> --source codex --agent-name codex --idempotency-key <stable-key>
+./agent-ledger workload queue --source codex
 ./agent-ledger workload claim-next --holder codex-router --ttl 30m
 ./agent-ledger workload lease acquire --workload-id <id> --holder codex-router --ttl 30m
 ./agent-ledger workload lease list

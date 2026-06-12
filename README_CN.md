@@ -122,11 +122,13 @@ Workload 与 run 写操作支持稳定幂等键，面向异步 agent router、wr
 异步 router 和长时间运行的 agent 可以在执行 workload 前获取短期 lease：
 
 - REST：`POST /api/workloads/claim-next`、`POST /api/workloads/lease`、`POST /api/workloads/lease/renew`、`POST /api/workloads/lease/release`、`GET /api/workloads/leases`。
-- CLI：`agent-ledger workload claim-next --holder router-a`，以及 `agent-ledger workload lease acquire|renew|release|list`。
-- MCP：`ledger.claim_next_workload`、`ledger.acquire_workload_lease`、`ledger.renew_workload_lease`、`ledger.release_workload_lease`、`ledger.workload_leases`。
+- CLI：`agent-ledger workload queue`、`agent-ledger workload claim-next --holder router-a`，以及 `agent-ledger workload lease acquire|renew|release|list`。
+- MCP：`ledger.workload_queue`、`ledger.claim_next_workload`、`ledger.acquire_workload_lease`、`ledger.renew_workload_lease`、`ledger.release_workload_lease`、`ledger.workload_leases`。
 - OpenAPI：`GET /api/openapi.json` 会描述 lease 请求/响应 schema，以及已有 active lease 时的 `409 Conflict`。
 
 `claim-next` 会在同一个 SQLite 事务中原子选择一个可领取 workload 并创建 lease，多个本地 worker 不需要先 list 再抢占。默认只领取 `queued` 或 `active` workload；只有 router 明确要处理 stalled/blocked 工作时，才传 `status=any` 或逗号分隔的非终态 status。
+
+`GET /api/workloads/queue`、`agent-ledger workload queue` 与 MCP `ledger.workload_queue` 是只读 queue 探针。它们会返回可领取 workload 数、非终态分布、active/expired lease 压力、最老可领取 workload 时间和下一次 lease 过期时间，不会回写过期 lease 行。
 
 同一个 workload 同时只允许一个 active lease。`lease_token` 只在 acquire/claim 响应中返回；list、renew、release、readiness、doctor、audit 和 contract surface 都不会返回它。SQLite 只保存 SHA-256 token hash，不保存明文 token。读路径只派生过期状态，不写回 SQLite，因此 observer/read-only 模式仍保持只读。
 
@@ -296,6 +298,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `POST /api/workloads/close` | 关闭 workload 并记录结果 |
 | `POST /api/workloads/link` | 创建 metadata-only 的 workload 依赖或 lineage 边 |
 | `POST /api/workloads/claim-next` | 原子领取下一个可执行 workload 并返回 lease |
+| `GET /api/workloads/queue` | 只读 queue 可领取状态和 lease 压力统计 |
 | `POST /api/workloads/lease` | 为 workload 获取一个短期执行 lease |
 | `POST /api/workloads/lease/renew` | 使用 lease token 续期 active workload lease |
 | `POST /api/workloads/lease/release` | 使用 lease token 释放 active workload lease |
@@ -390,6 +393,7 @@ MCP `tools/list` 会返回标准风格的 `annotations.readOnlyHint`，以及 `_
 - `ledger.close_workload`
 - `ledger.link_workloads`
 - `ledger.claim_next_workload`
+- `ledger.workload_queue`
 - `ledger.acquire_workload_lease`
 - `ledger.renew_workload_lease`
 - `ledger.release_workload_lease`

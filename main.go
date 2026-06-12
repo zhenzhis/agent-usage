@@ -1741,6 +1741,8 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"rows": rows, "max_age": maxAge.String(), "stale_only": staleOnly})
 	case "claim-next", "claim":
 		return runWorkloadClaimNextCLI(args[1:], db)
+	case "queue", "queue-status":
+		return runWorkloadQueueCLI(args[1:], db)
 	case "lease", "leases":
 		return runWorkloadLeaseCLI(args[1:], db)
 	case "context", "record-context":
@@ -1773,6 +1775,22 @@ func runWorkloadClaimNextCLI(args []string, db *storage.DB) error {
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(result)
+}
+
+func runWorkloadQueueCLI(args []string, db *storage.DB) error {
+	stats, err := db.GetWorkloadQueueStats(storage.WorkloadClaimFilter{
+		Source:  cliValue(args, "--source"),
+		Project: cliValue(args, "--project"),
+		Repo:    cliValue(args, "--repo"),
+		Team:    cliValue(args, "--team"),
+		Owner:   cliValue(args, "--owner"),
+		Status:  cliValue(args, "--status"),
+		Query:   firstNonEmptyCLI(cliValue(args, "--q"), cliValue(args, "--query")),
+	})
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(stats)
 }
 
 func runWorkloadContextCLI(args []string, db *storage.DB) error {
