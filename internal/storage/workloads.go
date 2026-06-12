@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -437,20 +438,175 @@ func (d *DB) BackfillWorkloadsFromUsage(from, to time.Time) error {
 	return tx.Commit()
 }
 
+type workloadCreateIdempotencyPayload struct {
+	Goal      string  `json:"goal"`
+	Source    string  `json:"source"`
+	Project   string  `json:"project"`
+	Repo      string  `json:"repo"`
+	GitBranch string  `json:"git_branch"`
+	Owner     string  `json:"owner"`
+	Team      string  `json:"team"`
+	BudgetUSD float64 `json:"budget_usd"`
+}
+
+type agentRunStartIdempotencyPayload struct {
+	WorkloadID string `json:"workload_id"`
+	Source     string `json:"source"`
+	AgentName  string `json:"agent_name"`
+	Command    string `json:"command"`
+	CWD        string `json:"cwd"`
+}
+
+type controlIdempotencyReplay struct {
+	ResultKind string
+	ResultID   string
+}
+
+// IdempotencyConflictError reports a reused idempotency key with different input.
+type IdempotencyConflictError struct {
+	Scope     string
+	Key       string
+	Operation string
+}
+
+func (e *IdempotencyConflictError) Error() string {
+	return fmt.Sprintf("idempotency key %q already exists for %s with a different request", e.Key, e.Operation)
+}
+
+// IsIdempotencyConflict reports whether err is an idempotency-key conflict.
+func IsIdempotencyConflict(err error) bool {
+	var target *IdempotencyConflictError
+	return errors.As(err, &target)
+}
+
+func normalizeIdempotencyKey(key string) (string, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", nil
+	}
+	if err := validateShortMetadata("idempotency_key", key, 200); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+func controlRequestHash(operation string, payload interface{}) string {
+	raw, _ := json.Marshal(struct {
+		Operation string      `json:"operation"`
+		Payload   interface{} `json:"payload"`
+	}{
+		Operation: operation,
+		Payload:   payload,
+	})
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func replayControlIdempotencyTx(tx *sql.Tx, scope, key, operation, requestHash string, now time.Time) (controlIdempotencyReplay, bool, error) {
+	var rowOperation, rowHash, resultKind, resultID string
+	err := tx.QueryRow(`SELECT operation,request_hash,result_kind,result_id FROM control_idempotency WHERE scope=? AND idempotency_key=?`,
+		scope, key).Scan(&rowOperation, &rowHash, &resultKind, &resultID)
+	if err == sql.ErrNoRows {
+		return controlIdempotencyReplay{}, false, nil
+	}
+	if err != nil {
+		return controlIdempotencyReplay{}, false, err
+	}
+	if rowOperation != operation || rowHash != requestHash {
+		return controlIdempotencyReplay{}, true, &IdempotencyConflictError{Scope: scope, Key: key, Operation: operation}
+	}
+	if resultID == "" {
+		return controlIdempotencyReplay{}, true, fmt.Errorf("idempotency key %q has no recorded result", key)
+	}
+	if _, err := tx.Exec(`UPDATE control_idempotency SET last_seen_at=?, replay_count=replay_count+1 WHERE scope=? AND idempotency_key=?`,
+		now, scope, key); err != nil {
+		return controlIdempotencyReplay{}, true, err
+	}
+	return controlIdempotencyReplay{ResultKind: resultKind, ResultID: resultID}, true, nil
+}
+
+func insertControlIdempotencyTx(tx *sql.Tx, scope, key, operation, requestHash, resultKind, resultID string, now time.Time) error {
+	_, err := tx.Exec(`INSERT INTO control_idempotency(scope,idempotency_key,operation,request_hash,result_kind,result_id,created_at,last_seen_at,replay_count)
+		VALUES(?,?,?,?,?,?,?,?,0)`, scope, key, operation, requestHash, resultKind, resultID, now, now)
+	return err
+}
+
 // CreateWorkload creates a manually scoped workload for CLI/MCP/API callers.
 func (d *DB) CreateWorkload(goal, source, project, repo, branch, owner, team string, budgetUSD float64) (string, error) {
 	if strings.TrimSpace(goal) == "" {
 		return "", fmt.Errorf("goal is required")
 	}
-	id := generatedID("wl")
-	now := time.Now().UTC()
-	_, err := d.db.Exec(`INSERT INTO workloads(workload_id,goal,status,source,project,repo,git_branch,owner,team,budget_usd,outcome,confidence,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		id, strings.TrimSpace(goal), "active", source, project, repo, normalizeBranch(branch), owner, team, budgetUSD, "", 1.0, now, now)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	tx, err := d.db.Begin()
 	if err != nil {
 		return "", err
 	}
+	defer tx.Rollback()
+	id := generatedID("wl")
+	now := time.Now().UTC()
+	if err := insertWorkloadTx(tx, id, goal, source, project, repo, branch, owner, team, budgetUSD, now); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
 	return id, nil
+}
+
+// CreateWorkloadIdempotent creates a workload once for a stable control-plane retry key.
+func (d *DB) CreateWorkloadIdempotent(idempotencyKey, goal, source, project, repo, branch, owner, team string, budgetUSD float64) (string, bool, error) {
+	key, err := normalizeIdempotencyKey(idempotencyKey)
+	if err != nil {
+		return "", false, err
+	}
+	if key == "" {
+		id, err := d.CreateWorkload(goal, source, project, repo, branch, owner, team, budgetUSD)
+		return id, false, err
+	}
+	if strings.TrimSpace(goal) == "" {
+		return "", false, fmt.Errorf("goal is required")
+	}
+	payload := workloadCreateIdempotencyPayload{
+		Goal:      strings.TrimSpace(goal),
+		Source:    source,
+		Project:   project,
+		Repo:      repo,
+		GitBranch: normalizeBranch(branch),
+		Owner:     owner,
+		Team:      team,
+		BudgetUSD: budgetUSD,
+	}
+	const operation = "workload.create"
+	requestHash := controlRequestHash(operation, payload)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	tx, err := d.db.Begin()
+	if err != nil {
+		return "", false, err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	if replay, ok, err := replayControlIdempotencyTx(tx, operation, key, operation, requestHash, now); err != nil {
+		return "", false, err
+	} else if ok {
+		if err := tx.Commit(); err != nil {
+			return "", false, err
+		}
+		return replay.ResultID, true, nil
+	}
+	id := generatedID("wl")
+	if err := insertWorkloadTx(tx, id, goal, source, project, repo, branch, owner, team, budgetUSD, now); err != nil {
+		return "", false, err
+	}
+	if err := insertControlIdempotencyTx(tx, operation, key, operation, requestHash, "workload", id, now); err != nil {
+		return "", false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", false, err
+	}
+	return id, false, nil
 }
 
 // CloseWorkload marks a workload complete, failed, partial, or abandoned.
@@ -481,23 +637,97 @@ func (d *DB) CloseWorkload(workloadID, status, outcome string) error {
 func (d *DB) StartAgentRun(workloadID, source, agentName, command, cwd string) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	tx, err := d.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	id, err := startAgentRunTx(tx, workloadID, source, agentName, command, cwd, time.Now().UTC())
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// StartAgentRunIdempotent records a run once for a stable control-plane retry key.
+func (d *DB) StartAgentRunIdempotent(idempotencyKey, workloadID, source, agentName, command, cwd string) (string, bool, error) {
+	key, err := normalizeIdempotencyKey(idempotencyKey)
+	if err != nil {
+		return "", false, err
+	}
+	if key == "" {
+		id, err := d.StartAgentRun(workloadID, source, agentName, command, cwd)
+		return id, false, err
+	}
+	if workloadID == "" {
+		return "", false, fmt.Errorf("workload_id is required")
+	}
+	payload := agentRunStartIdempotencyPayload{
+		WorkloadID: workloadID,
+		Source:     source,
+		AgentName:  agentName,
+		Command:    redactCommandSecrets(command),
+		CWD:        cwd,
+	}
+	const operation = "agent_run.start"
+	requestHash := controlRequestHash(operation, payload)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	tx, err := d.db.Begin()
+	if err != nil {
+		return "", false, err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	if replay, ok, err := replayControlIdempotencyTx(tx, operation, key, operation, requestHash, now); err != nil {
+		return "", false, err
+	} else if ok {
+		if err := tx.Commit(); err != nil {
+			return "", false, err
+		}
+		return replay.ResultID, true, nil
+	}
+	id, err := startAgentRunTx(tx, workloadID, source, agentName, command, cwd, now)
+	if err != nil {
+		return "", false, err
+	}
+	if err := insertControlIdempotencyTx(tx, operation, key, operation, requestHash, "agent_run", id, now); err != nil {
+		return "", false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", false, err
+	}
+	return id, false, nil
+}
+
+func insertWorkloadTx(tx *sql.Tx, id, goal, source, project, repo, branch, owner, team string, budgetUSD float64, now time.Time) error {
+	_, err := tx.Exec(`INSERT INTO workloads(workload_id,goal,status,source,project,repo,git_branch,owner,team,budget_usd,outcome,confidence,created_at,updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		id, strings.TrimSpace(goal), "active", source, project, repo, normalizeBranch(branch), owner, team, budgetUSD, "", 1.0, now, now)
+	return err
+}
+
+func startAgentRunTx(tx *sql.Tx, workloadID, source, agentName, command, cwd string, now time.Time) (string, error) {
 	if workloadID == "" {
 		return "", fmt.Errorf("workload_id is required")
 	}
 	var workloadStatus string
-	if err := d.db.QueryRow(`SELECT status FROM workloads WHERE workload_id=?`, workloadID).Scan(&workloadStatus); err != nil {
+	if err := tx.QueryRow(`SELECT status FROM workloads WHERE workload_id=?`, workloadID).Scan(&workloadStatus); err != nil {
 		return "", err
 	}
 	if terminalWorkloadStatus(workloadStatus) {
 		return "", fmt.Errorf("workload_id %s is already %s; run start rejected", workloadID, workloadStatus)
 	}
 	id := generatedID("run")
-	now := time.Now().UTC()
-	if _, err := d.db.Exec(`INSERT INTO agent_runs(run_id,workload_id,source,agent_name,command,cwd,status,started_at,confidence)
+	if _, err := tx.Exec(`INSERT INTO agent_runs(run_id,workload_id,source,agent_name,command,cwd,status,started_at,confidence)
 		VALUES(?,?,?,?,?,?,?,?,?)`, id, workloadID, source, agentName, redactCommandSecrets(command), cwd, "running", now, 1.0); err != nil {
 		return "", err
 	}
-	_, _ = d.db.Exec(`UPDATE workloads SET updated_at=? WHERE workload_id=?`, now, workloadID)
+	_, _ = tx.Exec(`UPDATE workloads SET updated_at=? WHERE workload_id=?`, now, workloadID)
 	return id, nil
 }
 

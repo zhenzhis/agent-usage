@@ -851,6 +851,39 @@ func TestMCPAuditLog(t *testing.T) {
 	}
 }
 
+func TestMCPStartWorkloadIdempotency(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+
+	line1 := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"mcp idempotent workload","source":"codex","project":"agent-ledger","agent_name":"codex","command":"codex exec","idempotency_key":"mcp-start-key"}}}`
+	line2 := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ledger.start_workload","arguments":{"goal":"mcp idempotent workload","source":"codex","project":"agent-ledger","agent_name":"codex","command":"codex exec","idempotency_key":"mcp-start-key"}}}`
+	responses := serveLines(t, srv, line1, line2)
+	first := toolTextPayload(t, responses[0])
+	second := toolTextPayload(t, responses[1])
+	if first["workload_id"] == "" || second["workload_id"] != first["workload_id"] || second["run_id"] != first["run_id"] {
+		t.Fatalf("unexpected MCP idempotency payloads: first=%#v second=%#v", first, second)
+	}
+	if second["idempotent_replay"] != true || second["run_idempotent_replay"] != true {
+		t.Fatalf("expected workload and run replay flags: %#v", second)
+	}
+	now := time.Now().UTC()
+	page, err := db.GetWorkloadsPage(now.Add(-time.Hour), now.Add(time.Hour), "", "", "", "", "", 10, 0)
+	if err != nil {
+		t.Fatalf("GetWorkloadsPage: %v", err)
+	}
+	if page.Total != 1 {
+		t.Fatalf("expected one workload, got %d", page.Total)
+	}
+	detail, err := db.GetWorkloadDetail(first["workload_id"].(string))
+	if err != nil {
+		t.Fatalf("GetWorkloadDetail: %v", err)
+	}
+	if len(detail.Runs) != 1 {
+		t.Fatalf("expected one run, got %+v", detail.Runs)
+	}
+}
+
 func TestMCPRecordEvent(t *testing.T) {
 	db := openTestDB(t)
 	cfg := config.DefaultConfig()

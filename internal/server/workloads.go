@@ -54,31 +54,43 @@ func (s *Server) handleWorkloadsList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, page)
 }
 
+func requestIdempotencyKey(r *http.Request, payloadKey string) string {
+	return firstNonEmpty(payloadKey, r.Header.Get("Idempotency-Key"), r.Header.Get("X-Idempotency-Key"), r.URL.Query().Get("idempotency_key"))
+}
+
 func (s *Server) handleWorkloadCreate(w http.ResponseWriter, r *http.Request) {
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
 		return
 	}
 	var payload struct {
-		Goal      string  `json:"goal"`
-		Source    string  `json:"source"`
-		Project   string  `json:"project"`
-		Repo      string  `json:"repo"`
-		GitBranch string  `json:"git_branch"`
-		Owner     string  `json:"owner"`
-		Team      string  `json:"team"`
-		BudgetUSD float64 `json:"budget_usd"`
+		Goal           string  `json:"goal"`
+		Source         string  `json:"source"`
+		Project        string  `json:"project"`
+		Repo           string  `json:"repo"`
+		GitBranch      string  `json:"git_branch"`
+		Owner          string  `json:"owner"`
+		Team           string  `json:"team"`
+		BudgetUSD      float64 `json:"budget_usd"`
+		IdempotencyKey string  `json:"idempotency_key"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload); err != nil {
 		badRequest(w, err)
 		return
 	}
-	id, err := s.db.CreateWorkload(payload.Goal, payload.Source, payload.Project, payload.Repo, payload.GitBranch, payload.Owner, payload.Team, payload.BudgetUSD)
+	idempotencyKey := requestIdempotencyKey(r, payload.IdempotencyKey)
+	id, replayed, err := s.db.CreateWorkloadIdempotent(idempotencyKey, payload.Goal, payload.Source, payload.Project, payload.Repo, payload.GitBranch, payload.Owner, payload.Team, payload.BudgetUSD)
 	if err != nil {
+		if storage.IsIdempotencyConflict(err) {
+			conflict(w, err)
+			return
+		}
 		badRequest(w, err)
 		return
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "workload.create", id, map[string]string{"source": payload.Source, "project": payload.Project})
-	writeJSON(w, map[string]interface{}{"ok": true, "workload_id": id})
+	if !replayed {
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "workload.create", id, map[string]string{"source": payload.Source, "project": payload.Project})
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "workload_id": id, "idempotent_replay": replayed})
 }
 
 func (s *Server) handleWorkloadClose(w http.ResponseWriter, r *http.Request) {
@@ -153,11 +165,12 @@ func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload struct {
-		WorkloadID string `json:"workload_id"`
-		Source     string `json:"source"`
-		AgentName  string `json:"agent_name"`
-		Command    string `json:"command"`
-		CWD        string `json:"cwd"`
+		WorkloadID     string `json:"workload_id"`
+		Source         string `json:"source"`
+		AgentName      string `json:"agent_name"`
+		Command        string `json:"command"`
+		CWD            string `json:"cwd"`
+		IdempotencyKey string `json:"idempotency_key"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload); err != nil {
 		badRequest(w, err)
@@ -166,13 +179,20 @@ func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {
 	if payload.WorkloadID == "" {
 		payload.WorkloadID = r.URL.Query().Get("workload_id")
 	}
-	runID, err := s.db.StartAgentRun(payload.WorkloadID, payload.Source, firstNonEmpty(payload.AgentName, payload.Source, "agent"), payload.Command, payload.CWD)
+	idempotencyKey := requestIdempotencyKey(r, payload.IdempotencyKey)
+	runID, replayed, err := s.db.StartAgentRunIdempotent(idempotencyKey, payload.WorkloadID, payload.Source, firstNonEmpty(payload.AgentName, payload.Source, "agent"), payload.Command, payload.CWD)
 	if err != nil {
+		if storage.IsIdempotencyConflict(err) {
+			conflict(w, err)
+			return
+		}
 		badRequest(w, err)
 		return
 	}
-	_ = s.db.AppendAuditLog("local", s.roleFor(r), "agent_run.start", runID, map[string]string{"source": payload.Source, "agent_name": payload.AgentName, "workload_id": payload.WorkloadID})
-	writeJSON(w, map[string]interface{}{"ok": true, "workload_id": payload.WorkloadID, "run_id": runID, "status": "running"})
+	if !replayed {
+		_ = s.db.AppendAuditLog("local", s.roleFor(r), "agent_run.start", runID, map[string]string{"source": payload.Source, "agent_name": payload.AgentName, "workload_id": payload.WorkloadID})
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "workload_id": payload.WorkloadID, "run_id": runID, "status": "running", "idempotent_replay": replayed})
 }
 
 func (s *Server) handleAgentRunHeartbeat(w http.ResponseWriter, r *http.Request) {

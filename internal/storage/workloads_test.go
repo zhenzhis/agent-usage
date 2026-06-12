@@ -104,6 +104,72 @@ func TestManualWorkloadAndRunDetail(t *testing.T) {
 	}
 }
 
+func TestControlOperationIdempotencyForWorkloadAndRun(t *testing.T) {
+	db := tempDB(t)
+	workloadID, replayed, err := db.CreateWorkloadIdempotent("workload-key-1", "ship idempotent control", "codex", "repo-a", "repo-a", "main", "alice", "research", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkloadIdempotent first: %v", err)
+	}
+	if replayed || workloadID == "" {
+		t.Fatalf("unexpected first workload result id=%q replayed=%v", workloadID, replayed)
+	}
+	againID, replayed, err := db.CreateWorkloadIdempotent("workload-key-1", "ship idempotent control", "codex", "repo-a", "repo-a", "main", "alice", "research", 0)
+	if err != nil {
+		t.Fatalf("CreateWorkloadIdempotent replay: %v", err)
+	}
+	if !replayed || againID != workloadID {
+		t.Fatalf("expected replay of %s, got id=%s replayed=%v", workloadID, againID, replayed)
+	}
+	if _, _, err := db.CreateWorkloadIdempotent("workload-key-1", "different goal", "codex", "repo-a", "repo-a", "main", "alice", "research", 0); !IsIdempotencyConflict(err) {
+		t.Fatalf("expected workload idempotency conflict, got %v", err)
+	}
+	var workloadCount int
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM workloads`).Scan(&workloadCount); err != nil {
+		t.Fatalf("count workloads: %v", err)
+	}
+	if workloadCount != 1 {
+		t.Fatalf("expected one workload, got %d", workloadCount)
+	}
+
+	runID, runReplayed, err := db.StartAgentRunIdempotent("run-key-1", workloadID, "codex", "codex", "codex exec", "/home/user/repo-a")
+	if err != nil {
+		t.Fatalf("StartAgentRunIdempotent first: %v", err)
+	}
+	if runReplayed || runID == "" {
+		t.Fatalf("unexpected first run result id=%q replayed=%v", runID, runReplayed)
+	}
+	againRunID, runReplayed, err := db.StartAgentRunIdempotent("run-key-1", workloadID, "codex", "codex", "codex exec", "/home/user/repo-a")
+	if err != nil {
+		t.Fatalf("StartAgentRunIdempotent replay: %v", err)
+	}
+	if !runReplayed || againRunID != runID {
+		t.Fatalf("expected run replay of %s, got id=%s replayed=%v", runID, againRunID, runReplayed)
+	}
+	if _, _, err := db.StartAgentRunIdempotent("run-key-1", workloadID, "codex", "codex", "codex different", "/home/user/repo-a"); !IsIdempotencyConflict(err) {
+		t.Fatalf("expected run idempotency conflict, got %v", err)
+	}
+	if err := db.CloseWorkload(workloadID, "completed", "done"); err != nil {
+		t.Fatalf("CloseWorkload: %v", err)
+	}
+	closedReplayID, closedReplay, err := db.StartAgentRunIdempotent("run-key-1", workloadID, "codex", "codex", "codex exec", "/home/user/repo-a")
+	if err != nil {
+		t.Fatalf("closed workload replay should succeed: %v", err)
+	}
+	if !closedReplay || closedReplayID != runID {
+		t.Fatalf("expected closed workload replay of %s, got id=%s replayed=%v", runID, closedReplayID, closedReplay)
+	}
+	if _, _, err := db.StartAgentRunIdempotent("run-key-2", workloadID, "codex", "codex", "codex exec", "/home/user/repo-a"); err == nil || IsIdempotencyConflict(err) {
+		t.Fatalf("expected closed workload rejection for new key, got %v", err)
+	}
+	var runCount int
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM agent_runs`).Scan(&runCount); err != nil {
+		t.Fatalf("count agent runs: %v", err)
+	}
+	if runCount != 1 {
+		t.Fatalf("expected one agent run, got %d", runCount)
+	}
+}
+
 func TestLinkWorkloadsCreatesDependencyEdge(t *testing.T) {
 	db := tempDB(t)
 	childID, err := db.CreateWorkload("child goal", "codex", "repo-a", "repo-a", "main", "", "research", 0)

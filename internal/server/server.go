@@ -468,6 +468,12 @@ func badRequest(w http.ResponseWriter, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }
 
+func conflict(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+}
+
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {

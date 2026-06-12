@@ -1608,7 +1608,8 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 	case "create":
 		goal := cliValue(args[1:], "--goal")
 		budget, _ := parseFloat(cliValue(args[1:], "--budget-usd"))
-		id, err := db.CreateWorkload(goal, cliValue(args[1:], "--source"), cliValue(args[1:], "--project"), cliValue(args[1:], "--repo"),
+		idempotencyKey := firstNonEmptyCLI(cliValue(args[1:], "--idempotency-key"), cliValue(args[1:], "--idempotency_key"))
+		id, _, err := db.CreateWorkloadIdempotent(idempotencyKey, goal, cliValue(args[1:], "--source"), cliValue(args[1:], "--project"), cliValue(args[1:], "--repo"),
 			cliValue(args[1:], "--branch"), cliValue(args[1:], "--owner"), cliValue(args[1:], "--team"), budget)
 		if err != nil {
 			return err
@@ -1693,11 +1694,12 @@ func runWorkloadCLI(args []string, db *storage.DB) error {
 		workloadID := firstNonEmptyCLI(cliValue(args[1:], "--workload-id"), cliValue(args[1:], "--id"))
 		source := cliValue(args[1:], "--source")
 		agentName := firstNonEmptyCLI(cliValue(args[1:], "--agent-name"), cliValue(args[1:], "--agent"), source, "agent")
-		runID, err := db.StartAgentRun(workloadID, source, agentName, cliValue(args[1:], "--command"), cliValue(args[1:], "--cwd"))
+		idempotencyKey := firstNonEmptyCLI(cliValue(args[1:], "--idempotency-key"), cliValue(args[1:], "--idempotency_key"))
+		runID, replayed, err := db.StartAgentRunIdempotent(idempotencyKey, workloadID, source, agentName, cliValue(args[1:], "--command"), cliValue(args[1:], "--cwd"))
 		if err != nil {
 			return err
 		}
-		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"workload_id": workloadID, "run_id": runID, "status": "running"})
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"workload_id": workloadID, "run_id": runID, "status": "running", "idempotent_replay": replayed})
 	case "heartbeat":
 		runID := firstNonEmptyCLI(cliValue(args[1:], "--run-id"), cliValue(args[1:], "--run_id"), cliValue(args[1:], "--id"))
 		progress, err := parseFloat(cliValue(args[1:], "--progress"))

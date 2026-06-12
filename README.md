@@ -49,8 +49,8 @@ CLI:
 ./agent-ledger doctor
 ./agent-ledger battery
 ./agent-ledger workload list
-./agent-ledger workload create --goal "review strategy engine" --source codex --project quant
-./agent-ledger workload start-run --workload-id wl_... --source codex --agent-name codex
+./agent-ledger workload create --goal "review strategy engine" --source codex --project quant --idempotency-key router-task-001
+./agent-ledger workload start-run --workload-id wl_... --source codex --agent-name codex --idempotency-key router-run-001
 ./agent-ledger workload heartbeat --run-id run_... --status working --phase testing --progress 0.5
 ./agent-ledger workload liveness --max-age 10m --stale-only
 ./agent-ledger workload state --workload-id wl_... --max-age 10m
@@ -101,6 +101,17 @@ CLI:
 ./agent-ledger wrapped
 ./agent-ledger mcp
 ```
+
+## Control-Plane Idempotency
+
+Workload and run write operations support stable idempotency keys for async agent routers, wrappers, CI jobs, and retrying clients:
+
+- HTTP: pass `Idempotency-Key` or `X-Idempotency-Key` on `POST /api/workloads` and `POST /api/agent-runs`.
+- JSON: pass `idempotency_key` in the request body for the same endpoints.
+- CLI: pass `--idempotency-key` to `agent-ledger workload create` or `agent-ledger workload start-run`.
+- MCP: pass `idempotency_key` to `ledger.start_workload` or `ledger.start_run`.
+
+The first request writes the workload/run and records only the operation, key scope, request hash, result type, result id, and timestamps in SQLite. A retry with the same key and same normalized request returns the original id with `idempotent_replay: true`. Reusing the same key with different input fails explicitly with HTTP `409 Conflict` or a CLI/MCP error. Agent Ledger never stores the raw idempotency request body in the idempotency table.
 
 Strict adapter fixtures are available in `examples/adapter-fixtures/` for canonical events, OpenAI Responses, OpenAI Chat Completions, Anthropic Messages, provider SSE streams, OpenTelemetry GenAI spans, and A2A task snapshots.
 
@@ -234,6 +245,7 @@ Core tables:
 
 - `canonical_events`: normalized event stream for future collectors, MCP, A2A, and gateways, including schema/source/parser provenance and privacy-safe native references.
 - `workloads`, `agent_runs`, `agent_run_events`, `model_calls`, `tool_calls`: goal/run/heartbeat/call ledger.
+- `control_idempotency`: retry-safe workload/run write ledger with request hashes only.
 - `workload_sessions`: compatibility link from old source-scoped sessions to workloads.
 - `context_refs`, `artifacts`, `evaluations`, `policy_decisions`, `workload_links`: privacy-safe AgentOps context, artifact, outcome, governance, dependency, and lineage records.
 - `usage_records`: raw API-call token and cost data.
@@ -481,7 +493,7 @@ Releases use GoReleaser for platform archives and GitHub Actions for GHCR images
 
 ## Roadmap
 
-Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, contract bundle index, OpenAPI control-plane contract, runtime status probe, privacy-safe config status probe, control-plane readiness probe, operation admission dry-run, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes, approval routing/escalation metadata, approval route summaries and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness/admission commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
+Implemented foundation: canonical workload schema, metadata-only canonical event ingest, machine-readable adapter contract, workload dependency/lineage links, retry-safe control operation idempotency for workload/run writes, async run start/heartbeat/liveness ledger, derived workload terminal-state snapshots and local workload event feed/SSE stream, explicit workload evaluation signals, disabled-by-default redacted workload and approval webhook notifications, privacy-safe discovery manifest, contract bundle index, OpenAPI control-plane contract, runtime status probe, privacy-safe config status probe, control-plane readiness probe, operation admission dry-run, canonical-to-usage projection plus repair, OpenTelemetry GenAI JSON span mapping, optional local OTLP HTTP JSON/protobuf traces receiver, A2A task telemetry mapping, provider usage envelope mapping, optional local OpenAI-compatible Chat Completions JSON/SSE, OpenAI Responses JSON/SSE, and Anthropic Messages JSON/SSE gateway, provider bill reconciliation import, model router simulation, preflight cost estimates, session cost replay, repo cost badges, integration capability catalog, signed offline bundle export/import, legacy session backfill, workload API, workload CSV export, local policy approval requests, quorum-based approval votes, approval routing/escalation metadata, approval route summaries and enforcement evidence, CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness/admission commands, CLI run wrapper, and local MCP stdio tools/resources/resource-subscriptions/prompts.
 
 Planned integrations: OTLP gRPC receiver conformance, provider-native gateway adapters, Postgres team mode, OIDC/SSO, native MCP subscription transport when host clients support it, and external approval notification adapters.
 

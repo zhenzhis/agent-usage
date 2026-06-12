@@ -114,6 +114,93 @@ func TestAgentRunStartAPI(t *testing.T) {
 	}
 }
 
+func TestWorkloadAndRunAPIIdempotency(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{})
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"goal":    "idempotent api workload",
+		"source":  "codex",
+		"project": "agent-ledger",
+	})
+	first := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/workloads", bytes.NewReader(createBody))
+	firstReq.Header.Set("Idempotency-Key", "api-workload-key")
+	srv.handleWorkloadCreate(first, firstReq)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first workload status=%d body=%s", first.Code, first.Body.String())
+	}
+	var firstCreate struct {
+		WorkloadID       string `json:"workload_id"`
+		IdempotentReplay bool   `json:"idempotent_replay"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstCreate); err != nil {
+		t.Fatalf("decode first workload: %v", err)
+	}
+	second := httptest.NewRecorder()
+	secondReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/workloads", bytes.NewReader(createBody))
+	secondReq.Header.Set("Idempotency-Key", "api-workload-key")
+	srv.handleWorkloadCreate(second, secondReq)
+	if second.Code != http.StatusOK {
+		t.Fatalf("second workload status=%d body=%s", second.Code, second.Body.String())
+	}
+	var secondCreate struct {
+		WorkloadID       string `json:"workload_id"`
+		IdempotentReplay bool   `json:"idempotent_replay"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &secondCreate); err != nil {
+		t.Fatalf("decode second workload: %v", err)
+	}
+	if firstCreate.WorkloadID == "" || secondCreate.WorkloadID != firstCreate.WorkloadID || !secondCreate.IdempotentReplay {
+		t.Fatalf("unexpected workload replay first=%+v second=%+v", firstCreate, secondCreate)
+	}
+	conflictBody, _ := json.Marshal(map[string]interface{}{"goal": "changed goal", "source": "codex", "project": "agent-ledger"})
+	conflictResp := httptest.NewRecorder()
+	conflictReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/workloads", bytes.NewReader(conflictBody))
+	conflictReq.Header.Set("Idempotency-Key", "api-workload-key")
+	srv.handleWorkloadCreate(conflictResp, conflictReq)
+	if conflictResp.Code != http.StatusConflict {
+		t.Fatalf("expected conflict status, got %d body=%s", conflictResp.Code, conflictResp.Body.String())
+	}
+
+	runBody, _ := json.Marshal(map[string]interface{}{
+		"workload_id": firstCreate.WorkloadID,
+		"source":      "codex",
+		"agent_name":  "codex",
+		"command":     "codex exec",
+	})
+	runFirst := httptest.NewRecorder()
+	runFirstReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/agent-runs", bytes.NewReader(runBody))
+	runFirstReq.Header.Set("Idempotency-Key", "api-run-key")
+	srv.handleAgentRuns(runFirst, runFirstReq)
+	if runFirst.Code != http.StatusOK {
+		t.Fatalf("first run status=%d body=%s", runFirst.Code, runFirst.Body.String())
+	}
+	var firstRun struct {
+		RunID            string `json:"run_id"`
+		IdempotentReplay bool   `json:"idempotent_replay"`
+	}
+	if err := json.Unmarshal(runFirst.Body.Bytes(), &firstRun); err != nil {
+		t.Fatalf("decode first run: %v", err)
+	}
+	runSecond := httptest.NewRecorder()
+	runSecondReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/agent-runs", bytes.NewReader(runBody))
+	runSecondReq.Header.Set("Idempotency-Key", "api-run-key")
+	srv.handleAgentRuns(runSecond, runSecondReq)
+	if runSecond.Code != http.StatusOK {
+		t.Fatalf("second run status=%d body=%s", runSecond.Code, runSecond.Body.String())
+	}
+	var secondRun struct {
+		RunID            string `json:"run_id"`
+		IdempotentReplay bool   `json:"idempotent_replay"`
+	}
+	if err := json.Unmarshal(runSecond.Body.Bytes(), &secondRun); err != nil {
+		t.Fatalf("decode second run: %v", err)
+	}
+	if firstRun.RunID == "" || secondRun.RunID != firstRun.RunID || !secondRun.IdempotentReplay {
+		t.Fatalf("unexpected run replay first=%+v second=%+v", firstRun, secondRun)
+	}
+}
+
 func TestWorkloadLinkAPI(t *testing.T) {
 	db := testServerDB(t)
 	sourceID, err := db.CreateWorkload("source link workload", "codex", "agent-ledger", "agent-ledger", "main", "", "", 0)

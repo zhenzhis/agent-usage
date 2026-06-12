@@ -49,8 +49,8 @@ CLI：
 ./agent-ledger doctor
 ./agent-ledger battery
 ./agent-ledger workload list
-./agent-ledger workload create --goal "review strategy engine" --source codex --project quant
-./agent-ledger workload start-run --workload-id wl_... --source codex --agent-name codex
+./agent-ledger workload create --goal "review strategy engine" --source codex --project quant --idempotency-key router-task-001
+./agent-ledger workload start-run --workload-id wl_... --source codex --agent-name codex --idempotency-key router-run-001
 ./agent-ledger workload heartbeat --run-id run_... --status working --phase testing --progress 0.5
 ./agent-ledger workload liveness --max-age 10m --stale-only
 ./agent-ledger workload state --workload-id wl_... --max-age 10m
@@ -101,6 +101,17 @@ CLI：
 ./agent-ledger wrapped
 ./agent-ledger mcp
 ```
+
+## 控制面幂等
+
+Workload 与 run 写操作支持稳定幂等键，面向异步 agent router、wrapper、CI job 与重试客户端：
+
+- HTTP：在 `POST /api/workloads` 与 `POST /api/agent-runs` 上传入 `Idempotency-Key` 或 `X-Idempotency-Key`。
+- JSON：同一批 endpoint 也可在 body 中传入 `idempotency_key`。
+- CLI：`agent-ledger workload create` 与 `agent-ledger workload start-run` 支持 `--idempotency-key`。
+- MCP：`ledger.start_workload` 与 `ledger.start_run` 支持 `idempotency_key`。
+
+第一次请求会写入 workload/run，并且只在 SQLite 中记录 operation、key scope、request hash、result type、result id 与时间戳。同一 key 与同一归一化请求重试时返回原 ID，并带 `idempotent_replay: true`。同一 key 复用到不同输入会明确失败，HTTP 返回 `409 Conflict`，CLI/MCP 返回错误。Agent Ledger 不会在幂等表中保存原始请求体。
 
 仓库内 `examples/adapter-fixtures/` 提供 canonical events、OpenAI Responses、OpenAI Chat Completions、Anthropic Messages、provider SSE stream、OpenTelemetry GenAI span 与 A2A task snapshot 的 strict conformance 样例。
 
@@ -234,6 +245,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 
 - `canonical_events`：面向未来 collector、MCP、A2A、gateway 的规范事件流，包含 schema/source/parser provenance 与隐私安全的原生引用。
 - `workloads`、`agent_runs`、`agent_run_events`、`model_calls`、`tool_calls`：goal/run/heartbeat/call 级账本。
+- `control_idempotency`：只保存 request hash 的 workload/run retry-safe 写入账本。
 - `workload_sessions`：旧 session 与 workload 的兼容映射。
 - `context_refs`、`artifacts`、`evaluations`、`policy_decisions`、`workload_links`：隐私安全的 AgentOps 上下文、产物、结果、治理、依赖和 lineage 记录。
 - `usage_records`：API 调用级 token 与费用。
@@ -481,7 +493,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、contract bundle index、OpenAPI control-plane contract、runtime status probe、隐私安全 config status probe、control-plane readiness probe、operation admission dry-run、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP JSON/protobuf traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes、审批路由/升级元数据、审批路由摘要与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness/admission 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、workload/run 写操作的 retry-safe control operation idempotency、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、contract bundle index、OpenAPI control-plane contract、runtime status probe、隐私安全 config status probe、control-plane readiness probe、operation admission dry-run、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、可选本地 OTLP HTTP JSON/protobuf traces receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes、审批路由/升级元数据、审批路由摘要与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness/admission 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
 
 后续路线：OTLP gRPC receiver conformance、provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、host client 支持后接入原生 MCP subscription transport、外部审批通知适配器。
 

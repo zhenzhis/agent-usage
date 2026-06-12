@@ -300,17 +300,18 @@ func tools() []map[string]interface{} {
 			"has_workload_id": booleanSchema(),
 		}),
 		tool("ledger.start_workload", "Create a workload and optionally attach an initial agent run.", map[string]interface{}{
-			"goal":       requiredStringSchema(),
-			"source":     stringSchema(),
-			"project":    stringSchema(),
-			"repo":       stringSchema(),
-			"git_branch": stringSchema(),
-			"owner":      stringSchema(),
-			"team":       stringSchema(),
-			"budget_usd": numberSchema(),
-			"agent_name": stringSchema(),
-			"command":    stringSchema(),
-			"cwd":        stringSchema(),
+			"goal":            requiredStringSchema(),
+			"source":          stringSchema(),
+			"project":         stringSchema(),
+			"repo":            stringSchema(),
+			"git_branch":      stringSchema(),
+			"owner":           stringSchema(),
+			"team":            stringSchema(),
+			"budget_usd":      numberSchema(),
+			"agent_name":      stringSchema(),
+			"command":         stringSchema(),
+			"cwd":             stringSchema(),
+			"idempotency_key": stringSchema(),
 		}),
 		tool("ledger.close_workload", "Close a workload with status and outcome.", map[string]interface{}{
 			"workload_id": requiredStringSchema(),
@@ -325,11 +326,12 @@ func tools() []map[string]interface{} {
 			"created_by":         stringSchema(),
 		}),
 		tool("ledger.start_run", "Start a new agent run attached to an existing workload.", map[string]interface{}{
-			"workload_id": requiredStringSchema(),
-			"source":      stringSchema(),
-			"agent_name":  stringSchema(),
-			"command":     stringSchema(),
-			"cwd":         stringSchema(),
+			"workload_id":     requiredStringSchema(),
+			"source":          stringSchema(),
+			"agent_name":      stringSchema(),
+			"command":         stringSchema(),
+			"cwd":             stringSchema(),
+			"idempotency_key": stringSchema(),
 		}),
 		tool("ledger.heartbeat_run", "Append a metadata-only liveness/progress heartbeat for an async agent run.", map[string]interface{}{
 			"run_id":     requiredStringSchema(),
@@ -1170,51 +1172,58 @@ func (s *Server) toolCurrentBudget(args json.RawMessage) (interface{}, error) {
 
 func (s *Server) toolStartWorkload(args json.RawMessage) (interface{}, error) {
 	var in struct {
-		Goal      string  `json:"goal"`
-		Source    string  `json:"source"`
-		Project   string  `json:"project"`
-		Repo      string  `json:"repo"`
-		GitBranch string  `json:"git_branch"`
-		Owner     string  `json:"owner"`
-		Team      string  `json:"team"`
-		BudgetUSD float64 `json:"budget_usd"`
-		AgentName string  `json:"agent_name"`
-		Command   string  `json:"command"`
-		CWD       string  `json:"cwd"`
+		Goal           string  `json:"goal"`
+		Source         string  `json:"source"`
+		Project        string  `json:"project"`
+		Repo           string  `json:"repo"`
+		GitBranch      string  `json:"git_branch"`
+		Owner          string  `json:"owner"`
+		Team           string  `json:"team"`
+		BudgetUSD      float64 `json:"budget_usd"`
+		AgentName      string  `json:"agent_name"`
+		Command        string  `json:"command"`
+		CWD            string  `json:"cwd"`
+		IdempotencyKey string  `json:"idempotency_key"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, err
 	}
-	id, err := s.db.CreateWorkload(in.Goal, in.Source, in.Project, in.Repo, in.GitBranch, in.Owner, in.Team, in.BudgetUSD)
+	id, replayed, err := s.db.CreateWorkloadIdempotent(in.IdempotencyKey, in.Goal, in.Source, in.Project, in.Repo, in.GitBranch, in.Owner, in.Team, in.BudgetUSD)
 	if err != nil {
 		return nil, err
 	}
 	runID := ""
+	runReplayed := false
 	if in.AgentName != "" || in.Command != "" || in.CWD != "" {
-		runID, err = s.db.StartAgentRun(id, in.Source, firstNonEmpty(in.AgentName, in.Source, "agent"), in.Command, in.CWD)
+		runKey := ""
+		if strings.TrimSpace(in.IdempotencyKey) != "" {
+			runKey = strings.TrimSpace(in.IdempotencyKey) + ":initial-run"
+		}
+		runID, runReplayed, err = s.db.StartAgentRunIdempotent(runKey, id, in.Source, firstNonEmpty(in.AgentName, in.Source, "agent"), in.Command, in.CWD)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return map[string]interface{}{"workload_id": id, "run_id": runID, "status": "active"}, nil
+	return map[string]interface{}{"workload_id": id, "run_id": runID, "status": "active", "idempotent_replay": replayed, "run_idempotent_replay": runReplayed}, nil
 }
 
 func (s *Server) toolStartRun(args json.RawMessage) (interface{}, error) {
 	var in struct {
-		WorkloadID string `json:"workload_id"`
-		Source     string `json:"source"`
-		AgentName  string `json:"agent_name"`
-		Command    string `json:"command"`
-		CWD        string `json:"cwd"`
+		WorkloadID     string `json:"workload_id"`
+		Source         string `json:"source"`
+		AgentName      string `json:"agent_name"`
+		Command        string `json:"command"`
+		CWD            string `json:"cwd"`
+		IdempotencyKey string `json:"idempotency_key"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, err
 	}
-	runID, err := s.db.StartAgentRun(in.WorkloadID, in.Source, firstNonEmpty(in.AgentName, in.Source, "agent"), in.Command, in.CWD)
+	runID, replayed, err := s.db.StartAgentRunIdempotent(in.IdempotencyKey, in.WorkloadID, in.Source, firstNonEmpty(in.AgentName, in.Source, "agent"), in.Command, in.CWD)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"workload_id": in.WorkloadID, "run_id": runID, "status": "running"}, nil
+	return map[string]interface{}{"workload_id": in.WorkloadID, "run_id": runID, "status": "running", "idempotent_replay": replayed}, nil
 }
 
 func (s *Server) toolCloseWorkload(args json.RawMessage) (interface{}, error) {

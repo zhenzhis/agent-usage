@@ -884,6 +884,23 @@ func migrate(db *sql.DB) error {
 				CREATE INDEX IF NOT EXISTS idx_workload_links_relation ON workload_links(relation, created_at);
 			`,
 		},
+		{
+			"013_control_idempotency", `
+				CREATE TABLE IF NOT EXISTS control_idempotency (
+					scope TEXT NOT NULL,
+					idempotency_key TEXT NOT NULL,
+					operation TEXT NOT NULL,
+					request_hash TEXT NOT NULL,
+					result_kind TEXT NOT NULL,
+					result_id TEXT NOT NULL,
+					created_at DATETIME NOT NULL,
+					last_seen_at DATETIME NOT NULL,
+					replay_count INTEGER NOT NULL DEFAULT 0,
+					PRIMARY KEY(scope, idempotency_key)
+				);
+				CREATE INDEX IF NOT EXISTS idx_control_idempotency_operation_created ON control_idempotency(operation, created_at);
+			`,
+		},
 	}
 	for _, m := range migrations {
 		var done string
