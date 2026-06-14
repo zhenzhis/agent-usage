@@ -476,6 +476,8 @@ If Codex, OpenCode, or another source shows no data:
 - Confirm the source is enabled and the configured path exists.
 - Run `POST /api/scan?source=codex` or the UI Scan Source action.
 - Check `GET /api/health/ingestion`; `last_error` is intentionally explicit.
+- Codex collection reads `sessions/**/*.jsonl` first. It also auto-detects adjacent `state_*.sqlite` files, such as `~/.codex/state_5.sqlite`, as a session-level fallback for newer Codex builds that update SQLite thread state more frequently than JSONL usage events.
+- Codex SQLite fallback records `threads.tokens_used` as `estimated-aggregate`: token totals can appear in the ledger, but cost recalculation intentionally skips these rows because input/output/cache split is unavailable.
 - For Docker, mount only real agent directories. Docker creates missing host paths as root, which can break later agent writes.
 
 If KPI totals and charts disagree:

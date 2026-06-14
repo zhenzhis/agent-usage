@@ -476,6 +476,8 @@ agent-ledger doctor --format markdown
 - 确认 source 已启用，配置路径真实存在。
 - 执行 `POST /api/scan?source=codex` 或 UI 的 Scan Source。
 - 查看 `GET /api/health/ingestion`；`last_error` 会明确暴露失败原因。
+- Codex collector 会先读取 `sessions/**/*.jsonl`。同时会自动探测相邻的 `state_*.sqlite`，例如 `~/.codex/state_5.sqlite`，用于兼容较新的 Codex 版本，因为它们可能比 JSONL usage event 更频繁更新 SQLite thread state。
+- Codex SQLite fallback 会把 `threads.tokens_used` 记录为 `estimated-aggregate`：token 总量会进入账本，但费用重算会故意跳过这些行，因为缺少 input/output/cache 拆分，不能当成逐调用精确账单。
 - Docker 部署时只挂载真实存在的 agent 目录。Docker 会把缺失的 host path 创建成 root-owned 目录，可能破坏后续 agent 写入。
 
 如果 KPI 和图表总数不一致：

@@ -42,7 +42,7 @@ func (d *DB) RecalcCostsDetailed(allPrices map[string]PricingAuditRow, calcFn Co
 		where = "WHERE 1=1"
 	}
 	if !forceSourceReported {
-		where += " AND COALESCE(pricing_confidence,'') != 'source-reported'"
+		where += " AND COALESCE(pricing_confidence,'') NOT IN ('source-reported','estimated-aggregate')"
 	}
 	usageRows, err := d.db.Query(`SELECT id, model, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, cost_usd FROM usage_records ` + where)
 	if err != nil {

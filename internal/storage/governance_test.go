@@ -179,6 +179,42 @@ func TestRecalcCostsDetailedPreservesSourceReportedAndMarksUnpriced(t *testing.T
 	}
 }
 
+func TestRecalcCostsDetailedSkipsEstimatedAggregate(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ts := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	if err := db.InsertUsage(&UsageRecord{
+		Source: "codex", SessionID: "sqlite-thread", Model: "gpt-5-codex",
+		InputTokens: 900, Timestamp: ts, PricingConfidence: "estimated-aggregate",
+		PricingNote: "codex sqlite thread tokens_used aggregate",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prices := map[string]PricingAuditRow{
+		"gpt-5-codex": {
+			Model: "gpt-5-codex", PricingSource: "openai-official", MatchedModel: "gpt-5-codex", MatchType: "official-seed", Priority: 20,
+			InputCostPerToken: 1, OutputCostPerToken: 2, Confidence: "official",
+		},
+	}
+	if err := db.RecalcCostsDetailed(prices, func(inputTokens, outputTokens, cacheCreation, cacheRead int64, prices [4]float64) float64 {
+		return 999
+	}, "all", false); err != nil {
+		t.Fatal(err)
+	}
+	var cost float64
+	var confidence, note string
+	if err := db.db.QueryRow(`SELECT cost_usd,pricing_confidence,pricing_note FROM usage_records WHERE session_id='sqlite-thread'`).
+		Scan(&cost, &confidence, &note); err != nil {
+		t.Fatal(err)
+	}
+	if cost != 0 || confidence != "estimated-aggregate" || !strings.Contains(note, "thread tokens_used aggregate") {
+		t.Fatalf("estimated aggregate row was repriced: cost=%f confidence=%q note=%q", cost, confidence, note)
+	}
+}
+
 func TestCostIntelligenceExplainsPricingAndTokenDrivers(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

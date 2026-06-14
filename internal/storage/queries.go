@@ -8,10 +8,11 @@ import (
 
 // FileScanContext stores parser state needed to continue incremental scans.
 type FileScanContext struct {
-	SessionID string `json:"session_id"`
-	CWD       string `json:"cwd"`
-	Version   string `json:"version"`
-	Model     string `json:"model"`
+	SessionID    string           `json:"session_id"`
+	CWD          string           `json:"cwd"`
+	Version      string           `json:"version"`
+	Model        string           `json:"model"`
+	ThreadTokens map[string]int64 `json:"thread_tokens,omitempty"`
 }
 
 // File state tracking
@@ -31,6 +32,19 @@ func (d *DB) SetMeta(key, value string) error {
 	_, err := d.db.Exec(`INSERT INTO meta(key,value) VALUES(?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
+}
+
+// HasNonEstimatedUsage reports whether a session already has precise or source
+// usage records that should take precedence over aggregate fallback records.
+func (d *DB) HasNonEstimatedUsage(source, sessionID string) (bool, error) {
+	var count int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM usage_records
+		WHERE source=? AND session_id=? AND COALESCE(pricing_confidence,'') != 'estimated-aggregate'`,
+		source, sessionID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // ResetScanState clears file_state and sessions tables to force a full re-scan.

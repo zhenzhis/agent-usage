@@ -1397,6 +1397,10 @@ func explainCost(r CostInsightRow, totalInput int64) ([]string, []string) {
 		reasons = append(reasons, "pricing provenance missing")
 		advice = append(advice, "recalculate costs after pricing sync to backfill pricing source and confidence fields")
 	}
+	if containsString(r.PricingConfidences, "estimated-aggregate") {
+		reasons = append(reasons, "aggregate token fallback used")
+		advice = append(advice, "treat token totals as session-level estimates until Codex exposes per-call input/output/cache usage")
+	}
 	if r.Models > 1 {
 		reasons = append(reasons, "multiple models used in one session")
 		advice = append(advice, "review model switches; keep low-risk turns on smaller models when possible")
@@ -1442,7 +1446,7 @@ func sessionQualityScore(r CostInsightRow) float64 {
 	if r.CostUSD > 10 {
 		score -= 0.1
 	}
-	if r.UnpricedCalls > 0 || r.UnknownPricingCalls > 0 {
+	if r.UnpricedCalls > 0 || r.UnknownPricingCalls > 0 || containsString(r.PricingConfidences, "estimated-aggregate") {
 		score -= 0.2
 	}
 	if r.FuzzyPricedCalls > 0 || r.SourceReportedCalls > 0 {
@@ -1455,6 +1459,15 @@ func sessionQualityScore(r CostInsightRow) float64 {
 		score = 0
 	}
 	return math.Round(score*100) / 100
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func splitDistinctCSV(value string) []string {
