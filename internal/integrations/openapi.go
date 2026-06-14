@@ -1018,6 +1018,7 @@ func workloadsOperation() map[string]interface{} {
 			},
 			"responses": map[string]interface{}{
 				"200": jsonResponse(looseObjectSchema("Paginated workload rows.")),
+				"304": map[string]interface{}{"description": "Not modified when If-None-Match matches the current workload page ETag."},
 				"400": jsonResponse("Error"),
 			},
 		},
@@ -1129,6 +1130,7 @@ func workloadLeasesOperation() map[string]interface{} {
 			},
 			"responses": map[string]interface{}{
 				"200": jsonResponse("WorkloadLeaseListResponse"),
+				"304": map[string]interface{}{"description": "Not modified when If-None-Match matches the current lease list ETag."},
 				"400": jsonResponse("Error"),
 			},
 		},

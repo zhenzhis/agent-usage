@@ -246,7 +246,7 @@ func TestOpenAPISpecIndexesStableControlPlane(t *testing.T) {
 			t.Fatalf("OpenAPI missing path %s: %#v", path, paths)
 		}
 	}
-	for _, path := range []string{"/api/dashboard", "/api/pricing/status", "/api/anomalies", "/api/policy/enforcement"} {
+	for _, path := range []string{"/api/dashboard", "/api/pricing/status", "/api/anomalies", "/api/policy/enforcement", "/api/workloads", "/api/workloads/leases"} {
 		if !openAPIGetHasResponse(paths, path, "304") {
 			t.Fatalf("OpenAPI path %s should advertise 304 revalidation: %#v", path, paths[path])
 		}

@@ -51,7 +51,7 @@ func (s *Server) handleWorkloadsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyWorkloadPagePrivacy(page, s.privacyFor(r))
-	writeJSON(w, page)
+	writeJSONWithPayloadETag(w, r, page)
 }
 
 func requestIdempotencyKey(r *http.Request, payloadKey string) string {
@@ -382,7 +382,7 @@ func (s *Server) handleWorkloadLeases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyWorkloadLeasePrivacy(leases, s.privacyFor(r))
-	writeJSON(w, map[string]interface{}{"rows": leases, "include_inactive": includeInactive})
+	writeJSONWithPayloadETag(w, r, map[string]interface{}{"rows": leases, "include_inactive": includeInactive}, "ttl_seconds")
 }
 
 func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {

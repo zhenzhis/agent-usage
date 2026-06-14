@@ -300,6 +300,7 @@ func TestWorkloadLeaseAPI(t *testing.T) {
 	if strings.Contains(listResp.Body.String(), acquire.Lease.LeaseToken) || strings.Contains(listResp.Body.String(), "router-a") || strings.Contains(listResp.Body.String(), "execute private task") {
 		t.Fatalf("lease list leaked private fields: %s", listResp.Body.String())
 	}
+	assertETagRevalidates(t, srv.handleWorkloadLeases, "http://127.0.0.1/api/workloads/leases?privacy=1", listResp.Header().Get("ETag"))
 	releaseBody, _ := json.Marshal(map[string]interface{}{"lease_id": acquire.Lease.LeaseID, "lease_token": acquire.Lease.LeaseToken})
 	releaseResp := httptest.NewRecorder()
 	srv.handleWorkloadLeaseRelease(releaseResp, httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/workloads/lease/release", bytes.NewReader(releaseBody)))
@@ -496,6 +497,7 @@ func TestWorkloadStateAPIPrivacy(t *testing.T) {
 
 func TestWorkloadReadAPIsEmitETags(t *testing.T) {
 	db := testServerDB(t)
+	now := time.Now().UTC()
 	workloadID, err := db.CreateWorkload("read api goal", "codex", "agent-ledger", "zhenzhis/agent-ledger", "main", "", "", 0)
 	if err != nil {
 		t.Fatalf("CreateWorkload: %v", err)
@@ -504,15 +506,18 @@ func TestWorkloadReadAPIsEmitETags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartAgentRun: %v", err)
 	}
-	if _, err := db.RecordAgentRunHeartbeat("evt-read-api", runID, "working", "testing", "ok", 0.5, nil, time.Now().UTC(), 1); err != nil {
+	if _, err := db.RecordAgentRunHeartbeat("evt-read-api", runID, "working", "testing", "ok", 0.5, nil, now, 1); err != nil {
 		t.Fatalf("RecordAgentRunHeartbeat: %v", err)
 	}
 	srv := New(db, "", Options{})
+	from := now.AddDate(0, 0, -1).Format("2006-01-02")
+	to := now.AddDate(0, 0, 1).Format("2006-01-02")
 	cases := []struct {
 		name    string
 		url     string
 		handler func(http.ResponseWriter, *http.Request)
 	}{
+		{name: "list", url: "http://127.0.0.1/api/workloads?from=" + from + "&to=" + to + "&limit=20", handler: srv.handleWorkloads},
 		{name: "detail", url: "http://127.0.0.1/api/workload-detail?workload_id=" + workloadID, handler: srv.handleWorkloadDetail},
 		{name: "graph", url: "http://127.0.0.1/api/workload-graph?workload_id=" + workloadID, handler: srv.handleWorkloadGraph},
 		{name: "timeline", url: "http://127.0.0.1/api/workload-timeline?workload_id=" + workloadID + "&limit=20", handler: srv.handleWorkloadTimeline},
