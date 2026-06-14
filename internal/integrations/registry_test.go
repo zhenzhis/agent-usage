@@ -364,6 +364,55 @@ func TestOpenAPISpecIndexesStableControlPlane(t *testing.T) {
 	}
 }
 
+func TestOpenAPICostIntelligenceSchemaExposesTrustFields(t *testing.T) {
+	spec := OpenAPISpecFor(Options{}, nil)
+	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+	rawSchema, ok := schemas["CostIntelligenceRows"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("CostIntelligenceRows schema missing: %#v", schemas)
+	}
+	if rawSchema["type"] != "array" {
+		t.Fatalf("CostIntelligenceRows should be an array schema: %#v", rawSchema)
+	}
+	items, ok := rawSchema["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("CostIntelligenceRows missing item schema: %#v", rawSchema)
+	}
+	properties, ok := items["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("CostIntelligenceRows item missing properties: %#v", items)
+	}
+	for _, field := range []string{
+		"input_tokens",
+		"cache_read_tokens",
+		"cache_write_tokens",
+		"output_tokens",
+		"reasoning_tokens",
+		"cost_per_call",
+		"cost_per_prompt",
+		"tokens_per_prompt",
+		"pricing_sources",
+		"pricing_confidences",
+		"fallback_priced_calls",
+		"fuzzy_priced_calls",
+		"source_reported_calls",
+		"unpriced_calls",
+		"unknown_pricing_calls",
+		"reasons",
+		"advice",
+	} {
+		if properties[field] == nil {
+			t.Fatalf("CostIntelligenceRows schema missing field %q: %#v", field, properties)
+		}
+	}
+	for _, field := range []string{"pricing_sources", "pricing_confidences", "reasons", "advice"} {
+		schema, ok := properties[field].(map[string]interface{})
+		if !ok || schema["type"] != "array" {
+			t.Fatalf("CostIntelligenceRows field %q should be an array: %#v", field, properties[field])
+		}
+	}
+}
+
 func TestOpenAPIRequestBodyOperationsAdvertiseBodyLimits(t *testing.T) {
 	spec := OpenAPISpecFor(Options{}, nil)
 	paths := spec["paths"].(map[string]interface{})

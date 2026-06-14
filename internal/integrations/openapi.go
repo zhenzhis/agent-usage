@@ -537,7 +537,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"DoctorReport":              looseObjectSchema("One-click local diagnostic report. Privacy filters redact paths, projects, branches, and session ids."),
 				"ModelCallRows":             looseObjectSchema("Model call analytics grouped by source, model, project, and session."),
 				"ModelRegistryRows":         looseObjectSchema("Model pricing and provenance registry rows."),
-				"CostIntelligenceRows":      looseObjectSchema("Expensive session explanations and cost breakdown rows without prompt-content analysis."),
+				"CostIntelligenceRows":      costIntelligenceRowsSchema(),
 				"CacheDoctorRows":           looseObjectSchema("Cache hit, cache write/read, and cache miss diagnostic rows."),
 				"InsightEventRows":          looseObjectSchema("Anomaly or watchdog insight event rows."),
 				"WebhookNotificationResult": looseObjectSchema("Redacted webhook delivery or dry-run result."),
@@ -1764,6 +1764,65 @@ func boolSchema() map[string]interface{} {
 
 func numberSchema() map[string]interface{} {
 	return map[string]interface{}{"type": "number"}
+}
+
+func integerSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "integer"}
+}
+
+func stringArraySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":  "array",
+		"items": stringSchema(),
+	}
+}
+
+func costIntelligenceRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Expensive session explanations, token composition, cache behavior, pricing provenance, and low-confidence pricing counters. Prompt and response content are never included.",
+		"items": map[string]interface{}{
+			"type":                 "object",
+			"additionalProperties": true,
+			"required": []string{
+				"source", "session_id", "calls", "tokens", "cost_usd", "cache_hit_rate", "pricing_sources", "pricing_confidences", "quality_score", "reasons", "advice",
+			},
+			"properties": map[string]interface{}{
+				"source":                stringSchema(),
+				"session_id":            stringSchema(),
+				"project":               stringSchema(),
+				"git_branch":            stringSchema(),
+				"models":                integerSchema(),
+				"calls":                 integerSchema(),
+				"prompts":               integerSchema(),
+				"input_tokens":          integerSchema(),
+				"cache_read_tokens":     integerSchema(),
+				"cache_write_tokens":    integerSchema(),
+				"output_tokens":         integerSchema(),
+				"reasoning_tokens":      integerSchema(),
+				"tokens":                integerSchema(),
+				"cost_usd":              numberSchema(),
+				"cost_per_call":         numberSchema(),
+				"cost_per_prompt":       numberSchema(),
+				"tokens_per_prompt":     numberSchema(),
+				"cache_hit_rate":        numberSchema(),
+				"output_ratio":          numberSchema(),
+				"pricing_sources":       stringArraySchema(),
+				"pricing_confidences":   stringArraySchema(),
+				"official_priced_calls": integerSchema(),
+				"override_priced_calls": integerSchema(),
+				"fallback_priced_calls": integerSchema(),
+				"fuzzy_priced_calls":    integerSchema(),
+				"source_reported_calls": integerSchema(),
+				"unpriced_calls":        integerSchema(),
+				"unknown_pricing_calls": integerSchema(),
+				"quality_score":         numberSchema(),
+				"reasons":               stringArraySchema(),
+				"advice":                stringArraySchema(),
+				"last_activity":         stringSchema(),
+			},
+		},
+	}
 }
 
 func looseObjectSchema(description string) map[string]interface{} {

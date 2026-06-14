@@ -354,7 +354,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `POST /api/pricing/sync` | 同步价格 |
 | `POST /api/pricing/recalculate?mode=zero|all` | 重算费用 |
 | `POST /api/projections/repair` | 修复 canonical `model_calls` 到 `usage_records` 的投影漂移，并重建 aggregates |
-| `GET /api/cost-intelligence` | 昂贵会话解释 |
+| `GET /api/cost-intelligence` | 昂贵会话解释，包含 input/output/cache/reasoning token 构成、每调用/每 Prompt 费用、价格来源与可信状态、未计价/fallback/模糊匹配/source-reported 计数、原因和建议 |
 | `GET /api/cache/doctor` | cache 命中、写入、读取诊断 |
 | `GET /api/doctor?format=markdown` | 一键本地诊断 usage、采集、价格、数据质量与 workload 状态 |
 | `GET /api/data-quality` | 数据可信度报告 |

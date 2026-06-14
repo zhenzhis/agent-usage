@@ -354,7 +354,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `POST /api/pricing/sync` | Sync pricing |
 | `POST /api/pricing/recalculate?mode=zero|all` | Recalculate costs |
 | `POST /api/projections/repair` | Repair canonical `model_calls` to `usage_records` projection drift and rebuild aggregates |
-| `GET /api/cost-intelligence` | Expensive session explanations |
+| `GET /api/cost-intelligence` | Expensive session explanations with input/output/cache/reasoning token breakdown, cost-per-call/prompt, pricing source/confidence, unpriced/fallback/fuzzy/source-reported counters, reasons, and advice |
 | `GET /api/cache/doctor` | Cache hit/write/read diagnostics |
 | `GET /api/doctor?format=markdown` | One-click local diagnostics for usage, ingestion, pricing, data quality, and workload state |
 | `GET /api/data-quality` | Trust and completeness report |
