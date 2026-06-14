@@ -778,6 +778,67 @@ func TestOpenAPIEnterpriseReportSchemasExposeLedgerFields(t *testing.T) {
 			t.Fatalf("%s.%s should be %s: %#v", name, field, kind, properties[field])
 		}
 	}
+	expectOneOfFields := func(name string, variants ...[]string) {
+		t.Helper()
+		raw := schema(name)
+		oneOf, ok := raw["oneOf"].([]map[string]interface{})
+		if !ok || len(oneOf) != len(variants) {
+			t.Fatalf("%s should expose %d oneOf variants: %#v", name, len(variants), raw)
+		}
+		for idx, fields := range variants {
+			properties, ok := oneOf[idx]["properties"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("%s oneOf[%d] missing properties: %#v", name, idx, oneOf[idx])
+			}
+			for _, field := range fields {
+				if properties[field] == nil {
+					t.Fatalf("%s oneOf[%d] missing field %q: %#v", name, idx, field, properties)
+				}
+			}
+		}
+	}
+	expectPathResponseRef := func(path, method, ref string) {
+		t.Helper()
+		paths := spec["paths"].(map[string]interface{})
+		pathItem, ok := paths[path].(map[string]interface{})
+		if !ok {
+			t.Fatalf("path %s missing: %#v", path, paths[path])
+		}
+		operation, ok := pathItem[method].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s %s operation missing: %#v", method, path, pathItem)
+		}
+		responses := operation["responses"].(map[string]interface{})
+		response := responses["200"].(map[string]interface{})
+		content := response["content"].(map[string]interface{})
+		jsonContent := content["application/json"].(map[string]interface{})
+		responseSchema := jsonContent["schema"].(map[string]interface{})
+		if responseSchema["$ref"] != ref {
+			t.Fatalf("%s %s response should reference %s: %#v", method, path, ref, responseSchema)
+		}
+	}
+	expectPathRequestRef := func(path, method, contentType, ref string) {
+		t.Helper()
+		paths := spec["paths"].(map[string]interface{})
+		pathItem, ok := paths[path].(map[string]interface{})
+		if !ok {
+			t.Fatalf("path %s missing: %#v", path, paths[path])
+		}
+		operation, ok := pathItem[method].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s %s operation missing: %#v", method, path, pathItem)
+		}
+		body := operation["requestBody"].(map[string]interface{})
+		content := body["content"].(map[string]interface{})
+		bodyContent, ok := content[contentType].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s %s missing request content type %s: %#v", method, path, contentType, content)
+		}
+		requestSchema := bodyContent["schema"].(map[string]interface{})
+		if requestSchema["$ref"] != ref {
+			t.Fatalf("%s %s request should reference %s: %#v", method, path, ref, requestSchema)
+		}
+	}
 
 	expectArrayRef("PricingAuditRows", "#/components/schemas/PricingAuditRow")
 	expectFields("PricingAuditRow", "model", "pricing_source", "matched_model", "match_type", "priority", "input_cost_per_token", "output_cost_per_token", "cache_read_input_token_cost", "cache_creation_input_token_cost", "effective_at", "updated_at", "confidence")
@@ -796,8 +857,13 @@ func TestOpenAPIEnterpriseReportSchemasExposeLedgerFields(t *testing.T) {
 	expectFields("AuditEvent", "id", "actor", "role", "action", "target", "params", "created_at")
 	expectArrayRef("ReconciliationRows", "#/components/schemas/ReconciliationImport")
 	expectFields("ReconciliationImport", "id", "provider", "format", "currency", "local_cost_usd", "provider_cost_usd", "diff_usd", "rows_seen", "payload_sha256", "window_start", "window_end", "status", "notes", "warnings", "imported_at")
+	expectOneOfFields("ReconciliationImportRequest",
+		[]string{"provider", "format", "provider_cost_usd", "local_cost_usd", "rows_seen", "notes"},
+		[]string{"provider", "format", "raw", "notes"},
+	)
 	expectFields("ReconciliationImportResponse", "ok", "import")
 	expectRef("ReconciliationImportResponse", "import", "#/components/schemas/ReconciliationImport")
+	expectPathRequestRef("/api/reconciliation/import", "post", "application/json", "#/components/schemas/ReconciliationImportRequest")
 
 	expectFields("RouterSimulationReport", "generated_at", "from", "to", "to_model", "replacement_ratio", "target_pricing", "status", "summary", "rows")
 	expectRef("RouterSimulationReport", "target_pricing", "#/components/schemas/PricingAuditRow")
@@ -811,6 +877,12 @@ func TestOpenAPIEnterpriseReportSchemasExposeLedgerFields(t *testing.T) {
 	expectFields("PreflightEstimateValues", "cost_usd", "tokens", "calls", "prompts", "duration_minutes")
 	expectArrayRef("ChargebackRows", "#/components/schemas/ChargebackRow")
 	expectFields("ChargebackRow", "team", "project", "source", "model", "calls", "sessions", "tokens", "cost_usd", "avg_tokens_per_call", "cost_per_call", "unpriced_calls", "mapping_source", "data_source", "confidence")
+
+	expectPathResponseRef("/api/fleet-attribution", "get", "#/components/schemas/FleetAttributionReport")
+	expectFields("FleetAttributionReport", "generated_at", "from", "to", "runs", "sub_agent_runs", "max_concurrent_runs", "model_calls", "tokens", "cost_usd", "rows")
+	expectArrayPropertyRef("FleetAttributionReport", "rows", "#/components/schemas/FleetAttributionRow")
+	expectFields("FleetAttributionRow", "workload_id", "goal", "source", "project", "repo", "git_branch", "team", "run_id", "parent_run_id", "agent_name", "status", "started_at", "ended_at", "first_call_at", "last_call_at", "duration_ms", "model_calls", "tokens", "cost_usd", "child_runs", "concurrent_runs", "attribution", "confidence", "evidence")
+	expectType("FleetAttributionRow", "confidence", "number")
 
 	expectFields("AgentWrappedReport", "generated_at", "period", "from", "to", "stats", "top_model", "top_project", "most_active_day", "best_cache_day", "most_expensive_session", "highlights", "issues")
 	expectRef("AgentWrappedReport", "most_expensive_session", "#/components/schemas/CostInsightRow")
@@ -830,6 +902,10 @@ func TestOpenAPIEnterpriseReportSchemasExposeLedgerFields(t *testing.T) {
 	expectArrayPropertyRef("OfflineBundleData", "workloads", "#/components/schemas/WorkloadSummary")
 	expectArrayPropertyRef("OfflineBundleData", "model_calls", "#/components/schemas/ModelCallRow")
 	expectFields("OfflineBundleIntegrity", "hash_algorithm", "payload_sha256", "signature_algorithm", "signature", "key_id")
+	expectFields("OfflineBundleImportRequest", "schema_version", "product", "bundle_id", "generated_at", "window", "filters", "privacy", "data", "integrity")
+	expectRef("OfflineBundleImportRequest", "data", "#/components/schemas/OfflineBundleData")
+	expectRef("OfflineBundleImportRequest", "integrity", "#/components/schemas/OfflineBundleIntegrity")
+	expectPathRequestRef("/api/offline-bundle/import", "post", "application/json", "#/components/schemas/OfflineBundleImportRequest")
 	expectFields("OfflineBundleImportResult", "bundle_id", "events_seen", "events_inserted", "events_duplicate", "payload_sha256", "signature_verified")
 	expectFields("OfflineBundleImportResponse", "ok", "result")
 	expectRef("OfflineBundleImportResponse", "result", "#/components/schemas/OfflineBundleImportResult")
