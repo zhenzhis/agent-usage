@@ -331,7 +331,7 @@ func (s *Server) handleAnomalies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyInsightEventPrivacy(rows, s.privacyFor(r))
-	writeJSON(w, rows)
+	writeJSONWithPayloadETag(w, r, rows)
 }
 
 func (s *Server) handleWatchdogEvents(w http.ResponseWriter, r *http.Request) {
@@ -363,7 +363,7 @@ func (s *Server) handleWatchdogEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyInsightEventPrivacy(rows, s.privacyFor(r))
-	writeJSON(w, rows)
+	writeJSONWithPayloadETag(w, r, rows)
 }
 
 func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {

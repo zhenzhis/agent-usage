@@ -112,7 +112,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"/api/pricing/recalculate":            localQueryWriteOperation("finops", "Recalculate pricing", "Recalculate zero-cost or all local records from current pricing rules.", "OperationResult", []map[string]interface{}{queryParam("mode", "zero or all. Empty defaults to zero.")}),
 			"/api/pricing/audit":                  filteredReadOperation("finops", "List pricing audit", "Read local pricing match, stale, fuzzy, unpriced, and source provenance audit rows.", "PricingAuditRows", []map[string]interface{}{intQueryParam("limit", "Maximum audit rows.")}),
 			"/api/budgets/status":                 filteredReadOperation("finops", "Get budget status", "Read configured budget rules, current usage ratio, severity, and budget event state.", "BudgetStatusResponse", []map[string]interface{}{}),
-			"/api/quota/status":                   filteredReadOperation("finops", "Get quota estimate", "Read local 5h/day/week/month quota and burn-rate estimates. Subscription quota is an estimate, not provider billing.", "QuotaStatus", []map[string]interface{}{}),
+			"/api/quota/status":                   volatileReadOperation("finops", "Get quota estimate", "Read local 5h/day/week/month quota and burn-rate estimates. Subscription quota is an estimate, not provider billing.", "QuotaStatus", []map[string]interface{}{}),
 			"/api/data-quality":                   filteredReadOperation("diagnostics", "Get data quality", "Read trust and completeness diagnostics, unpriced models, malformed rows, duplicates, and provenance confidence.", "DataQualityReport", []map[string]interface{}{}),
 			"/api/doctor":                         doctorOperation(),
 			"/api/model-calls":                    filteredReadOperation("diagnostics", "Get model call analytics", "Read call counts by source, model, and project for detecting loops and unexpected model use.", "ModelCallRows", append(scopedTimeParams(), intQueryParam("limit", "Maximum model call groups."))),
@@ -703,11 +703,19 @@ func filteredReadOperation(tag, summary, description, schema string, params []ma
 			"parameters": params,
 			"responses": map[string]interface{}{
 				"200": jsonResponse(schema),
+				"304": map[string]interface{}{"description": "Not modified when If-None-Match matches the stable response ETag."},
 				"400": jsonResponse("Error"),
 				"403": jsonResponse("Error"),
 			},
 		},
 	}
+}
+
+func volatileReadOperation(tag, summary, description, schema string, params []map[string]interface{}) map[string]interface{} {
+	op := filteredReadOperation(tag, summary, description, schema, params)
+	delete(op["get"].(map[string]interface{})["responses"].(map[string]interface{}), "304")
+	op["get"].(map[string]interface{})["x-agent-ledger"].(map[string]interface{})["etag"] = "not emitted because response includes time-sensitive local estimates"
+	return op
 }
 
 func derivedReadOperation(tag, summary, description, schema string, params []map[string]interface{}) map[string]interface{} {
@@ -791,6 +799,7 @@ func doctorOperation() map[string]interface{} {
 				"text/markdown":    map[string]interface{}{"schema": stringSchema()},
 			},
 		},
+		"304": map[string]interface{}{"description": "Not modified when JSON If-None-Match matches the stable diagnostic ETag."},
 		"400": jsonResponse("Error"),
 		"403": jsonResponse("Error"),
 	}
@@ -808,6 +817,7 @@ func wrappedOperation() map[string]interface{} {
 				"text/markdown":    map[string]interface{}{"schema": stringSchema()},
 			},
 		},
+		"304": map[string]interface{}{"description": "Not modified when JSON If-None-Match matches the stable wrapped report ETag."},
 		"400": jsonResponse("Error"),
 		"403": jsonResponse("Error"),
 	}
@@ -850,6 +860,7 @@ func evidenceBundleOperation() map[string]interface{} {
 			"application/json": map[string]interface{}{"schema": refSchema("EvidenceBundle")},
 		},
 	}
+	delete(get["responses"].(map[string]interface{}), "304")
 	return op
 }
 
@@ -863,6 +874,7 @@ func offlineBundleExportOperation() map[string]interface{} {
 			"application/json": map[string]interface{}{"schema": refSchema("OfflineBundle")},
 		},
 	}
+	delete(get["responses"].(map[string]interface{}), "304")
 	return op
 }
 

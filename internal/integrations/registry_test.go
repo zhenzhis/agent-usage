@@ -246,6 +246,16 @@ func TestOpenAPISpecIndexesStableControlPlane(t *testing.T) {
 			t.Fatalf("OpenAPI missing path %s: %#v", path, paths)
 		}
 	}
+	for _, path := range []string{"/api/dashboard", "/api/pricing/status", "/api/anomalies", "/api/policy/enforcement"} {
+		if !openAPIGetHasResponse(paths, path, "304") {
+			t.Fatalf("OpenAPI path %s should advertise 304 revalidation: %#v", path, paths[path])
+		}
+	}
+	for _, path := range []string{"/api/quota/status", "/api/evidence-bundle", "/api/offline-bundle/export"} {
+		if openAPIGetHasResponse(paths, path, "304") {
+			t.Fatalf("OpenAPI path %s must not advertise 304 revalidation: %#v", path, paths[path])
+		}
+	}
 	rawSpec, _ := json.Marshal(spec)
 	for _, needle := range []string{"Idempotency-Key", "WorkloadCreateRequest", "WorkloadCloseRequest", "WorkloadLinkRequest", "WorkloadLeaseAcquireRequest", "WorkloadLeaseRenewRequest", "WorkloadLeaseReleaseRequest", "AgentRunStartRequest", "AgentRunHeartbeatRequest", "DashboardBundle", "SessionPage", "PricingStatus", "BudgetStatusResponse", "QuotaStatus", "DataQualityReport", "DoctorReport", "ModelRegistryRows", "CostIntelligenceRows", "CacheDoctorRows", "InsightEventRows", "EvidenceBundle", "PolicyEvaluationRequest", "PolicyApprovalVoteRequest", "OTelGenAIRequest", "OTLPTraceRequest", "A2ATaskRequest", "ProviderUsageRequest", "GatewayRequest", `"409"`} {
 		if !strings.Contains(string(rawSpec), needle) {
@@ -349,6 +359,23 @@ func adapterContractHasKind(spec AdapterContract, kind string) bool {
 		}
 	}
 	return false
+}
+
+func openAPIGetHasResponse(paths map[string]interface{}, path, status string) bool {
+	pathItem, ok := paths[path].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	get, ok := pathItem["get"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	responses, ok := get["responses"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, ok = responses[status]
+	return ok
 }
 
 func TestDiscoveryManifestCarriesReadOnlyRuntimeStatus(t *testing.T) {

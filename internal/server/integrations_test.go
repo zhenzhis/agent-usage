@@ -339,6 +339,8 @@ func TestFinOpsDiagnosticsEndpointETags(t *testing.T) {
 		{name: "model-registry", url: "http://127.0.0.1/api/model-registry", handler: srv.handleModelRegistry},
 		{name: "cost-intelligence", url: "http://127.0.0.1/api/cost-intelligence?from=2026-06-07&to=2026-06-08", handler: srv.handleCostIntelligence},
 		{name: "cache-doctor", url: "http://127.0.0.1/api/cache/doctor?from=2026-06-07&to=2026-06-08", handler: srv.handleCacheDoctor},
+		{name: "anomalies", url: "http://127.0.0.1/api/anomalies?from=2026-06-07&to=2026-06-08", handler: srv.handleAnomalies},
+		{name: "watchdog", url: "http://127.0.0.1/api/watchdog/events?from=2026-06-07&to=2026-06-08", handler: srv.handleWatchdogEvents},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
