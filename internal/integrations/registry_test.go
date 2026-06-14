@@ -346,6 +346,29 @@ func TestOpenAPIRequestBodyOperationsAdvertiseBodyLimits(t *testing.T) {
 	}
 }
 
+func TestOpenAPIGetOperationsDeclareRevalidationPolicy(t *testing.T) {
+	spec := OpenAPISpecFor(Options{}, nil)
+	paths := spec["paths"].(map[string]interface{})
+	for path, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			t.Fatalf("OpenAPI path %s has invalid item: %#v", path, rawPathItem)
+		}
+		rawOperation, ok := pathItem["get"]
+		if !ok {
+			continue
+		}
+		operation, ok := rawOperation.(map[string]interface{})
+		if !ok {
+			t.Fatalf("OpenAPI GET %s has invalid operation: %#v", path, rawOperation)
+		}
+		if openAPIMethodHasResponse(paths, path, "get", "304") || openAPIOperationETagPolicy(operation) != "" {
+			continue
+		}
+		t.Fatalf("OpenAPI GET %s missing 304 or explicit x-agent-ledger.etag policy: %#v", path, operation)
+	}
+}
+
 func TestContractVerificationReportIsOKAndPrivacySafe(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Collectors.Claude.Enabled = true
@@ -364,7 +387,7 @@ func TestContractVerificationReportIsOKAndPrivacySafe(t *testing.T) {
 	if report.BundleHash == "" || report.OpenAPIHash == "" || !strings.HasPrefix(report.BundleHash, "sha256:") || !strings.HasPrefix(report.OpenAPIHash, "sha256:") {
 		t.Fatalf("verification report missing hashes: %#v", report)
 	}
-	for _, name := range []string{"discovery.contract_bundle_uri", "bundle.document.openapi", "openapi.path./api/contracts/verify", "openapi.privacy", "openapi.auth_scheme", "openapi.operation_auth", "openapi.operation_admission", "openapi.operation_methods", "openapi.request_body_limits"} {
+	for _, name := range []string{"discovery.contract_bundle_uri", "bundle.document.openapi", "openapi.path./api/contracts/verify", "openapi.privacy", "openapi.auth_scheme", "openapi.operation_auth", "openapi.operation_admission", "openapi.operation_methods", "openapi.request_body_limits", "openapi.get_revalidation"} {
 		if !verificationReportHasCheck(report, name) {
 			t.Fatalf("verification report missing check %q: %#v", name, report.Checks)
 		}
@@ -531,6 +554,15 @@ func openAPIOperationHasAdmissionMetadata(operation map[string]interface{}) bool
 	writeMode, writeModeOK := meta["write_mode"].(string)
 	_, readOnlyOK := meta["available_in_read_only"].(bool)
 	return roleOK && role != "" && writeModeOK && writeMode != "" && readOnlyOK
+}
+
+func openAPIOperationETagPolicy(operation map[string]interface{}) string {
+	meta, ok := operation["x-agent-ledger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	policy, _ := meta["etag"].(string)
+	return policy
 }
 
 func TestDiscoveryManifestCarriesReadOnlyRuntimeStatus(t *testing.T) {

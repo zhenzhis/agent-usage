@@ -864,7 +864,7 @@ func filteredReadOperation(tag, summary, description, schema string, params []ma
 func volatileReadOperation(tag, summary, description, schema string, params []map[string]interface{}) map[string]interface{} {
 	op := filteredReadOperation(tag, summary, description, schema, params)
 	delete(op["get"].(map[string]interface{})["responses"].(map[string]interface{}), "304")
-	op["get"].(map[string]interface{})["x-agent-ledger"].(map[string]interface{})["etag"] = "not emitted because response includes time-sensitive local estimates"
+	setOperationETagPolicy(op["get"].(map[string]interface{}), "not emitted because response includes time-sensitive local estimates")
 	return op
 }
 
@@ -985,6 +985,7 @@ func badgeOperation() map[string]interface{} {
 				"writes_local_state": false,
 				"read_only_safe":     true,
 				"prompt_content":     false,
+				"etag":               "not emitted because SVG badges are generated attachments",
 			},
 			"parameters": append(scopedTimeParams(), queryParam("label", "Optional badge label."), queryParam("metric", "cost, tokens, sessions, or cache.")),
 			"responses": map[string]interface{}{
@@ -1005,6 +1006,7 @@ func evidenceBundleOperation() map[string]interface{} {
 	op := filteredReadOperation("reports", "Export incident evidence bundle", "Export a privacy-redacted evidence bundle with health, pricing audit, data quality, dashboard consistency, anomalies, watchdog, and workload state.", "EvidenceBundle", append(scopedTimeParams(), queryParam("granularity", "Dashboard evidence chart granularity.")))
 	get := op["get"].(map[string]interface{})
 	get["x-agent-ledger"].(map[string]interface{})["writes_local_state"] = "control-plane mode may record the exported bundle and audit event"
+	setOperationETagPolicy(get, "not emitted because evidence exports may record local audit metadata")
 	get["responses"].(map[string]interface{})["200"] = map[string]interface{}{
 		"description": "Privacy-redacted JSON evidence bundle attachment.",
 		"content": map[string]interface{}{
@@ -1019,6 +1021,7 @@ func offlineBundleExportOperation() map[string]interface{} {
 	op := filteredReadOperation("reports", "Export offline bundle", "Export a local offline usage bundle for air-gapped aggregation. Optional signing uses AGENT_LEDGER_BUNDLE_KEY from the environment.", "OfflineBundle", append(scopedTimeParams(), boolQueryParam("signed", "Sign bundle with local environment key."), queryParam("key_id", "Optional signing key identifier."), intQueryParam("limit", "Maximum bundle rows.")))
 	get := op["get"].(map[string]interface{})
 	get["x-agent-ledger"].(map[string]interface{})["writes_local_state"] = "control-plane mode may record export metadata and audit event"
+	setOperationETagPolicy(get, "not emitted because offline bundle exports may record local audit metadata")
 	get["responses"].(map[string]interface{})["200"] = map[string]interface{}{
 		"description": "Offline JSON bundle attachment.",
 		"content": map[string]interface{}{
@@ -1056,6 +1059,7 @@ func exportOperation() map[string]interface{} {
 				"writes_local_state": "control-plane mode records export audit metadata",
 				"read_only_safe":     true,
 				"prompt_content":     false,
+				"etag":               "not emitted because export responses are generated attachments and may record audit metadata",
 			},
 			"parameters": append(scopedTimeParams(), queryParam("type", "sessions, workloads, daily, models, model-calls, chargeback, audit, or quality."), queryParam("format", "csv or json.")),
 			"responses": map[string]interface{}{
@@ -1083,6 +1087,7 @@ func reportOperation() map[string]interface{} {
 				"writes_local_state": "control-plane mode records report audit metadata",
 				"read_only_safe":     true,
 				"prompt_content":     false,
+				"etag":               "not emitted because report responses are generated attachments and may record audit metadata",
 			},
 			"parameters": scopedTimeParams(),
 			"responses": map[string]interface{}{
@@ -1492,6 +1497,7 @@ func workloadEventsOperation(stream bool) map[string]interface{} {
 	}
 	if stream {
 		method["summary"] = "Stream workload event feed"
+		setOperationETagPolicy(method, "not emitted because SSE streams are long-lived event feeds")
 		method["responses"] = map[string]interface{}{
 			"200": map[string]interface{}{
 				"description": "SSE stream that emits workload_events messages with the feed cursor as SSE id.",
@@ -1503,6 +1509,15 @@ func workloadEventsOperation(stream bool) map[string]interface{} {
 		}
 	}
 	return map[string]interface{}{"get": method}
+}
+
+func setOperationETagPolicy(operation map[string]interface{}, policy string) {
+	meta, ok := operation["x-agent-ledger"].(map[string]interface{})
+	if !ok {
+		meta = map[string]interface{}{}
+		operation["x-agent-ledger"] = meta
+	}
+	meta["etag"] = policy
 }
 
 func ecosystemIngestOperation(summary, description, requestSchema, responseSchema string, disabledByDefault bool) map[string]interface{} {

@@ -296,6 +296,8 @@ func ContractVerificationReportFor(opts Options, runtime *storage.RuntimeStatus)
 	addCheck("openapi.operation_methods", methodOK, "critical", "OpenAPI operations expose method-not-allowed contracts", "all operations include 405 response", methodActual)
 	bodyLimitOK, bodyLimitActual := contractOpenAPIRequestBodyLimitStatus(paths)
 	addCheck("openapi.request_body_limits", bodyLimitOK, "critical", "OpenAPI request body operations expose body limits and 413 responses", "all requestBody operations include max_body_bytes and 413 response", bodyLimitActual)
+	revalidationOK, revalidationActual := contractOpenAPIGetRevalidationStatus(paths)
+	addCheck("openapi.get_revalidation", revalidationOK, "critical", "OpenAPI GET operations declare ETag revalidation or an explicit no-ETag reason", "all GET operations include 304 response or x-agent-ledger.etag", revalidationActual)
 	for _, path := range OpenAPIContractPaths() {
 		_, ok := paths[path]
 		addCheck("openapi.path."+path, ok, "warning", "OpenAPI exposes stable control-plane path", path, boolString(ok))
@@ -463,6 +465,25 @@ func contractOpenAPIRequestBodyLimitStatus(paths map[string]interface{}) (bool, 
 	return checked > 0 && missing == 0, "checked=" + intString(checked) + ",missing=" + intString(missing)
 }
 
+func contractOpenAPIGetRevalidationStatus(paths map[string]interface{}) (bool, string) {
+	checked, missing := 0, 0
+	for _, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		operation, ok := pathItem["get"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		checked++
+		if !contractOpenAPIOperationHasResponse(operation, "304") && contractOpenAPIOperationETagPolicy(operation) == "" {
+			missing++
+		}
+	}
+	return checked > 0 && missing == 0, "checked=" + intString(checked) + ",missing=" + intString(missing)
+}
+
 func contractOpenAPIOperationHasBearerSecurity(operation map[string]interface{}) bool {
 	security, ok := operation["security"].([]map[string][]string)
 	if !ok {
@@ -511,6 +532,15 @@ func contractOpenAPIOperationHasBodyLimit(operation map[string]interface{}) bool
 	default:
 		return false
 	}
+}
+
+func contractOpenAPIOperationETagPolicy(operation map[string]interface{}) string {
+	meta, ok := operation["x-agent-ledger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	policy, _ := meta["etag"].(string)
+	return policy
 }
 
 func contractStringValue(v interface{}) string {
