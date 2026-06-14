@@ -256,6 +256,24 @@ func TestOpenAPISpecIndexesStableControlPlane(t *testing.T) {
 			t.Fatalf("OpenAPI path %s must not advertise 304 revalidation: %#v", path, paths[path])
 		}
 	}
+	for _, path := range []string{"/api/dashboard", "/api/openapi.json", "/api/export", "/api/workload-events"} {
+		if !openAPIMethodHasResponse(paths, path, "get", "405") || openAPIMethodAllowHeader(paths, path, "get") != "GET" {
+			t.Fatalf("OpenAPI path %s should advertise GET-only 405 Allow: %#v", path, paths[path])
+		}
+	}
+	for _, path := range []string{"/api/events", "/api/pricing/sync", "/gateway/openai/v1/responses", "/api/workloads/lease"} {
+		if !openAPIMethodHasResponse(paths, path, "post", "405") || openAPIMethodAllowHeader(paths, path, "post") != "POST" {
+			t.Fatalf("OpenAPI path %s should advertise POST-only 405 Allow: %#v", path, paths[path])
+		}
+	}
+	for _, path := range []string{"/api/workloads", "/api/policy/approvals"} {
+		if !openAPIMethodHasResponse(paths, path, "get", "405") || openAPIMethodAllowHeader(paths, path, "get") != "GET, POST" {
+			t.Fatalf("OpenAPI path %s should advertise mixed-method 405 Allow on GET: %#v", path, paths[path])
+		}
+		if !openAPIMethodHasResponse(paths, path, "post", "405") || openAPIMethodAllowHeader(paths, path, "post") != "GET, POST" {
+			t.Fatalf("OpenAPI path %s should advertise mixed-method 405 Allow on POST: %#v", path, paths[path])
+		}
+	}
 	rawSpec, _ := json.Marshal(spec)
 	for _, needle := range []string{"Idempotency-Key", "WorkloadCreateRequest", "WorkloadCloseRequest", "WorkloadLinkRequest", "WorkloadLeaseAcquireRequest", "WorkloadLeaseRenewRequest", "WorkloadLeaseReleaseRequest", "AgentRunStartRequest", "AgentRunHeartbeatRequest", "DashboardBundle", "SessionPage", "PricingStatus", "BudgetStatusResponse", "QuotaStatus", "DataQualityReport", "DoctorReport", "ModelRegistryRows", "CostIntelligenceRows", "CacheDoctorRows", "InsightEventRows", "EvidenceBundle", "PolicyEvaluationRequest", "PolicyApprovalVoteRequest", "OTelGenAIRequest", "OTLPTraceRequest", "A2ATaskRequest", "ProviderUsageRequest", "GatewayRequest", `"409"`} {
 		if !strings.Contains(string(rawSpec), needle) {
@@ -362,20 +380,57 @@ func adapterContractHasKind(spec AdapterContract, kind string) bool {
 }
 
 func openAPIGetHasResponse(paths map[string]interface{}, path, status string) bool {
+	return openAPIMethodHasResponse(paths, path, "get", status)
+}
+
+func openAPIMethodHasResponse(paths map[string]interface{}, path, method, status string) bool {
 	pathItem, ok := paths[path].(map[string]interface{})
 	if !ok {
 		return false
 	}
-	get, ok := pathItem["get"].(map[string]interface{})
+	operation, ok := pathItem[method].(map[string]interface{})
 	if !ok {
 		return false
 	}
-	responses, ok := get["responses"].(map[string]interface{})
+	responses, ok := operation["responses"].(map[string]interface{})
 	if !ok {
 		return false
 	}
 	_, ok = responses[status]
 	return ok
+}
+
+func openAPIMethodAllowHeader(paths map[string]interface{}, path, method string) string {
+	pathItem, ok := paths[path].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	operation, ok := pathItem[method].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	responses, ok := operation["responses"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	response, ok := responses["405"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	headers, ok := response["headers"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	allow, ok := headers["Allow"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	schema, ok := allow["schema"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	value, _ := schema["const"].(string)
+	return value
 }
 
 func TestDiscoveryManifestCarriesReadOnlyRuntimeStatus(t *testing.T) {

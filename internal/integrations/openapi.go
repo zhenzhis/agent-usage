@@ -11,7 +11,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 	}
 	catalog := Registry(opts)
 	discovery := Discovery(opts)
-	return map[string]interface{}{
+	spec := map[string]interface{}{
 		"openapi": "3.1.0",
 		"info": map[string]interface{}{
 			"title":       "Agent Ledger Control Plane API",
@@ -562,10 +562,81 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			},
 		},
 	}
+	addMethodNotAllowedResponses(spec)
+	return spec
 }
 
 func OpenAPIFingerprint(opts Options, runtime *storage.RuntimeStatus) string {
 	return hashJSONPayload(OpenAPISpecFor(opts, runtime))
+}
+
+func addMethodNotAllowedResponses(spec map[string]interface{}) {
+	paths, ok := spec["paths"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	methodOrder := []struct {
+		key   string
+		label string
+	}{
+		{"get", "GET"},
+		{"post", "POST"},
+		{"put", "PUT"},
+		{"patch", "PATCH"},
+		{"delete", "DELETE"},
+	}
+	for _, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		allowed := []string{}
+		for _, method := range methodOrder {
+			if _, ok := pathItem[method.key]; ok {
+				allowed = append(allowed, method.label)
+			}
+		}
+		if len(allowed) == 0 {
+			continue
+		}
+		allowValue := joinOpenAPIMethods(allowed)
+		for _, method := range methodOrder {
+			operation, ok := pathItem[method.key].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			responses, ok := operation["responses"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if _, exists := responses["405"]; !exists {
+				responses["405"] = methodNotAllowedResponse(allowValue)
+			}
+		}
+	}
+}
+
+func methodNotAllowedResponse(allowValue string) map[string]interface{} {
+	return map[string]interface{}{
+		"description": "Method not allowed for this endpoint.",
+		"headers": map[string]interface{}{
+			"Allow": map[string]interface{}{
+				"description": "Comma-separated HTTP methods allowed by this path.",
+				"schema":      constSchema(allowValue),
+			},
+		},
+	}
+}
+
+func joinOpenAPIMethods(methods []string) string {
+	out := ""
+	for i, method := range methods {
+		if i > 0 {
+			out += ", "
+		}
+		out += method
+	}
+	return out
 }
 
 // OpenAPIContractPaths returns the stable REST paths that the control-plane
