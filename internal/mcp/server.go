@@ -273,6 +273,39 @@ func (s *Server) handle(req request, subscriptions *subscriptionState) (interfac
 	}
 }
 
+// ToolNames returns the actual MCP tool names exposed by the server.
+func ToolNames() []string {
+	out := make([]string, 0, len(tools()))
+	for _, tool := range tools() {
+		if name, _ := tool["name"].(string); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// ResourceURIs returns the actual MCP resource URIs exposed by the server.
+func ResourceURIs() []string {
+	out := make([]string, 0, len(resources()))
+	for _, resource := range resources() {
+		if uri, _ := resource["uri"].(string); uri != "" {
+			out = append(out, uri)
+		}
+	}
+	return out
+}
+
+// PromptNames returns the actual MCP prompt names exposed by the server.
+func PromptNames() []string {
+	out := make([]string, 0, len(prompts()))
+	for _, prompt := range prompts() {
+		if name, _ := prompt["name"].(string); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func tools() []map[string]interface{} {
 	return []map[string]interface{}{
 		tool("ledger.current_budget", "Return local quota/budget consumption for 5h/day/week/month windows.", map[string]interface{}{

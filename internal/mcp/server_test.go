@@ -10,8 +10,62 @@ import (
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/controlplane"
+	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
+
+func TestMCPSurfaceMatchesCapabilityCatalog(t *testing.T) {
+	catalog := integrations.Registry(integrations.OptionsFromConfig(config.DefaultConfig()))
+	var mcpCapability integrations.Capability
+	found := false
+	for _, capability := range catalog.Capabilities {
+		if capability.ID == "protocol.mcp_stdio" {
+			mcpCapability = capability
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("protocol.mcp_stdio capability missing")
+	}
+	compareStringSet(t, "mcp tools", mcpCapability.Tools, ToolNames())
+	compareStringSet(t, "mcp resources", mcpCapability.Resources, ResourceURIs())
+	compareStringSet(t, "mcp prompts", mcpCapability.Prompts, PromptNames())
+}
+
+func TestMCPToolMetadataMatchesAdmission(t *testing.T) {
+	seen := map[string]bool{}
+	for _, tool := range tools() {
+		name, ok := tool["name"].(string)
+		if !ok || name == "" {
+			t.Fatalf("tool missing name: %#v", tool)
+		}
+		if seen[name] {
+			t.Fatalf("duplicate MCP tool name %q", name)
+		}
+		seen[name] = true
+		meta := agentLedgerToolMeta(t, tool)
+		access := controlplane.MCPToolAccessFor(name)
+		if meta["writes_local_state"] != access.WritesLocalState ||
+			meta["write_mode"] != access.WriteMode ||
+			meta["available_in_read_only"] != access.AvailableInReadOnly ||
+			meta["read_only_behavior"] != access.ReadOnlyBehavior {
+			t.Fatalf("tool %s metadata drifted from admission: meta=%#v access=%#v", name, meta, access)
+		}
+		annotations, ok := tool["annotations"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("tool %s missing annotations: %#v", name, tool)
+		}
+		readOnly := access.WriteMode == "none"
+		if annotations["readOnlyHint"] != readOnly ||
+			annotations["idempotentHint"] != readOnly ||
+			annotations["destructiveHint"] != false ||
+			annotations["openWorldHint"] != false {
+			t.Fatalf("tool %s annotations drifted from admission: annotations=%#v access=%#v", name, annotations, access)
+		}
+	}
+}
 
 func TestMCPToolsListAndBudget(t *testing.T) {
 	db := openTestDB(t)
@@ -1400,4 +1454,43 @@ func hasPrompt(prompts []interface{}, name string) bool {
 		}
 	}
 	return false
+}
+
+func compareStringSet(t *testing.T, label string, want, got []string) {
+	t.Helper()
+	wantSet := map[string]bool{}
+	for _, value := range want {
+		if value == "" {
+			t.Fatalf("%s contains empty value in want list: %#v", label, want)
+		}
+		if wantSet[value] {
+			t.Fatalf("%s contains duplicate want value %q: %#v", label, value, want)
+		}
+		wantSet[value] = true
+	}
+	gotSet := map[string]bool{}
+	for _, value := range got {
+		if value == "" {
+			t.Fatalf("%s contains empty value in got list: %#v", label, got)
+		}
+		if gotSet[value] {
+			t.Fatalf("%s contains duplicate got value %q: %#v", label, value, got)
+		}
+		gotSet[value] = true
+	}
+	var missing []string
+	for value := range wantSet {
+		if !gotSet[value] {
+			missing = append(missing, value)
+		}
+	}
+	var extra []string
+	for value := range gotSet {
+		if !wantSet[value] {
+			extra = append(extra, value)
+		}
+	}
+	if len(missing) != 0 || len(extra) != 0 {
+		t.Fatalf("%s mismatch: missing=%#v extra=%#v want=%#v got=%#v", label, missing, extra, want, got)
+	}
 }
