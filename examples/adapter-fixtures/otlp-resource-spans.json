@@ -1,0 +1,118 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.namespace",
+            "value": {
+              "stringValue": "agent-ledger-fixtures"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "agent-ledger-otlp-fixture"
+          },
+          "spans": [
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "2222222222222222",
+              "name": "gen_ai model call",
+              "startTimeUnixNano": "1780833600000000000",
+              "endTimeUnixNano": "1780833602500000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "gpt-5.5"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "900"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_read.input_tokens",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_creation.input_tokens",
+                  "value": {
+                    "intValue": "50"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "180"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.reasoning.output_tokens",
+                  "value": {
+                    "intValue": "40"
+                  }
+                },
+                {
+                  "key": "agent_ledger.goal",
+                  "value": {
+                    "stringValue": "Validate OTLP resourceSpans fixture"
+                  }
+                },
+                {
+                  "key": "agent_ledger.project",
+                  "value": {
+                    "stringValue": "agent-ledger"
+                  }
+                },
+                {
+                  "key": "agent_ledger.source",
+                  "value": {
+                    "stringValue": "otlp-fixture"
+                  }
+                },
+                {
+                  "key": "agent_ledger.source_version",
+                  "value": {
+                    "stringValue": "otlp-http-json-fixture@v1"
+                  }
+                },
+                {
+                  "key": "agent_ledger.parser_version",
+                  "value": {
+                    "stringValue": "agent-ledger-otel-genai@v1"
+                  }
+                },
+                {
+                  "key": "agent_ledger.raw_ref",
+                  "value": {
+                    "stringValue": "otlp:trace:11111111111111111111111111111111:span:2222222222222222"
+                  }
+                },
+                {
+                  "key": "agent_ledger.match_type",
+                  "value": {
+                    "stringValue": "source_reported"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
