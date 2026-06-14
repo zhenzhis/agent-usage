@@ -1768,6 +1768,9 @@ func gatewayOperation(summary, description string) map[string]interface{} {
 						"X-Agent-Ledger-Usage-Warning":          headerSchema("Present when a successful upstream response did not include parseable usage metadata."),
 						"X-Agent-Ledger-Stream-Usage-Requested": headerSchema("true when Agent Ledger added OpenAI stream_options.include_usage to a streaming request."),
 						"X-Agent-Ledger-Upstream-Status":        headerSchema("HTTP status returned by the upstream provider."),
+						"X-Agent-Ledger-Budget-Severity":        headerSchema("warning or critical when a relevant local budget rule is already near or beyond its threshold before proxying."),
+						"X-Agent-Ledger-Budget-Rule":            headerSchema("Name of the most severe relevant local budget rule."),
+						"X-Agent-Ledger-Budget-Ratio":           headerSchema("Current usage divided by the configured budget limit for the advisory rule."),
 					},
 					"content": map[string]interface{}{
 						"application/json":  map[string]interface{}{"schema": refSchema("GatewayResponse")},

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
+	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
 func TestGatewayDisabledByDefault(t *testing.T) {
@@ -149,6 +150,120 @@ func TestGatewayStreamsAndRecordsUsage(t *testing.T) {
 	rawAudit, _ := json.Marshal(audit)
 	if strings.Contains(string(rawAudit), "secret streamed prompt") || strings.Contains(string(rawAudit), "secret streamed response") || strings.Contains(string(rawAudit), "sk-test") {
 		t.Fatalf("sensitive streamed gateway data leaked into audit log: %s", string(rawAudit))
+	}
+}
+
+func TestGatewayBudgetAdvisoryHeadersAndAudit(t *testing.T) {
+	db := testServerDB(t)
+	if err := db.InsertUsage(&storage.UsageRecord{
+		Source:       "gateway",
+		SessionID:    "budget-seed",
+		Model:        "gpt-5.5",
+		InputTokens:  900,
+		OutputTokens: 100,
+		CostUSD:      0.90,
+		Timestamp:    time.Now().Add(-time.Minute),
+		Project:      "budget-project",
+	}); err != nil {
+		t.Fatalf("InsertUsage: %v", err)
+	}
+	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_budget",
+			"model":"gpt-5.5",
+			"choices":[],
+			"usage":{"prompt_tokens":10,"completion_tokens":2}
+		}`))
+	}))
+	defer upstream.Close()
+
+	srv := New(db, "", Options{
+		Gateway: testGatewayConfig(upstream.URL),
+		Budgets: config.BudgetConfig{Enabled: true, Rules: []config.BudgetRule{{
+			Name: "gateway-model-cap", Period: "day", Scope: "model", Match: "gpt-5.5", Metric: "cost_usd", Limit: 1.00, WarnRatio: 0.50,
+		}}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/gateway/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-5.5","messages":[],"metadata":{"agent_ledger.project":"budget-project"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handleOpenAIChatGateway(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("X-Agent-Ledger-Budget-Severity") != "warning" {
+		t.Fatalf("budget severity header=%q", rr.Header().Get("X-Agent-Ledger-Budget-Severity"))
+	}
+	if rr.Header().Get("X-Agent-Ledger-Budget-Rule") != "gateway-model-cap" {
+		t.Fatalf("budget rule header=%q", rr.Header().Get("X-Agent-Ledger-Budget-Rule"))
+	}
+	if rr.Header().Get("X-Agent-Ledger-Budget-Ratio") != "0.9000" {
+		t.Fatalf("budget ratio header=%q", rr.Header().Get("X-Agent-Ledger-Budget-Ratio"))
+	}
+	audit, err := db.GetAuditLog(20)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	found := false
+	rawAudit, _ := json.Marshal(audit)
+	if strings.Contains(string(rawAudit), "messages") || strings.Contains(string(rawAudit), "sk-test") {
+		t.Fatalf("sensitive budget advisory data leaked into audit log: %s", string(rawAudit))
+	}
+	for _, row := range audit {
+		if row.Action == "gateway.budget.warning" && row.Target == "gpt-5.5" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("budget advisory audit event missing: %+v", audit)
+	}
+}
+
+func TestGatewayBudgetAdvisoryIgnoresUnrelatedScope(t *testing.T) {
+	db := testServerDB(t)
+	if err := db.InsertUsage(&storage.UsageRecord{
+		Source:       "gateway",
+		SessionID:    "other-budget-seed",
+		Model:        "gpt-5.5",
+		InputTokens:  900,
+		OutputTokens: 100,
+		CostUSD:      2.00,
+		Timestamp:    time.Now().Add(-time.Minute),
+		Project:      "other-project",
+	}); err != nil {
+		t.Fatalf("InsertUsage: %v", err)
+	}
+	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_budget_unrelated",
+			"model":"gpt-5.5",
+			"choices":[],
+			"usage":{"prompt_tokens":10,"completion_tokens":2}
+		}`))
+	}))
+	defer upstream.Close()
+
+	srv := New(db, "", Options{
+		Gateway: testGatewayConfig(upstream.URL),
+		Budgets: config.BudgetConfig{Enabled: true, Rules: []config.BudgetRule{{
+			Name: "other-project-cap", Period: "day", Scope: "project", Match: "other-project", Metric: "cost_usd", Limit: 1.00, WarnRatio: 0.50,
+		}}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/gateway/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-5.5","messages":[],"metadata":{"agent_ledger.project":"current-project"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handleOpenAIChatGateway(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("X-Agent-Ledger-Budget-Severity") != "" || rr.Header().Get("X-Agent-Ledger-Budget-Rule") != "" || rr.Header().Get("X-Agent-Ledger-Budget-Ratio") != "" {
+		t.Fatalf("unexpected budget advisory headers: severity=%q rule=%q ratio=%q",
+			rr.Header().Get("X-Agent-Ledger-Budget-Severity"),
+			rr.Header().Get("X-Agent-Ledger-Budget-Rule"),
+			rr.Header().Get("X-Agent-Ledger-Budget-Ratio"))
 	}
 }
 

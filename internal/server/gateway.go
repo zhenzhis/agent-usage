@@ -50,6 +50,94 @@ const (
 	gatewayUsageWarningMissingStream    = "missing_upstream_stream_usage"
 )
 
+type gatewayBudgetAdvisory struct {
+	Status BudgetStatus
+}
+
+func (a *gatewayBudgetAdvisory) apply(w http.ResponseWriter) {
+	if a == nil {
+		return
+	}
+	w.Header().Set("X-Agent-Ledger-Budget-Severity", a.Status.Severity)
+	w.Header().Set("X-Agent-Ledger-Budget-Rule", a.Status.Name)
+	w.Header().Set("X-Agent-Ledger-Budget-Ratio", fmt.Sprintf("%.4f", a.Status.Ratio))
+}
+
+func (s *Server) gatewayBudgetAdvisory(r *http.Request, model string, ledgerCtx gatewayLedgerContext, target string) *gatewayBudgetAdvisory {
+	status, err := s.gatewayBudgetStatus(model, ledgerCtx, time.Now())
+	if err != nil {
+		log.Printf("gateway budget evaluation failed: %v", err)
+		s.appendAuditLog("local", s.roleFor(r), "gateway.budget.evaluation_failed", model, map[string]string{
+			"target":  target,
+			"project": ledgerCtx.Project,
+			"error":   err.Error(),
+		})
+		return nil
+	}
+	if status == nil {
+		return nil
+	}
+	s.appendAuditLog("local", s.roleFor(r), "gateway.budget."+status.Severity, model, map[string]string{
+		"target":     target,
+		"project":    ledgerCtx.Project,
+		"rule":       status.Name,
+		"period":     status.Period,
+		"scope":      status.Scope,
+		"match":      status.Match,
+		"metric":     status.Metric,
+		"ratio":      fmt.Sprintf("%.4f", status.Ratio),
+		"period_key": status.PeriodKey,
+	})
+	return &gatewayBudgetAdvisory{Status: *status}
+}
+
+func (s *Server) gatewayBudgetStatus(model string, ledgerCtx gatewayLedgerContext, now time.Time) (*BudgetStatus, error) {
+	statuses, err := s.evaluateBudgets(now)
+	if err != nil {
+		return nil, err
+	}
+	var selected *BudgetStatus
+	for _, status := range statuses {
+		if budgetSeverityRank(status.Severity) == 0 || !gatewayBudgetRelevant(status, model, ledgerCtx.Project) {
+			continue
+		}
+		current := status
+		if selected == nil ||
+			budgetSeverityRank(current.Severity) > budgetSeverityRank(selected.Severity) ||
+			(budgetSeverityRank(current.Severity) == budgetSeverityRank(selected.Severity) && current.Ratio > selected.Ratio) {
+			selected = &current
+		}
+	}
+	return selected, nil
+}
+
+func gatewayBudgetRelevant(status BudgetStatus, model, project string) bool {
+	match := strings.TrimSpace(status.Match)
+	switch normalizedScope(status.Scope) {
+	case "global":
+		return true
+	case "source":
+		return strings.EqualFold(match, "gateway")
+	case "model":
+		return match != "" && strings.EqualFold(match, strings.TrimSpace(model))
+	case "project":
+		return match != "" && strings.EqualFold(match, strings.TrimSpace(project))
+	default:
+		return false
+	}
+}
+
+func budgetSeverityRank(severity string) int {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "critical":
+		return 2
+	case "warning":
+		return 1
+	default:
+		return 0
+	}
+}
+
 func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request) {
 	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
@@ -85,6 +173,7 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	if !s.evaluateOperationPolicy(w, r, "model.call", "gateway", model, ledgerCtx.Project, "openai-chat-completions") {
 		return
 	}
+	budgetAdvisory := s.gatewayBudgetAdvisory(r, model, ledgerCtx, "openai-chat-completions")
 	upstreamBody, streamUsageRequested, err := prepareOpenAIChatGatewayBody(raw, payload, cfg)
 	if err != nil {
 		badRequest(w, err)
@@ -116,7 +205,7 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	}
 	defer resp.Body.Close()
 	if payload.Stream {
-		s.handleOpenAIChatGatewayStream(w, resp, cfg, model, ledgerCtx, started, streamUsageRequested)
+		s.handleOpenAIChatGatewayStream(w, resp, cfg, model, ledgerCtx, started, streamUsageRequested, budgetAdvisory)
 		return
 	}
 
@@ -145,6 +234,7 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("X-Agent-Ledger-Usage-Events", fmt.Sprint(eventCount))
 	w.Header().Set("X-Agent-Ledger-Stream-Usage-Requested", fmt.Sprint(streamUsageRequested))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
+	budgetAdvisory.apply(w)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && !recorded {
 		w.Header().Set("X-Agent-Ledger-Usage-Warning", gatewayUsageWarningMissingNonStream)
 	}
@@ -187,6 +277,7 @@ func (s *Server) handleAnthropicMessagesGateway(w http.ResponseWriter, r *http.R
 	if !s.evaluateOperationPolicy(w, r, "model.call", "gateway", model, ledgerCtx.Project, "anthropic-messages") {
 		return
 	}
+	budgetAdvisory := s.gatewayBudgetAdvisory(r, model, ledgerCtx, "anthropic-messages")
 	apiKey := strings.TrimSpace(os.Getenv(cfg.APIKeyEnv))
 	if apiKey == "" {
 		http.Error(w, "gateway upstream API key env var is not set", http.StatusServiceUnavailable)
@@ -221,7 +312,7 @@ func (s *Server) handleAnthropicMessagesGateway(w http.ResponseWriter, r *http.R
 	}
 	defer resp.Body.Close()
 	if payload.Stream {
-		s.handleAnthropicMessagesGatewayStream(w, resp, cfg, model, ledgerCtx, started)
+		s.handleAnthropicMessagesGatewayStream(w, resp, cfg, model, ledgerCtx, started, budgetAdvisory)
 		return
 	}
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, cfg.MaxResponseBytes+1))
@@ -246,6 +337,7 @@ func (s *Server) handleAnthropicMessagesGateway(w http.ResponseWriter, r *http.R
 	w.Header().Set("X-Agent-Ledger-Usage-Recorded", fmt.Sprint(recorded))
 	w.Header().Set("X-Agent-Ledger-Usage-Events", fmt.Sprint(eventCount))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
+	budgetAdvisory.apply(w)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && !recorded {
 		w.Header().Set("X-Agent-Ledger-Usage-Warning", gatewayUsageWarningMissingNonStream)
 	}
@@ -288,6 +380,7 @@ func (s *Server) handleOpenAIResponsesGateway(w http.ResponseWriter, r *http.Req
 	if !s.evaluateOperationPolicy(w, r, "model.call", "gateway", model, ledgerCtx.Project, "openai-responses") {
 		return
 	}
+	budgetAdvisory := s.gatewayBudgetAdvisory(r, model, ledgerCtx, "openai-responses")
 	apiKey := strings.TrimSpace(os.Getenv(cfg.APIKeyEnv))
 	if apiKey == "" {
 		http.Error(w, "gateway upstream API key env var is not set", http.StatusServiceUnavailable)
@@ -318,7 +411,7 @@ func (s *Server) handleOpenAIResponsesGateway(w http.ResponseWriter, r *http.Req
 	}
 	defer resp.Body.Close()
 	if payload.Stream {
-		s.handleOpenAIResponsesGatewayStream(w, resp, cfg, model, ledgerCtx, started)
+		s.handleOpenAIResponsesGatewayStream(w, resp, cfg, model, ledgerCtx, started, budgetAdvisory)
 		return
 	}
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, cfg.MaxResponseBytes+1))
@@ -343,6 +436,7 @@ func (s *Server) handleOpenAIResponsesGateway(w http.ResponseWriter, r *http.Req
 	w.Header().Set("X-Agent-Ledger-Usage-Recorded", fmt.Sprint(recorded))
 	w.Header().Set("X-Agent-Ledger-Usage-Events", fmt.Sprint(eventCount))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
+	budgetAdvisory.apply(w)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 && !recorded {
 		w.Header().Set("X-Agent-Ledger-Usage-Warning", gatewayUsageWarningMissingNonStream)
 	}
@@ -515,7 +609,7 @@ func (s *Server) recordAnthropicMessagesGatewayUsage(raw []byte, model string, l
 	return len(events) > 0, len(events)
 }
 
-func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time, streamUsageRequested bool) {
+func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time, streamUsageRequested bool, budgetAdvisory *gatewayBudgetAdvisory) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming is not supported by this response writer", http.StatusInternalServerError)
@@ -526,6 +620,7 @@ func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http
 	w.Header().Set("Cache-Control", firstNonEmpty(resp.Header.Get("Cache-Control"), "no-cache"))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
 	w.Header().Set("X-Agent-Ledger-Stream-Usage-Requested", fmt.Sprint(streamUsageRequested))
+	budgetAdvisory.apply(w)
 	w.Header().Set("Trailer", "X-Agent-Ledger-Usage-Recorded, X-Agent-Ledger-Usage-Events, X-Agent-Ledger-Usage-Warning")
 	w.WriteHeader(resp.StatusCode)
 
@@ -588,7 +683,7 @@ func (s *Server) handleOpenAIChatGatewayStream(w http.ResponseWriter, resp *http
 	}
 }
 
-func (s *Server) handleOpenAIResponsesGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time) {
+func (s *Server) handleOpenAIResponsesGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time, budgetAdvisory *gatewayBudgetAdvisory) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming is not supported by this response writer", http.StatusInternalServerError)
@@ -599,6 +694,7 @@ func (s *Server) handleOpenAIResponsesGatewayStream(w http.ResponseWriter, resp 
 	w.Header().Set("Cache-Control", firstNonEmpty(resp.Header.Get("Cache-Control"), "no-cache"))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
 	w.Header().Set("X-Agent-Ledger-Stream-Usage-Requested", "false")
+	budgetAdvisory.apply(w)
 	w.Header().Set("Trailer", "X-Agent-Ledger-Usage-Recorded, X-Agent-Ledger-Usage-Events, X-Agent-Ledger-Usage-Warning")
 	w.WriteHeader(resp.StatusCode)
 
@@ -661,7 +757,7 @@ func (s *Server) handleOpenAIResponsesGatewayStream(w http.ResponseWriter, resp 
 	}
 }
 
-func (s *Server) handleAnthropicMessagesGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time) {
+func (s *Server) handleAnthropicMessagesGatewayStream(w http.ResponseWriter, resp *http.Response, cfg config.GatewayConfig, model string, ledgerCtx gatewayLedgerContext, started time.Time, budgetAdvisory *gatewayBudgetAdvisory) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming is not supported by this response writer", http.StatusInternalServerError)
@@ -672,6 +768,7 @@ func (s *Server) handleAnthropicMessagesGatewayStream(w http.ResponseWriter, res
 	w.Header().Set("Cache-Control", firstNonEmpty(resp.Header.Get("Cache-Control"), "no-cache"))
 	w.Header().Set("X-Agent-Ledger-Upstream-Status", fmt.Sprint(resp.StatusCode))
 	w.Header().Set("X-Agent-Ledger-Stream-Usage-Requested", "false")
+	budgetAdvisory.apply(w)
 	w.Header().Set("Trailer", "X-Agent-Ledger-Usage-Recorded, X-Agent-Ledger-Usage-Events, X-Agent-Ledger-Usage-Warning")
 	w.WriteHeader(resp.StatusCode)
 

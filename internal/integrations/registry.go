@@ -445,8 +445,8 @@ func Registry(opts Options) Catalog {
 			Privacy:        "forwards prompt content only in-memory to the configured upstream; ledger writes usage metadata only; API keys are read from env and not persisted",
 			EventTypes:     []string{"model.call", "policy.decision", "context.ref"},
 			Endpoints:      []string{"POST /gateway/openai/v1/chat/completions", "POST /gateway/openai/v1/responses", "POST /gateway/anthropic/v1/messages"},
-			Limitations:    []string{"disabled by default", "OpenAI Chat Completions streaming usage requires upstream final usage chunks; gateway requests them by default when compatible", "OpenAI Responses streaming records usage from response.completed events", "Anthropic Messages streaming records usage from message_start/message_delta events", "does not persist prompt or response content"},
-			NextMilestones: []string{"budget-aware routing decisions", "streaming conformance fixtures for more providers"},
+			Limitations:    []string{"disabled by default", "OpenAI Chat Completions streaming usage requires upstream final usage chunks; gateway requests them by default when compatible", "OpenAI Responses streaming records usage from response.completed events", "Anthropic Messages streaming records usage from message_start/message_delta events", "does not persist prompt or response content", "budget warnings are advisory headers and audit events only; no automatic rerouting unless explicit policy/routing support is added"},
+			NextMilestones: []string{"budget-aware automatic model fallback policies", "streaming conformance fixtures for more providers"},
 		},
 		{
 			ID:             "protocol.otlp_receiver",
