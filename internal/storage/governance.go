@@ -210,17 +210,50 @@ func (d *DB) GetPricingSources(staleAfter time.Duration) ([]PricingSourceStatus,
 	defer rows.Close()
 	var out []PricingSourceStatus
 	now := time.Now().UTC()
+	if staleAfter <= 0 {
+		staleAfter = 24 * time.Hour
+	}
 	for rows.Next() {
 		var s PricingSourceStatus
 		if err := rows.Scan(&s.Name, &s.Kind, &s.Priority, &s.URL, &s.LastFetchAt, &s.ETag, &s.SHA256, &s.ModelCount, &s.Status, &s.LastError); err != nil {
 			return nil, err
 		}
-		if t, ok := parseDBTime(s.LastFetchAt); !ok || now.Sub(t) > staleAfter {
-			s.Stale = true
-		}
+		annotatePricingSourceFreshness(&s, staleAfter, now)
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+func annotatePricingSourceFreshness(s *PricingSourceStatus, staleAfter time.Duration, now time.Time) {
+	kind := strings.ToLower(strings.TrimSpace(s.Kind))
+	status := strings.ToLower(strings.TrimSpace(s.Status))
+	url := strings.ToLower(strings.TrimSpace(s.URL))
+
+	switch {
+	case status == "seeded" || (kind == "official" && strings.Contains(status, "seed")):
+		s.FreshnessKind = "seeded"
+		s.FreshnessNote = "embedded official pricing seed; not a live fetch from the provider"
+		s.Stale = false
+		return
+	case status == "configured" || kind == "override" || url == "local-config":
+		s.FreshnessKind = "configured"
+		s.FreshnessNote = "local override or contract pricing from configuration"
+		s.Stale = false
+		return
+	case strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") || status == "ok":
+		s.FreshnessKind = "fetched"
+		s.FreshnessNote = "remote pricing source; stale is based on the configured freshness window"
+	default:
+		s.FreshnessKind = "unknown"
+		s.FreshnessNote = "pricing source has no recognized freshness provenance"
+	}
+
+	t, ok := parseDBTime(s.LastFetchAt)
+	if !ok {
+		s.Stale = true
+		return
+	}
+	s.Stale = now.Sub(t) > staleAfter
 }
 
 // GetPricingAudit returns effective pricing rows.

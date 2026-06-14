@@ -243,12 +243,12 @@ cost = input_tokens * input_price
 
 价格优先级：
 
-1. 本地 override。
-2. OpenAI/Anthropic 官方 seed。
-3. LiteLLM fallback。
+1. 本地 override，用于企业合同价、第三方中转价或地区价格 profile。
+2. 内置 OpenAI/Anthropic 官方 seed。这是随 Agent Ledger 发布的 curated overlay，不是实时抓取 provider 页面。
+3. 从 `model_prices_and_context_window.json` 获取的 LiteLLM fallback。
 4. OpenCode 等来源自带费用，默认保留为该来源事实。
 
-每条记录可追踪价格来源、匹配模型、匹配方式和 confidence。未知价格、过期价格和 fuzzy 匹配会进入数据质量中心，不会被静默隐藏。
+每条记录可追踪价格来源、匹配模型、匹配方式和 confidence。`GET /api/pricing/status` 会区分 `seeded`、`fetched`、`configured` 三种 freshness provenance：只有远端 fetch 价格源会按时间窗口标记 stale；内置官方 seed 与本地 override 通过 hash 与 source status 审计。未知价格、过期价格、fuzzy 匹配、fallback、source-reported 与未计价记录都会进入数据质量中心，不会被静默隐藏。
 
 参考：
 
@@ -350,7 +350,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/session-replay?source=codex&session_id=...` | 单个 session 的调用级 token/cost 时间回放 |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | 本地 SVG repo 成本、token 或 cache badge |
 | `GET /api/model-registry` | 模型与价格治理注册表 |
-| `GET /api/pricing/status` | 价格源、新鲜度、有效规则摘要、未计价模型 |
+| `GET /api/pricing/status` | 价格源 provenance、新鲜度、有效规则摘要、未计价模型 |
 | `POST /api/pricing/sync` | 同步价格 |
 | `POST /api/pricing/recalculate?mode=zero|all` | 重算费用 |
 | `POST /api/projections/repair` | 修复 canonical `model_calls` 到 `usage_records` 的投影漂移，并重建 aggregates |

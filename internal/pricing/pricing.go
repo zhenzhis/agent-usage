@@ -153,13 +153,13 @@ func applyOfficialSeeds(db *storage.DB) error {
 		sourceRows[row.PricingSource] = append(sourceRows[row.PricingSource], row)
 	}
 	for _, s := range []storage.PricingSourceStatus{
-		{Name: "openai-official", Kind: "official", Priority: 20, URL: openAIPricingURL, LastFetchAt: now, SHA256: hashPricingRows(sourceRows["openai-official"]), ModelCount: sourceCounts["openai-official"], Status: "seeded"},
-		{Name: "anthropic-official", Kind: "official", Priority: 20, URL: anthropicPricingURL, LastFetchAt: now, SHA256: hashPricingRows(sourceRows["anthropic-official"]), ModelCount: sourceCounts["anthropic-official"], Status: "seeded"},
+		{Name: "openai-official", Kind: "official", Priority: 20, URL: openAIPricingURL, SHA256: hashPricingRows(sourceRows["openai-official"]), ModelCount: sourceCounts["openai-official"], Status: "seeded"},
+		{Name: "anthropic-official", Kind: "official", Priority: 20, URL: anthropicPricingURL, SHA256: hashPricingRows(sourceRows["anthropic-official"]), ModelCount: sourceCounts["anthropic-official"], Status: "seeded"},
 	} {
 		if err := db.UpsertPricingSource(s); err != nil {
 			return err
 		}
-		_ = db.InsertPricingSnapshot(s.Name, s.SHA256, s.ModelCount, map[string]string{"url": s.URL, "mode": "official-seed"})
+		_ = db.InsertPricingSnapshot(s.Name, s.SHA256, s.ModelCount, map[string]string{"url": s.URL, "mode": "official-seed", "applied_at": now})
 	}
 	return nil
 }

@@ -114,8 +114,20 @@ func TestSyncWithConfigAppliesOfficialAndOverrideWhenLiteLLMFails(t *testing.T) 
 	if status["litellm"] != "error" || status["openai-official"] != "seeded" || status["anthropic-official"] != "seeded" {
 		t.Fatalf("unexpected source statuses: %+v", sources)
 	}
+	for _, name := range []string{"openai-official", "anthropic-official"} {
+		source := byName[name]
+		if source.FreshnessKind != "seeded" || source.Stale || source.LastFetchAt != "" {
+			t.Fatalf("official seed source has misleading freshness metadata: %+v", source)
+		}
+		if !strings.Contains(source.FreshnessNote, "not a live fetch") {
+			t.Fatalf("official seed source missing provenance note: %+v", source)
+		}
+	}
 	if status["contract"] != "configured" || byName["contract"].Kind != "override" || byName["contract"].Priority != 1 || byName["contract"].ModelCount != 1 {
 		t.Fatalf("local override source was not recorded: %+v", sources)
+	}
+	if byName["contract"].FreshnessKind != "configured" || byName["contract"].Stale {
+		t.Fatalf("local override source has misleading freshness metadata: %+v", byName["contract"])
 	}
 	for _, name := range []string{"openai-official", "anthropic-official", "contract"} {
 		if !strings.HasPrefix(byName[name].SHA256, "sha256:") {

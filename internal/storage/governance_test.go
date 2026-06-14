@@ -16,6 +16,63 @@ func hasString(values []string, target string) bool {
 	return false
 }
 
+func TestPricingSourceFreshnessDerivesSeededFetchedAndConfigured(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	old := time.Now().UTC().Add(-48 * time.Hour).Format(time.RFC3339)
+	if err := db.UpsertPricingSource(PricingSourceStatus{
+		Name: "openai-official", Kind: "official", Priority: 20, URL: "https://openai.com/api/pricing/",
+		LastFetchAt: old, Status: "seeded", SHA256: "sha256:seed", ModelCount: 1,
+	}); err != nil {
+		t.Fatalf("UpsertPricingSource seeded: %v", err)
+	}
+	if err := db.UpsertPricingSource(PricingSourceStatus{
+		Name: "litellm", Kind: "fallback", Priority: 100, URL: "https://example.test/prices.json",
+		LastFetchAt: old, Status: "ok", SHA256: "sha256:fetched", ModelCount: 1,
+	}); err != nil {
+		t.Fatalf("UpsertPricingSource fetched: %v", err)
+	}
+	if err := db.UpsertPricingSource(PricingSourceStatus{
+		Name: "contract", Kind: "override", Priority: 1, URL: "local-config",
+		Status: "configured", SHA256: "sha256:contract", ModelCount: 1,
+	}); err != nil {
+		t.Fatalf("UpsertPricingSource override: %v", err)
+	}
+	if err := db.UpsertPricingSource(PricingSourceStatus{
+		Name: "mystery", Kind: "custom", Priority: 200, Status: "ok",
+	}); err != nil {
+		t.Fatalf("UpsertPricingSource unknown: %v", err)
+	}
+
+	sources, err := db.GetPricingSources(24 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]PricingSourceStatus{}
+	for _, source := range sources {
+		byName[source.Name] = source
+	}
+	if byName["openai-official"].FreshnessKind != "seeded" || byName["openai-official"].Stale {
+		t.Fatalf("seeded official source should not be time-stale: %+v", byName["openai-official"])
+	}
+	if !strings.Contains(byName["openai-official"].FreshnessNote, "not a live fetch") {
+		t.Fatalf("seeded official source missing explicit note: %+v", byName["openai-official"])
+	}
+	if byName["litellm"].FreshnessKind != "fetched" || !byName["litellm"].Stale {
+		t.Fatalf("old fetched remote source should be stale: %+v", byName["litellm"])
+	}
+	if byName["contract"].FreshnessKind != "configured" || byName["contract"].Stale {
+		t.Fatalf("configured override should not be time-stale: %+v", byName["contract"])
+	}
+	if byName["mystery"].FreshnessKind != "fetched" || !byName["mystery"].Stale {
+		t.Fatalf("status-ok source without fetch metadata should be stale: %+v", byName["mystery"])
+	}
+}
+
 func TestRecalcCostsDetailedAnnotatesPricing(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {

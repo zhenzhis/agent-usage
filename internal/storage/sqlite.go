@@ -101,17 +101,19 @@ type BudgetEvent struct {
 
 // PricingSourceStatus records health and freshness for one pricing source.
 type PricingSourceStatus struct {
-	Name        string `json:"name"`
-	Kind        string `json:"kind"`
-	Priority    int    `json:"priority"`
-	URL         string `json:"url"`
-	LastFetchAt string `json:"last_fetch_at"`
-	ETag        string `json:"etag"`
-	SHA256      string `json:"sha256"`
-	ModelCount  int    `json:"model_count"`
-	Status      string `json:"status"`
-	LastError   string `json:"last_error"`
-	Stale       bool   `json:"stale"`
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	Priority      int    `json:"priority"`
+	URL           string `json:"url"`
+	LastFetchAt   string `json:"last_fetch_at"`
+	ETag          string `json:"etag"`
+	SHA256        string `json:"sha256"`
+	ModelCount    int    `json:"model_count"`
+	Status        string `json:"status"`
+	LastError     string `json:"last_error"`
+	FreshnessKind string `json:"freshness_kind"`
+	FreshnessNote string `json:"freshness_note,omitempty"`
+	Stale         bool   `json:"stale"`
 }
 
 // PricingAuditRow describes an effective pricing rule.

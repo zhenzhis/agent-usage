@@ -315,7 +315,13 @@ func pricingDoctorChecks(sources []PricingSourceStatus, quality *DataQualityRepo
 		if src.Status == "error" {
 			checks = append(checks, DoctorCheck{Name: "pricing.error", Source: src.Name, Status: "critical", Severity: "critical", Message: src.LastError, Action: "check network access or pricing override configuration"})
 		} else if src.Stale {
-			checks = append(checks, DoctorCheck{Name: "pricing.stale", Source: src.Name, Status: "warning", Severity: "warning", Message: "pricing source is stale", Action: "run pricing sync or verify offline pricing policy"})
+			message := "remote pricing source is older than the configured freshness window"
+			action := "run pricing sync or verify offline pricing policy"
+			if src.FreshnessKind == "unknown" {
+				message = "pricing source freshness provenance is unknown"
+				action = "verify pricing source configuration or rerun pricing sync"
+			}
+			checks = append(checks, DoctorCheck{Name: "pricing.stale", Source: src.Name, Status: "warning", Severity: "warning", Message: message, Action: action})
 		}
 	}
 	if quality != nil && len(quality.UnpricedModels) > 0 {

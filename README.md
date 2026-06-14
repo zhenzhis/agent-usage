@@ -243,12 +243,12 @@ cost = input_tokens * input_price
 
 Pricing priority:
 
-1. Local override.
-2. Official OpenAI/Anthropic seed rows.
-3. LiteLLM fallback from `model_prices_and_context_window.json`.
+1. Local override for enterprise contract prices, relay prices, or region-specific profiles.
+2. Embedded OpenAI/Anthropic official seed rows. These are curated overlays shipped with Agent Ledger, not live provider scrapes.
+3. LiteLLM fallback fetched from `model_prices_and_context_window.json`.
 4. Source-reported cost, preserved for sources such as OpenCode when present.
 
-Every priced record can expose pricing source, matched model, match type, and confidence. Unknown or stale prices are surfaced as data quality issues instead of being hidden.
+Every priced record can expose pricing source, matched model, match type, and confidence. `GET /api/pricing/status` distinguishes `seeded`, `fetched`, and `configured` freshness provenance: only remote fetched sources are marked stale by time window; embedded official seeds and local overrides are audited by hash and source status. Unknown, stale, fuzzy, fallback, source-reported, and unpriced records are surfaced as data quality issues instead of being hidden.
 
 References:
 
@@ -350,7 +350,7 @@ Common filters: `from`, `to`, `source`, `model`, `project`, `privacy`.
 | `GET /api/session-replay?source=codex&session_id=...` | Chronological per-call token/cost replay for one session |
 | `GET /api/badge/repo.svg?project=repo-name&metric=cost` | Local SVG repo cost/tokens/cache badge |
 | `GET /api/model-registry` | Pricing and model governance registry |
-| `GET /api/pricing/status` | Pricing freshness, source state, effective rule summary, unpriced models |
+| `GET /api/pricing/status` | Pricing source provenance, freshness, source state, effective rule summary, unpriced models |
 | `POST /api/pricing/sync` | Sync pricing |
 | `POST /api/pricing/recalculate?mode=zero|all` | Recalculate costs |
 | `POST /api/projections/repair` | Repair canonical `model_calls` to `usage_records` projection drift and rebuild aggregates |
