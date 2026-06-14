@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -137,6 +138,87 @@ func TestOTLPReceiverIngestsJSONSpans(t *testing.T) {
 	t.Fatalf("missing otlp audit event: %+v", events)
 }
 
+func TestOTLPReceiverIngestsGzipJSONSpans(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{Integrations: config.IntegrationsConfig{
+		OTLPReceiver: config.OTLPReceiverConfig{Enabled: true, MaxBodyBytes: 1 << 20, MaxSpans: 10},
+	}})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/v1/traces", bytes.NewReader(gzipBytes(t, []byte(otlpPayload("span-1")))))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	rr := httptest.NewRecorder()
+	srv.handleOTLPTraces(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	backpressure := body["backpressure"].(map[string]interface{})
+	if backpressure["status"] != "accepted" || backpressure["content_encoding"] != "gzip" || int(backpressure["spans_seen"].(float64)) != 1 {
+		t.Fatalf("unexpected gzip backpressure payload: %#v", backpressure)
+	}
+	if int(backpressure["compressed_body_bytes"].(float64)) <= 0 {
+		t.Fatalf("expected compressed body size in backpressure payload: %#v", backpressure)
+	}
+}
+
+func TestOTLPReceiverRejectsOversizedDecodedGzipBody(t *testing.T) {
+	db := testServerDB(t)
+	compressed := gzipBytes(t, []byte(otlpPayload("span-1")))
+	srv := New(db, "", Options{Integrations: config.IntegrationsConfig{
+		OTLPReceiver: config.OTLPReceiverConfig{Enabled: true, MaxBodyBytes: int64(len(compressed) + 16), MaxSpans: 10},
+	}})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/v1/traces", bytes.NewReader(compressed))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	rr := httptest.NewRecorder()
+	srv.handleOTLPTraces(rr, req)
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	backpressure := body["backpressure"].(map[string]interface{})
+	if backpressure["status"] != "decoded_body_limit_exceeded" || backpressure["content_encoding"] != "gzip" {
+		t.Fatalf("unexpected decoded body limit payload: %#v", backpressure)
+	}
+	if int(backpressure["body_bytes"].(float64)) <= int(backpressure["max_body_bytes"].(float64)) {
+		t.Fatalf("decoded body limit should report decoded bytes over the limit: %#v", backpressure)
+	}
+	events, err := db.GetAuditLog(10)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	for _, event := range events {
+		if event.Action == "otlp.receiver.backpressure" && event.Target == "decoded_body_limit_exceeded" {
+			return
+		}
+	}
+	t.Fatalf("missing decoded body limit audit event: %+v", events)
+}
+
+func TestOTLPReceiverRejectsUnsupportedContentEncoding(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{Integrations: config.IntegrationsConfig{
+		OTLPReceiver: config.OTLPReceiverConfig{Enabled: true, MaxBodyBytes: 1 << 20, MaxSpans: 10},
+	}})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/v1/traces", strings.NewReader(otlpPayload("span-1")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "br")
+	rr := httptest.NewRecorder()
+	srv.handleOTLPTraces(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure") != "unsupported_content_encoding" {
+		t.Fatalf("expected unsupported encoding backpressure, got %q", rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure"))
+	}
+}
+
 func TestOTLPReceiverRejectsOversizedSpanBatch(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{Integrations: config.IntegrationsConfig{
@@ -214,6 +296,19 @@ func TestOTLPReceiverIngestsProtobufSpans(t *testing.T) {
 		}
 	}
 	t.Fatalf("missing otlp protobuf audit event: %+v", events)
+}
+
+func gzipBytes(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(raw); err != nil {
+		t.Fatalf("write gzip: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close gzip: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func otlpPayload(spanIDs ...string) string {

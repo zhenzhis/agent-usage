@@ -1,0 +1,68 @@
+name: agent-ledger-otlp-smoke
+
+services:
+  agent-ledger:
+    image: agent-ledger:otlp-smoke
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:19800:9800"
+    environment:
+      - TZ=UTC
+    volumes:
+      - agent-ledger-otlp-smoke-data:/data
+      - ./agent-ledger.smoke.yaml:/etc/agent-ledger/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "/agent-ledger", "runtime"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  otel-collector:
+    image: "${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:0.154.0}"
+    network_mode: "service:agent-ledger"
+    depends_on:
+      agent-ledger:
+        condition: service_healthy
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./config.compose.yaml:/etc/otelcol/config.yaml:ro
+
+  smoke:
+    image: "${SMOKE_IMAGE:-alpine:3.21}"
+    network_mode: "service:agent-ledger"
+    depends_on:
+      otel-collector:
+        condition: service_started
+    volumes:
+      - ../adapter-fixtures/otlp-resource-spans.json:/fixtures/otlp-resource-spans.json:ro
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        for i in $(seq 1 60); do
+          if wget -q -O- http://127.0.0.1:9800/api/runtime/status >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
+        for i in $(seq 1 60); do
+          if wget -q -O- http://127.0.0.1:13133/ >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
+        wget -S -O- --header='Content-Type: application/json' --post-file=/fixtures/otlp-resource-spans.json http://127.0.0.1:4318/v1/traces
+        for i in $(seq 1 30); do
+          if wget -q -O- 'http://127.0.0.1:9800/api/model-calls?from=2026-06-01&to=2026-06-30&source=otlp-fixture&model=gpt-5.5' | grep -q 'otlp-fixture'; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo 'Agent Ledger did not ingest the OTLP smoke fixture' >&2
+        wget -q -O- 'http://127.0.0.1:9800/api/model-calls?from=2026-06-01&to=2026-06-30&source=otlp-fixture&model=gpt-5.5' >&2 || true
+        exit 1
+
+volumes:
+  agent-ledger-otlp-smoke-data:

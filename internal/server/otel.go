@@ -2,9 +2,11 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -12,15 +14,19 @@ import (
 )
 
 type otlpBackpressureReport struct {
-	Status         string `json:"status"`
-	BodyBytes      int    `json:"body_bytes"`
-	MaxBodyBytes   int64  `json:"max_body_bytes"`
-	SpansSeen      int    `json:"spans_seen"`
-	MaxSpans       int    `json:"max_spans"`
-	EventsProduced int    `json:"events_produced"`
-	ContentType    string `json:"content_type,omitempty"`
-	Error          string `json:"error,omitempty"`
+	Status              string `json:"status"`
+	BodyBytes           int    `json:"body_bytes"`
+	MaxBodyBytes        int64  `json:"max_body_bytes"`
+	SpansSeen           int    `json:"spans_seen"`
+	MaxSpans            int    `json:"max_spans"`
+	EventsProduced      int    `json:"events_produced"`
+	ContentType         string `json:"content_type,omitempty"`
+	ContentEncoding     string `json:"content_encoding,omitempty"`
+	CompressedBodyBytes int    `json:"compressed_body_bytes,omitempty"`
+	Error               string `json:"error,omitempty"`
 }
+
+var errOTLPDecodedBodyTooLarge = errors.New("OTLP decoded body exceeds receiver limit")
 
 func (m otlpBackpressureReport) applyHeaders(w http.ResponseWriter) {
 	status := strings.TrimSpace(m.Status)
@@ -108,12 +114,41 @@ func (s *Server) handleOTLPTraces(w http.ResponseWriter, r *http.Request) {
 		MaxSpans:     maxSpans,
 		ContentType:  contentType,
 	}
+	body := raw.Bytes()
+	contentEncoding := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding")))
+	switch contentEncoding {
+	case "", "identity":
+	case "gzip":
+		decoded, err := decodeGzipOTLPBody(body, maxBody)
+		report.ContentEncoding = "gzip"
+		report.CompressedBodyBytes = raw.Len()
+		report.BodyBytes = len(decoded)
+		if err != nil {
+			report.Error = err.Error()
+			if errors.Is(err, errOTLPDecodedBodyTooLarge) {
+				report.Status = "decoded_body_limit_exceeded"
+				s.writeOTLPBackpressureError(w, r, http.StatusRequestEntityTooLarge, err, report)
+				return
+			}
+			report.Status = "decode_error"
+			s.writeOTLPBackpressureError(w, r, http.StatusBadRequest, err, report)
+			return
+		}
+		body = decoded
+	default:
+		err := fmt.Errorf("unsupported OTLP content encoding %q", contentEncoding)
+		report.Status = "unsupported_content_encoding"
+		report.ContentEncoding = contentEncoding
+		report.Error = err.Error()
+		s.writeOTLPBackpressureError(w, r, http.StatusBadRequest, err, report)
+		return
+	}
 	var spans []integrations.OTelSpan
 	var err error
 	if isOTLPProtobufContentType(contentType) {
-		spans, err = integrations.DecodeOTelProtoTraceSpans(raw.Bytes())
+		spans, err = integrations.DecodeOTelProtoTraceSpans(body)
 	} else {
-		spans, err = integrations.DecodeOTelGenAISpans(raw.Bytes())
+		spans, err = integrations.DecodeOTelGenAISpans(body)
 	}
 	if err != nil {
 		report.Status = "decode_error"
@@ -160,6 +195,22 @@ func (s *Server) ingestOTelProtoSpans(raw []byte, maxSpans int, auditAction stri
 	return s.ingestOTelSpanRows(spans, maxSpans, false, auditAction, r)
 }
 
+func decodeGzipOTLPBody(raw []byte, maxBody int64) ([]byte, error) {
+	zr, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("invalid gzip OTLP body: %w", err)
+	}
+	defer zr.Close()
+	decoded, err := io.ReadAll(io.LimitReader(zr, maxBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("read gzip OTLP body: %w", err)
+	}
+	if int64(len(decoded)) > maxBody {
+		return decoded, fmt.Errorf("%w: decoded body exceeds %d bytes", errOTLPDecodedBodyTooLarge, maxBody)
+	}
+	return decoded, nil
+}
+
 func (s *Server) ingestOTelSpanRows(spans []integrations.OTelSpan, maxSpans int, requireGenAI bool, auditAction string, r *http.Request) (map[string]interface{}, error) {
 	if maxSpans > 0 && len(spans) > maxSpans {
 		return nil, fmt.Errorf("OTLP span batch has %d spans and exceeds receiver limit %d", len(spans), maxSpans)
@@ -190,12 +241,14 @@ func (s *Server) ingestOTelSpanRows(spans []integrations.OTelSpan, maxSpans int,
 func (s *Server) writeOTLPBackpressureError(w http.ResponseWriter, r *http.Request, status int, err error, report otlpBackpressureReport) {
 	report.applyHeaders(w)
 	s.appendAuditLog("local", s.roleFor(r), "otlp.receiver.backpressure", report.Status, map[string]string{
-		"body_bytes":     fmt.Sprint(report.BodyBytes),
-		"max_body_bytes": fmt.Sprint(report.MaxBodyBytes),
-		"spans_seen":     fmt.Sprint(report.SpansSeen),
-		"max_spans":      fmt.Sprint(report.MaxSpans),
-		"content_type":   report.ContentType,
-		"error":          err.Error(),
+		"body_bytes":            fmt.Sprint(report.BodyBytes),
+		"compressed_body_bytes": fmt.Sprint(report.CompressedBodyBytes),
+		"max_body_bytes":        fmt.Sprint(report.MaxBodyBytes),
+		"spans_seen":            fmt.Sprint(report.SpansSeen),
+		"max_spans":             fmt.Sprint(report.MaxSpans),
+		"content_type":          report.ContentType,
+		"content_encoding":      report.ContentEncoding,
+		"error":                 err.Error(),
 	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

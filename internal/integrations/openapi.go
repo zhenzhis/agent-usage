@@ -1780,8 +1780,8 @@ func otlpTracesOperation() map[string]interface{} {
 
 func otlpBackpressureHeaders() map[string]interface{} {
 	return map[string]interface{}{
-		"X-Agent-Ledger-OTLP-Backpressure":   headerSchema("accepted, body_limit_exceeded, span_limit_exceeded, decode_error, body_read_error, or ingest_error."),
-		"X-Agent-Ledger-OTLP-Body-Bytes":     headerSchema("Request bytes read before acceptance or rejection."),
+		"X-Agent-Ledger-OTLP-Backpressure":   headerSchema("accepted, body_limit_exceeded, decoded_body_limit_exceeded, span_limit_exceeded, unsupported_content_encoding, decode_error, body_read_error, or ingest_error."),
+		"X-Agent-Ledger-OTLP-Body-Bytes":     headerSchema("Decoded request bytes used for acceptance or rejection. For gzip requests, compressed bytes are reported in the JSON backpressure payload."),
 		"X-Agent-Ledger-OTLP-Max-Body-Bytes": headerSchema("Configured OTLP receiver body byte limit used for this request."),
 		"X-Agent-Ledger-OTLP-Spans":          headerSchema("Decoded span count for this request when decoding succeeded."),
 		"X-Agent-Ledger-OTLP-Max-Spans":      headerSchema("Configured OTLP receiver span-count limit used for this request."),
@@ -3122,7 +3122,7 @@ func ecosystemIngestResponseSchema() map[string]interface{} {
 			"budget_advisories":    refArraySchema("BudgetStatus"),
 			"budget_warning":       stringSchema(),
 			"reconciliation_hooks": integerSchema(),
-			"backpressure":         looseObjectSchema("Per-request receiver pressure metrics for OTLP HTTP ingest: status, body bytes, max body bytes, spans seen, max spans, and events produced."),
+			"backpressure":         looseObjectSchema("Per-request receiver pressure metrics for OTLP HTTP ingest: status, decoded body bytes, optional gzip compressed body bytes, max body bytes, spans seen, max spans, and events produced."),
 			"results":              refArraySchema("CanonicalEventResult"),
 		},
 	}

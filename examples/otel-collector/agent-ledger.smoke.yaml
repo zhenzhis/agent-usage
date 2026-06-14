@@ -1,0 +1,49 @@
+server:
+  port: 9800
+  bind_address: "0.0.0.0"
+
+collectors:
+  claude:
+    enabled: false
+    paths: []
+  codex:
+    enabled: false
+    paths: []
+  openclaw:
+    enabled: false
+    paths: []
+  opencode:
+    enabled: false
+    paths: []
+  kiro:
+    enabled: false
+    paths: []
+  pi:
+    enabled: false
+    paths: []
+
+storage:
+  path: "/data/agent-ledger-otlp-smoke.db"
+
+pricing:
+  sync_interval: 24h
+  stale_after: 168h
+  mode: official-plus-litellm
+  overrides: []
+
+integrations:
+  otlp_receiver:
+    enabled: true
+    max_body_bytes: 4194304
+    max_spans: 1000
+    grpc_enabled: false
+
+rbac:
+  enabled: false
+  read_only: false
+
+webhooks:
+  enabled: false
+  url: ""
+  timeout: 10s
+  max_events: 20
