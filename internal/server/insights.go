@@ -105,6 +105,9 @@ func (s *Server) handlePricingRecalculate(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handlePricingAudit(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	limit := parseLimit(r, 1000)
 	rows, err := s.db.GetPricingAudit(limit)
 	if err != nil {
@@ -115,6 +118,9 @@ func (s *Server) handlePricingAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDataQuality(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	report, err := s.db.GetDataQuality(s.options.Pricing.StaleAfter)
 	if err != nil {
 		serverError(w, err)
@@ -162,6 +168,9 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleModelCalls(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -176,6 +185,9 @@ func (s *Server) handleModelCalls(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCostIntelligence(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -202,6 +214,9 @@ func (s *Server) handleCostIntelligence(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCacheDoctor(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -216,6 +231,9 @@ func (s *Server) handleCacheDoctor(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleQuotaStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	now := time.Now()
 	dayFrom, dayTo, _ := budgetWindow(now, "day")
 	weekFrom, weekTo, _ := budgetWindow(now, "week")
@@ -303,6 +321,9 @@ func (s *Server) handleQuotaStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAnomalies(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -335,6 +356,9 @@ func (s *Server) handleAnomalies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWatchdogEvents(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -367,6 +391,9 @@ func (s *Server) handleWatchdogEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
@@ -396,6 +423,9 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReconciliationStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	rows, err := s.db.GetReconciliationImports(parseLimit(r, 50))
 	if err != nil {
 		serverError(w, err)
@@ -759,6 +789,9 @@ func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePolicyStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	writeJSONWithPayloadETag(w, r, map[string]interface{}{
 		"enabled":                s.options.Policies.Enabled,
 		"read_only":              s.options.RBAC.ReadOnly,

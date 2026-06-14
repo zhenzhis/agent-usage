@@ -322,6 +322,55 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 	}
 }
 
+func TestReadJSONEndpointsRejectNonGET(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{})
+	cases := []struct {
+		name    string
+		url     string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "stats", url: "http://127.0.0.1/api/stats?from=2026-06-07&to=2026-06-08", handler: srv.handleStats},
+		{name: "dashboard", url: "http://127.0.0.1/api/dashboard?from=2026-06-07&to=2026-06-08", handler: srv.handleDashboard},
+		{name: "cost-by-model", url: "http://127.0.0.1/api/cost-by-model?from=2026-06-07&to=2026-06-08", handler: srv.handleCostByModel},
+		{name: "cost-over-time", url: "http://127.0.0.1/api/cost-over-time?from=2026-06-07&to=2026-06-08", handler: srv.handleCostOverTime},
+		{name: "tokens-over-time", url: "http://127.0.0.1/api/tokens-over-time?from=2026-06-07&to=2026-06-08", handler: srv.handleTokensOverTime},
+		{name: "sessions", url: "http://127.0.0.1/api/sessions?from=2026-06-07&to=2026-06-08", handler: srv.handleSessions},
+		{name: "session-detail", url: "http://127.0.0.1/api/session-detail?source=codex&session_id=test", handler: srv.handleSessionDetail},
+		{name: "session-replay", url: "http://127.0.0.1/api/session-replay?source=codex&session_id=test", handler: srv.handleSessionReplay},
+		{name: "pricing-audit", url: "http://127.0.0.1/api/pricing/audit", handler: srv.handlePricingAudit},
+		{name: "data-quality", url: "http://127.0.0.1/api/data-quality", handler: srv.handleDataQuality},
+		{name: "model-calls", url: "http://127.0.0.1/api/model-calls?from=2026-06-07&to=2026-06-08", handler: srv.handleModelCalls},
+		{name: "cost-intelligence", url: "http://127.0.0.1/api/cost-intelligence?from=2026-06-07&to=2026-06-08", handler: srv.handleCostIntelligence},
+		{name: "cache-doctor", url: "http://127.0.0.1/api/cache/doctor?from=2026-06-07&to=2026-06-08", handler: srv.handleCacheDoctor},
+		{name: "quota-status", url: "http://127.0.0.1/api/quota/status", handler: srv.handleQuotaStatus},
+		{name: "anomalies", url: "http://127.0.0.1/api/anomalies?from=2026-06-07&to=2026-06-08", handler: srv.handleAnomalies},
+		{name: "watchdog", url: "http://127.0.0.1/api/watchdog/events?from=2026-06-07&to=2026-06-08", handler: srv.handleWatchdogEvents},
+		{name: "audit-log", url: "http://127.0.0.1/api/audit-log", handler: srv.handleAuditLog},
+		{name: "reconciliation-status", url: "http://127.0.0.1/api/reconciliation/status", handler: srv.handleReconciliationStatus},
+		{name: "policy-status", url: "http://127.0.0.1/api/policies/status", handler: srv.handlePolicyStatus},
+		{name: "policy-audit", url: "http://127.0.0.1/api/policy/audit?from=2026-06-07&to=2026-06-08", handler: srv.handlePolicyAudit},
+		{name: "policy-enforcement", url: "http://127.0.0.1/api/policy/enforcement", handler: srv.handlePolicyEnforcement},
+		{name: "policy-approval-routes", url: "http://127.0.0.1/api/policy/approval-routes", handler: srv.handlePolicyApprovalRoutes},
+		{name: "workload-events", url: "http://127.0.0.1/api/workload-events?from=2026-06-07&to=2026-06-08", handler: srv.handleWorkloadEvents},
+		{name: "fleet-attribution", url: "http://127.0.0.1/api/fleet-attribution?from=2026-06-07&to=2026-06-08", handler: srv.handleFleetAttribution},
+		{name: "model-registry", url: "http://127.0.0.1/api/model-registry", handler: srv.handleModelRegistry},
+		{name: "policy-decisions", url: "http://127.0.0.1/api/policy/decisions", handler: srv.handlePolicyDecisions},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			tc.handler(rr, httptest.NewRequest(http.MethodPost, tc.url, nil))
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("POST status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if rr.Header().Get("Allow") != http.MethodGet {
+				t.Fatalf("Allow header=%q", rr.Header().Get("Allow"))
+			}
+		})
+	}
+}
+
 func TestFinOpsDiagnosticsEndpointETags(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{})

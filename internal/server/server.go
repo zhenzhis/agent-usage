@@ -540,7 +540,19 @@ func conflict(w http.ResponseWriter, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }
 
+func requireHTTPMethod(w http.ResponseWriter, r *http.Request, method string) bool {
+	if r.Method != method {
+		w.Header().Set("Allow", method)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -558,6 +570,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, tzOffset, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -577,6 +592,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCostByModel(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -593,6 +611,9 @@ func (s *Server) handleCostByModel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCostOverTime(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, tzOffset, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -611,6 +632,9 @@ func (s *Server) handleCostOverTime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTokensOverTime(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, tzOffset, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -629,6 +653,9 @@ func (s *Server) handleTokensOverTime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -659,6 +686,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	sid := r.URL.Query().Get("session_id")
 	if sid == "" {
 		http.Error(w, "session_id required", 400)
@@ -674,6 +704,9 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionReplay(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	sid := r.URL.Query().Get("session_id")
 	if sid == "" {
 		http.Error(w, "session_id required", 400)

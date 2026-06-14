@@ -62,6 +62,9 @@ func (s *Server) handlePolicyEvaluate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePolicyAudit(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
@@ -85,6 +88,9 @@ func (s *Server) handlePolicyAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePolicyEnforcement(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
@@ -98,6 +104,9 @@ func (s *Server) handlePolicyEnforcement(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handlePolicyApprovalRoutes(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}

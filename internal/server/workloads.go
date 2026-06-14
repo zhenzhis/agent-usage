@@ -626,6 +626,9 @@ func (s *Server) handleWorkloadState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadEvents(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
@@ -793,6 +796,9 @@ func requestCursorMatches(raw, cursor string) bool {
 }
 
 func (s *Server) handleFleetAttribution(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
@@ -815,6 +821,9 @@ func (s *Server) handleFleetAttribution(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleModelRegistry(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	rows, err := s.db.GetModelRegistry(s.options.Pricing.StaleAfter, parseLimit(r, 1000))
 	if err != nil {
 		serverError(w, err)
@@ -950,6 +959,9 @@ func decodeCanonicalEventRequest(raw []byte) ([]storage.CanonicalEvent, error) {
 }
 
 func (s *Server) handlePolicyDecisions(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	if !s.requireRole(w, r, "viewer") {
 		return
 	}
