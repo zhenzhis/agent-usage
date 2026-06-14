@@ -292,6 +292,10 @@ func ContractVerificationReportFor(opts Options, runtime *storage.RuntimeStatus)
 	addCheck("openapi.operation_auth", authOK, "critical", "OpenAPI operations declare bearer auth and 401 responses", "all operations include AgentLedgerBearer security and 401 response", authActual)
 	admissionOK, admissionActual := contractOpenAPIOperationAdmissionStatus(paths)
 	addCheck("openapi.operation_admission", admissionOK, "critical", "OpenAPI operations expose admission role, write-mode, and read-only metadata", "all operations include required_role, write_mode, available_in_read_only", admissionActual)
+	methodOK, methodActual := contractOpenAPIOperationMethodStatus(paths)
+	addCheck("openapi.operation_methods", methodOK, "critical", "OpenAPI operations expose method-not-allowed contracts", "all operations include 405 response", methodActual)
+	bodyLimitOK, bodyLimitActual := contractOpenAPIRequestBodyLimitStatus(paths)
+	addCheck("openapi.request_body_limits", bodyLimitOK, "critical", "OpenAPI request body operations expose body limits and 413 responses", "all requestBody operations include max_body_bytes and 413 response", bodyLimitActual)
 	for _, path := range OpenAPIContractPaths() {
 		_, ok := paths[path]
 		addCheck("openapi.path."+path, ok, "warning", "OpenAPI exposes stable control-plane path", path, boolString(ok))
@@ -414,6 +418,51 @@ func contractOpenAPIOperationAdmissionStatus(paths map[string]interface{}) (bool
 	return checked > 0 && missing == 0, "checked=" + intString(checked) + ",missing=" + intString(missing)
 }
 
+func contractOpenAPIOperationMethodStatus(paths map[string]interface{}) (bool, string) {
+	checked, missing := 0, 0
+	for _, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, method := range []string{"get", "post", "put", "patch", "delete"} {
+			operation, ok := pathItem[method].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			checked++
+			if !contractOpenAPIOperationHasResponse(operation, "405") {
+				missing++
+			}
+		}
+	}
+	return checked > 0 && missing == 0, "checked=" + intString(checked) + ",missing=" + intString(missing)
+}
+
+func contractOpenAPIRequestBodyLimitStatus(paths map[string]interface{}) (bool, string) {
+	checked, missing := 0, 0
+	for _, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, method := range []string{"post", "put", "patch"} {
+			operation, ok := pathItem[method].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if _, hasBody := operation["requestBody"]; !hasBody {
+				continue
+			}
+			checked++
+			if !contractOpenAPIOperationHasBodyLimit(operation) || !contractOpenAPIOperationHasResponse(operation, "413") {
+				missing++
+			}
+		}
+	}
+	return checked > 0 && missing == 0, "checked=" + intString(checked) + ",missing=" + intString(missing)
+}
+
 func contractOpenAPIOperationHasBearerSecurity(operation map[string]interface{}) bool {
 	security, ok := operation["security"].([]map[string][]string)
 	if !ok {
@@ -445,6 +494,23 @@ func contractOpenAPIOperationHasAdmissionMetadata(operation map[string]interface
 	writeMode, writeModeOK := meta["write_mode"].(string)
 	_, readOnlyOK := meta["available_in_read_only"].(bool)
 	return roleOK && role != "" && writeModeOK && writeMode != "" && readOnlyOK
+}
+
+func contractOpenAPIOperationHasBodyLimit(operation map[string]interface{}) bool {
+	meta, ok := operation["x-agent-ledger"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	switch value := meta["max_body_bytes"].(type) {
+	case int:
+		return value > 0
+	case int64:
+		return value > 0
+	case float64:
+		return value > 0
+	default:
+		return false
+	}
 }
 
 func contractStringValue(v interface{}) string {
