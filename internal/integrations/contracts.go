@@ -232,6 +232,7 @@ func ContractVerificationReportFor(opts Options, runtime *storage.RuntimeStatus)
 	catalog := Registry(opts)
 	catalogHash := CatalogFingerprintFrom(catalog)
 	discovery := Discovery(opts)
+	adapter := AdapterContractSpec()
 	openAPI := OpenAPISpecFor(opts, runtime)
 	openAPIHash := OpenAPIFingerprint(opts, runtime)
 	bundle := ContractBundleFor(opts, runtime)
@@ -252,6 +253,10 @@ func ContractVerificationReportFor(opts Options, runtime *storage.RuntimeStatus)
 	addCheck("discovery.catalog_hash", discovery.CapabilityCatalogHash == catalogHash, "critical", "discovery catalog hash matches generated catalog", catalogHash, discovery.CapabilityCatalogHash)
 	addCheck("discovery.schema_hash", discovery.CanonicalSchemaHash == storage.CanonicalEventSchemaFingerprint(), "critical", "discovery canonical schema hash matches generated schema", storage.CanonicalEventSchemaFingerprint(), discovery.CanonicalSchemaHash)
 	addCheck("discovery.adapter_hash", discovery.AdapterSpecHash == AdapterContractFingerprint(), "critical", "discovery adapter hash matches generated adapter contract", AdapterContractFingerprint(), discovery.AdapterSpecHash)
+	adapterSchemaOK, adapterSchemaActual := contractAdapterSchemaStatus(adapter)
+	addCheck("adapter.schema_alignment", adapterSchemaOK, "critical", "adapter contract matches canonical schema version, hash, event types, and privacy keys", "adapter schema/version/event_types/forbidden_keys match canonical schema", adapterSchemaActual)
+	adapterKindsOK, adapterKindsActual := contractAdapterInputKindStatus(adapter)
+	addCheck("adapter.input_kinds", adapterKindsOK, "critical", "adapter contract supported input kinds match conformance decoder families", "adapter input kinds cover all supported conformance kinds with signals and privacy notes", adapterKindsActual)
 	addCheck("bundle.hash", bundle.BundleHash == ContractBundleFingerprint(bundle), "critical", "contract bundle hash matches deterministic fingerprint", ContractBundleFingerprint(bundle), bundle.BundleHash)
 
 	requiredDocs := []struct {
@@ -357,6 +362,85 @@ func admissionCheckContractHash() string {
 		"entrypoints": []string{"/api/admission/check", "agent-ledger admission check", "ledger.admission_check", "agent-ledger://admission/check"},
 		"privacy":     "operation metadata, role requirements, read-only behavior, and remediation hints only",
 	})
+}
+
+func contractAdapterSchemaStatus(adapter AdapterContract) (bool, string) {
+	eventTypesMatch := contractEventTypesMatch(adapter.CanonicalEventTypes, storage.CanonicalEventTypes())
+	forbiddenKeysMatch := stringSetEqual(adapter.ForbiddenPayloadKeys, contractCanonicalRejectedPayloadKeys())
+	schemaVersionMatch := adapter.SchemaVersion == storage.CanonicalEventSchemaVersion
+	schemaHashMatch := adapter.SchemaHash == storage.CanonicalEventSchemaFingerprint()
+	ok := schemaVersionMatch && schemaHashMatch && eventTypesMatch && forbiddenKeysMatch
+	actual := "schema_version_match=" + boolString(schemaVersionMatch) +
+		",schema_hash_match=" + boolString(schemaHashMatch) +
+		",event_types=" + intString(len(adapter.CanonicalEventTypes)) +
+		",event_types_match=" + boolString(eventTypesMatch) +
+		",forbidden_keys=" + intString(len(adapter.ForbiddenPayloadKeys)) +
+		",forbidden_keys_match=" + boolString(forbiddenKeysMatch)
+	return ok, actual
+}
+
+func contractAdapterInputKindStatus(adapter AdapterContract) (bool, string) {
+	expected := SupportedAdapterConformanceKinds()
+	seen := map[string]bool{}
+	incomplete, unsupported := 0, 0
+	for _, kind := range adapter.SupportedInputKinds {
+		if kind.Kind == "" || kind.ConformanceKind == "" || len(kind.RequiredSignals) == 0 || len(kind.PrivacyNotes) == 0 {
+			incomplete++
+		}
+		if !stringSliceContains(expected, kind.ConformanceKind) {
+			unsupported++
+			continue
+		}
+		seen[kind.ConformanceKind] = true
+	}
+	missing := 0
+	for _, kind := range expected {
+		if !seen[kind] {
+			missing++
+		}
+	}
+	ok := missing == 0 && incomplete == 0 && unsupported == 0
+	actual := "expected=" + intString(len(expected)) +
+		",declared=" + intString(len(adapter.SupportedInputKinds)) +
+		",missing=" + intString(missing) +
+		",unsupported=" + intString(unsupported) +
+		",incomplete=" + intString(incomplete)
+	return ok, actual
+}
+
+func contractEventTypesMatch(got, want []storage.CanonicalEventTypeInfo) bool {
+	gotNames := make([]string, 0, len(got))
+	for _, item := range got {
+		gotNames = append(gotNames, item.EventType)
+	}
+	wantNames := make([]string, 0, len(want))
+	for _, item := range want {
+		wantNames = append(wantNames, item.EventType)
+	}
+	return stringSetEqual(gotNames, wantNames)
+}
+
+func contractCanonicalRejectedPayloadKeys() []string {
+	schema := storage.CanonicalEventSchema()
+	privacy, ok := schema["privacy"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	switch keys := privacy["rejected_payload_keys"].(type) {
+	case []string:
+		return keys
+	case []interface{}:
+		out := make([]string, 0, len(keys))
+		for _, key := range keys {
+			value, ok := key.(string)
+			if ok {
+				out = append(out, value)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func openAPIIdentity(openAPI map[string]interface{}, meta map[string]interface{}) string {
@@ -715,6 +799,37 @@ func boolString(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSetEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, value := range a {
+		seen[value]++
+	}
+	for _, value := range b {
+		seen[value]--
+		if seen[value] < 0 {
+			return false
+		}
+	}
+	for _, count := range seen {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func defaultRuntimeStatus(opts Options) *storage.RuntimeStatus {

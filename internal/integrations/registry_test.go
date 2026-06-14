@@ -467,7 +467,7 @@ func TestContractVerificationReportIsOKAndPrivacySafe(t *testing.T) {
 	if report.BundleHash == "" || report.OpenAPIHash == "" || !strings.HasPrefix(report.BundleHash, "sha256:") || !strings.HasPrefix(report.OpenAPIHash, "sha256:") {
 		t.Fatalf("verification report missing hashes: %#v", report)
 	}
-	for _, name := range []string{"discovery.contract_bundle_uri", "bundle.document.openapi", "openapi.path./api/contracts/verify", "openapi.privacy", "openapi.auth_scheme", "openapi.operation_auth", "openapi.operation_ids", "openapi.operation_admission", "openapi.operation_methods", "openapi.request_body_limits", "openapi.idempotency", "openapi.get_revalidation"} {
+	for _, name := range []string{"discovery.contract_bundle_uri", "bundle.document.openapi", "adapter.schema_alignment", "adapter.input_kinds", "openapi.path./api/contracts/verify", "openapi.privacy", "openapi.auth_scheme", "openapi.operation_auth", "openapi.operation_ids", "openapi.operation_admission", "openapi.operation_methods", "openapi.request_body_limits", "openapi.idempotency", "openapi.get_revalidation"} {
 		if !verificationReportHasCheck(report, name) {
 			t.Fatalf("verification report missing check %q: %#v", name, report.Checks)
 		}
@@ -522,14 +522,22 @@ func TestAdapterContractSpecIsMachineReadableAndPrivacySafe(t *testing.T) {
 	if len(spec.SupportedInputKinds) < 5 || len(spec.CanonicalEventTypes) == 0 {
 		t.Fatalf("adapter contract missing supported kinds or event types: %#v", spec)
 	}
-	if !adapterContractHasKind(spec, "provider-stream") {
-		t.Fatalf("adapter contract missing provider-stream kind: %#v", spec.SupportedInputKinds)
+	for _, kind := range SupportedAdapterConformanceKinds() {
+		if !adapterContractHasKind(spec, kind) {
+			t.Fatalf("adapter contract missing %s kind: %#v", kind, spec.SupportedInputKinds)
+		}
 	}
 	if !stringSliceHas(spec.ForbiddenPayloadKeys, "prompt") || !stringSliceHas(spec.ForbiddenPayloadKeys, "messages") {
 		t.Fatalf("adapter contract missing forbidden payload keys: %#v", spec.ForbiddenPayloadKeys)
 	}
 	if spec.Validation.HTTP == "" || spec.Validation.CLI == "" || spec.Ingest.HTTP == nil || spec.Ingest.CLI == nil {
 		t.Fatalf("adapter contract missing validation or ingest entrypoints: %#v", spec)
+	}
+	if ok, actual := contractAdapterSchemaStatus(spec); !ok {
+		t.Fatalf("adapter contract is not aligned with canonical schema: %s", actual)
+	}
+	if ok, actual := contractAdapterInputKindStatus(spec); !ok {
+		t.Fatalf("adapter contract is not aligned with conformance decoder: %s", actual)
 	}
 }
 

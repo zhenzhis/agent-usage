@@ -165,8 +165,15 @@ func DecodeAdapterConformanceEvents(kind string, raw []byte) (string, []storage.
 		events, err := ConvertA2ATasks(tasks)
 		return normalized, events, err
 	default:
-		return normalized, nil, fmt.Errorf("unsupported conformance kind %q: use auto, canonical, provider, provider-stream, otel, or a2a", kind)
+		return normalized, nil, fmt.Errorf("unsupported conformance kind %q: use auto or %s", kind, strings.Join(SupportedAdapterConformanceKinds(), ", "))
 	}
+}
+
+// SupportedAdapterConformanceKinds returns the concrete adapter fixture
+// families accepted by the conformance decoder. "auto" is a detection mode, not
+// a contract kind.
+func SupportedAdapterConformanceKinds() []string {
+	return []string{"canonical", "provider", "provider-stream", "otel", "a2a"}
 }
 
 // DecodeCanonicalEvents decodes a single event, an array, or {"events":[...]}.
