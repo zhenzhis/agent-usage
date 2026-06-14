@@ -177,7 +177,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("resource subscriptions should be advertised: %#v", resourceCaps)
 	}
 	resources := out[1]["result"].(map[string]interface{})["resources"].([]interface{})
-	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://config/status") || !hasResource(resources, "agent-ledger://readiness") || !hasResource(resources, "agent-ledger://admission/check") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/queue") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
+	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://config/status") || !hasResource(resources, "agent-ledger://readiness") || !hasResource(resources, "agent-ledger://admission/check") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/queue") || !hasResource(resources, "agent-ledger://workloads/leases") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
 		t.Fatalf("expected core resources, got %#v", resources)
 	}
 	resourceText := resourceTextPayload(t, out[2])
@@ -299,6 +299,41 @@ func TestMCPWorkloadQueueResource(t *testing.T) {
 	}
 	if payload["ok"] != true || payload["claimable"].(float64) != 1 || payload["active_leases"].(float64) != 0 {
 		t.Fatalf("unexpected queue resource payload: %#v", payload)
+	}
+}
+
+func TestMCPWorkloadLeasesResourceIsPrivacySafe(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+	workloadID, err := db.CreateWorkload("lease resource workload", "codex", "agent-ledger", "zhenzhis/agent-ledger", "main", "", "infra", 0)
+	if err != nil {
+		t.Fatalf("create workload: %v", err)
+	}
+	lease, err := db.AcquireWorkloadLease(workloadID, "private-router", "private purpose note", 2*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+
+	out := serveLines(t, srv, `{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"agent-ledger://workloads/leases?include_inactive=1&limit=10"}}`)
+	text := resourceTextPayload(t, out[0])
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("decode leases resource: %v\n%s", err, text)
+	}
+	rows := payload["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("unexpected lease resource rows: %#v", payload)
+	}
+	raw := []byte(text)
+	for _, forbidden := range []string{workloadID, "private-router", "private purpose note", lease.LeaseToken} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("leases resource leaked %q: %s", forbidden, text)
+		}
+	}
+	row := rows[0].(map[string]interface{})
+	if row["lease_id"] != lease.LeaseID || row["status"] == "" || row["ttl_seconds"] == nil {
+		t.Fatalf("unexpected lease resource row: %#v", row)
 	}
 }
 

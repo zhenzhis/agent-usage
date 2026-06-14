@@ -645,6 +645,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://budget/current", "Current Budget Windows", "Local quota and budget estimate for 5h/day/week/month windows; supports window/source/model/project query parameters.", "application/json"),
 		resource("agent-ledger://workloads/recent", "Recent Workloads", "Recent workload summaries and terminal-state snapshots from the local ledger; supports from/to/source/model/project/status/q/limit/offset/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://workloads/queue", "Workload Queue", "Read-only workload queue claimability and lease pressure stats; supports source/project/repo/team/owner/status/q query parameters.", "application/json"),
+		resource("agent-ledger://workloads/leases", "Workload Leases", "Privacy-safe read-only workload lease rows for router context; supports include_inactive and limit query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
 		resource("agent-ledger://policies/status", "Policy Status", "Local policy configuration summary without prompt or secret content.", "application/json"),
 		resource("agent-ledger://policy/approvals", "Policy Approvals", "Local policy approval queue; supports status, limit, and privacy query parameters.", "application/json"),
@@ -924,6 +925,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		return s.resourceRecentWorkloads(values)
 	case "agent-ledger://workloads/queue":
 		return s.resourceWorkloadQueue(values)
+	case "agent-ledger://workloads/leases":
+		return s.resourceWorkloadLeases(values)
 	case "agent-ledger://workloads/feed":
 		return s.resourceWorkloadFeed(values)
 	case "agent-ledger://policies/status":
@@ -1034,6 +1037,37 @@ func (s *Server) resourceWorkloadQueue(values url.Values) (*storage.WorkloadQueu
 		Status:  values.Get("status"),
 		Query:   values.Get("q"),
 	})
+}
+
+func (s *Server) resourceWorkloadLeases(values url.Values) (map[string]interface{}, error) {
+	includeInactive := queryBool(values, "include_inactive")
+	limit := boundedQueryInt(values, "limit", 50, 1, 500)
+	rows, err := s.db.ListWorkloadLeases(includeInactive, limit)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"include_inactive": includeInactive,
+		"limit":            limit,
+		"rows":             privacySafeLeaseRows(rows),
+	}, nil
+}
+
+func privacySafeLeaseRows(rows []storage.WorkloadLease) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, map[string]interface{}{
+			"lease_id":        row.LeaseID,
+			"status":          row.Status,
+			"acquired_at":     row.AcquiredAt,
+			"expires_at":      row.ExpiresAt,
+			"last_renewed_at": row.LastRenewedAt,
+			"released_at":     row.ReleasedAt,
+			"expired":         row.Expired,
+			"ttl_seconds":     row.TTLSeconds,
+		})
+	}
+	return out
 }
 
 func (s *Server) resourceApprovalRoutes(values url.Values) (*storage.ApprovalRouteSummary, error) {

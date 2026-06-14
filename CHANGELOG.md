@@ -14,6 +14,7 @@
 - Queue-style workload claiming with `POST /api/workloads/claim-next`, `agent-ledger workload claim-next`, and MCP `ledger.claim_next_workload`; routers can atomically select the next claimable workload and create a lease in one SQLite transaction.
 - Read-only workload queue probes with `GET /api/workloads/queue`, `agent-ledger workload queue`, and MCP `ledger.workload_queue`, reporting claimable counts, non-terminal status distribution, active/expired lease pressure, and next lease expiry without mutating SQLite.
 - MCP resource `agent-ledger://workloads/queue` for read-only queue stats in agent context windows and router discovery flows.
+- MCP resource `agent-ledger://workloads/leases` for privacy-safe lease context rows without workload ids, holders, purposes, or lease tokens.
 - Control-plane readiness now includes privacy-safe workload queue claimability and lease pressure buckets for router and deployment probes.
 - Capability catalog readiness metadata now declares workload queue claimability and lease pressure data classes for integration discovery.
 - MCP resource subscription cursors now ignore volatile `generated_at` fields, preventing queue/readiness subscriptions from emitting no-op router wakeups.
