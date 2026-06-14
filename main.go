@@ -1016,8 +1016,11 @@ func runPreflightCLI(args []string, db *storage.DB) error {
 }
 
 func runProviderCLI(args []string, db *storage.DB) error {
+	if len(args) > 0 && args[0] == "profiles" {
+		return json.NewEncoder(os.Stdout).Encode(integrations.ProviderProfiles())
+	}
 	if len(args) == 0 || (args[0] != "convert" && args[0] != "ingest") {
-		return fmt.Errorf("usage: agent-ledger provider convert|ingest [--file response.json]")
+		return fmt.Errorf("usage: agent-ledger provider profiles|convert|ingest [--file response.json]")
 	}
 	raw, err := readCLIInput(args[1:], "--file", 4<<20)
 	if err != nil {

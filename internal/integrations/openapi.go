@@ -57,6 +57,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"usage_data_uploaded":     false,
 			"discovery_hash":          hashJSONPayload(discovery),
 			"capability_catalog_hash": CatalogFingerprintFrom(catalog),
+			"provider_profiles_hash":  ProviderProfilesFingerprint(),
 			"runtime_status_hash":     hashJSONPayload(runtime),
 			"canonical_schema_hash":   storage.CanonicalEventSchemaFingerprint(),
 			"adapter_spec_hash":       AdapterContractFingerprint(),
@@ -68,6 +69,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"/api/contracts/verify":               getOperation("contracts", "Verify control-plane contracts", "Machine-readable self-check for discovery, contract bundle, OpenAPI, schema, adapter, runtime, and privacy invariants.", "ContractVerificationReport"),
 			"/api/openapi.json":                   getOperation("contracts", "Get OpenAPI document", "OpenAPI 3.1 control-plane contract document.", "OpenAPI"),
 			"/api/integrations":                   getOperation("contracts", "Get integration catalog", "Privacy-safe integration capability catalog.", "CapabilityCatalog"),
+			"/api/provider-profiles":              getOperation("contracts", "Get provider profiles", "Static privacy-safe provider/runtime profile catalog for wrappers, routers, relays, local runtimes, edge models, and adapter CI.", "ProviderProfileCatalog"),
 			"/api/goal-coverage":                  getOperation("contracts", "Get Agent Ledger goal coverage", "Requirement-level implementation coverage with evidence, contract hashes, verification commands, and external dependencies.", "GoalCoverageReport"),
 			"/api/runtime/status":                 getOperation("contracts", "Get runtime status", "Process-local observer/control-plane mode and compatibility hashes.", "RuntimeStatus"),
 			"/api/config/status":                  getOperation("contracts", "Get config status", "Privacy-safe deployment configuration status without paths, secrets, webhook URLs, prompt content, or session ids.", "ConfigStatusReport"),
@@ -173,12 +175,14 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"DiscoveryManifest": map[string]interface{}{
 					"type":                 "object",
 					"additionalProperties": true,
-					"required":             []string{"contract", "version", "local_first", "contract_bundle_uri", "capability_catalog_hash", "canonical_schema_hash", "adapter_spec_hash", "a2a"},
+					"required":             []string{"contract", "version", "local_first", "contract_bundle_uri", "capability_catalog_hash", "provider_profiles_uri", "provider_profiles_hash", "canonical_schema_hash", "adapter_spec_hash", "a2a"},
 					"properties": map[string]interface{}{
 						"contract":                constSchema("agent-ledger.discovery"),
 						"version":                 stringSchema(),
 						"contract_bundle_uri":     stringSchema(),
 						"capability_catalog_hash": refSchema("Hash"),
+						"provider_profiles_uri":   stringSchema(),
+						"provider_profiles_hash":  refSchema("Hash"),
 						"canonical_schema_hash":   refSchema("Hash"),
 						"adapter_spec_hash":       refSchema("Hash"),
 						"prompt_content_stored":   boolSchema(),
@@ -282,6 +286,9 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"CapabilityCatalog":         capabilityCatalogSchema(),
 				"CapabilitySummary":         capabilitySummarySchema(),
 				"IntegrationCapability":     integrationCapabilitySchema(),
+				"ProviderProfileCatalog":    providerProfileCatalogSchema(),
+				"ProviderProfileSummary":    providerProfileSummarySchema(),
+				"ProviderProfile":           providerProfileSchema(),
 				"GoalCoverageReport":        goalCoverageReportSchema(),
 				"GoalCoverageSummary":       goalCoverageSummarySchema(),
 				"GoalCoverageSection":       goalCoverageSectionSchema(),
@@ -958,6 +965,7 @@ func OpenAPIContractPaths() []string {
 		"/api/workload-events/stream",
 		"/api/fleet-attribution",
 		"/api/integrations",
+		"/api/provider-profiles",
 		"/api/goal-coverage",
 		"/api/contracts",
 		"/api/contracts/verify",
@@ -2044,12 +2052,76 @@ func integrationCapabilitySchema() map[string]interface{} {
 	}
 }
 
+func providerProfileCatalogSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Static privacy-safe provider/runtime profile catalog for wrappers, routers, relays, local runtimes, edge models, and adapter CI.",
+		"additionalProperties": true,
+		"required":             []string{"product", "contract", "version", "local_first", "privacy_policy", "summary", "profiles", "quality_gates", "routing_guidance"},
+		"properties": map[string]interface{}{
+			"product":          stringSchema(),
+			"contract":         constSchema("agent-ledger.provider-profile-catalog"),
+			"version":          stringSchema(),
+			"generated_from":   stringSchema(),
+			"local_first":      boolSchema(),
+			"privacy_policy":   stringSchema(),
+			"summary":          refSchema("ProviderProfileSummary"),
+			"profiles":         refArraySchema("ProviderProfile"),
+			"quality_gates":    stringArraySchema(),
+			"routing_guidance": stringArraySchema(),
+		},
+	}
+}
+
+func providerProfileSummarySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Provider/runtime profile coverage counts.",
+		"additionalProperties": true,
+		"required":             []string{"profiles", "gateway_profiles", "local_runtime_profiles", "edge_runtime_profiles", "openai_compatible", "anthropic_compatible", "usage_metadata_profiles"},
+		"properties": map[string]interface{}{
+			"profiles":                integerSchema(),
+			"gateway_profiles":        integerSchema(),
+			"local_runtime_profiles":  integerSchema(),
+			"edge_runtime_profiles":   integerSchema(),
+			"openai_compatible":       integerSchema(),
+			"anthropic_compatible":    integerSchema(),
+			"usage_metadata_profiles": integerSchema(),
+		},
+	}
+}
+
+func providerProfileSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One provider, relay, local runtime, or edge model profile. This schema carries metadata only and never includes API keys, prompts, outputs, or local paths.",
+		"additionalProperties": true,
+		"required":             []string{"id", "label", "kind", "families", "model_name_examples", "usage_schemas", "accepted_input_kinds", "recommended_source", "pricing_strategy", "reconciliation_support", "privacy_notes"},
+		"properties": map[string]interface{}{
+			"id":                     stringSchema(),
+			"label":                  stringSchema(),
+			"kind":                   stringSchema(),
+			"families":               stringArraySchema(),
+			"model_name_examples":    stringArraySchema(),
+			"usage_schemas":          stringArraySchema(),
+			"accepted_input_kinds":   stringArraySchema(),
+			"gateway_routes":         stringArraySchema(),
+			"recommended_source":     stringSchema(),
+			"pricing_strategy":       stringSchema(),
+			"reconciliation_support": stringSchema(),
+			"privacy_notes":          stringArraySchema(),
+			"conformance_fixtures":   stringArraySchema(),
+			"limitations":            stringArraySchema(),
+		},
+	}
+}
+
 func goalCoverageReportSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":                 "object",
 		"description":          "Privacy-safe requirement-level coverage report for the Agent Ledger product goal.",
 		"additionalProperties": true,
-		"required":             []string{"product", "slug", "contract", "version", "status", "local_first", "prompt_content_stored", "usage_data_uploaded", "capability_catalog_hash", "openapi_hash", "contract_bundle_hash", "coverage_hash", "summary", "sections", "verification", "privacy"},
+		"required":             []string{"product", "slug", "contract", "version", "status", "local_first", "prompt_content_stored", "usage_data_uploaded", "capability_catalog_hash", "provider_profiles_hash", "openapi_hash", "contract_bundle_hash", "coverage_hash", "summary", "sections", "verification", "privacy"},
 		"properties": map[string]interface{}{
 			"product":                 stringSchema(),
 			"slug":                    stringSchema(),
@@ -2062,6 +2134,7 @@ func goalCoverageReportSchema() map[string]interface{} {
 			"usage_data_uploaded":     boolSchema(),
 			"privacy_default":         stringSchema(),
 			"capability_catalog_hash": refSchema("Hash"),
+			"provider_profiles_hash":  refSchema("Hash"),
 			"openapi_hash":            refSchema("Hash"),
 			"contract_bundle_hash":    refSchema("Hash"),
 			"canonical_schema_hash":   refSchema("Hash"),

@@ -11,6 +11,7 @@ import (
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/controlplane"
+	"github.com/zhenzhis/agent-ledger/internal/integrations"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 	"github.com/zhenzhis/agent-ledger/internal/ui"
 )
@@ -90,6 +91,7 @@ func TestCLIReadOnlyGateMatchesAdmission(t *testing.T) {
 		{"bundle", "import", "--file", "bundle.json"},
 		{"reconcile", "status"},
 		{"reconcile", "import", "--file", "provider.csv"},
+		{"provider", "profiles"},
 		{"provider", "convert", "--file", "provider.json"},
 		{"provider", "ingest", "--file", "provider.json"},
 		{"otel", "convert", "--file", "spans.json"},
@@ -244,6 +246,29 @@ func TestUICLICheckOutputsContractReport(t *testing.T) {
 	}
 	if !strings.Contains(md, "Agent Ledger UI Contract") || !strings.Contains(md, "charts.accessible") {
 		t.Fatalf("unexpected ui contract markdown: %s", md)
+	}
+}
+
+func TestProviderProfilesCLIOutputsReadOnlyCatalog(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	cfg.RBAC.ReadOnly = true
+
+	out, err := captureStdout(t, func() error {
+		return runCLI([]string{"provider", "profiles"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI provider profiles: %v", err)
+	}
+	var catalog integrations.ProviderProfileCatalog
+	if err := json.Unmarshal([]byte(out), &catalog); err != nil {
+		t.Fatalf("decode provider profiles output: %v\n%s", err, out)
+	}
+	if catalog.Contract != "agent-ledger.provider-profile-catalog" || catalog.Summary.Profiles == 0 {
+		t.Fatalf("unexpected provider profile catalog: %+v", catalog)
+	}
+	if !strings.Contains(out, "ollama-local") || !strings.Contains(out, "openrouter-relay") {
+		t.Fatalf("provider profile catalog missing local/relay coverage: %s", out)
 	}
 }
 

@@ -19,6 +19,13 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
 	writeJSONWithETag(w, r, catalog, integrations.CatalogFingerprintFrom(catalog))
 }
 
+func (s *Server) handleProviderProfiles(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
+	writeJSONWithETag(w, r, integrations.ProviderProfiles(), integrations.ProviderProfilesFingerprint())
+}
+
 func (s *Server) handleGoalCoverage(w http.ResponseWriter, r *http.Request) {
 	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return

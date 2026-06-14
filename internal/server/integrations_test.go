@@ -33,6 +33,7 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	if manifest.Contract != "agent-ledger.discovery" || manifest.WellKnownURI != "/.well-known/agent-ledger.json" ||
 		manifest.ContractBundleURI != "/api/contracts" ||
 		manifest.OpenAPIURI != "/api/openapi.json" ||
+		manifest.ProviderProfilesURI != "/api/provider-profiles" ||
 		manifest.CanonicalSchemaURI != "/api/event-schema" || manifest.EventExamplesURI != "/api/event-examples" ||
 		manifest.AdapterSpecURI != "/api/integrations/adapter-spec" ||
 		manifest.AdapterConformanceURI != "/api/integrations/conformance" || manifest.RuntimeStatusURI != "/api/runtime/status" ||
@@ -42,12 +43,15 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	if manifest.AdapterSpecHash == "" || manifest.AdapterSpecHash != integrations.AdapterContractFingerprint() {
 		t.Fatalf("unexpected adapter contract hash: %+v", manifest)
 	}
+	if manifest.ProviderProfilesHash == "" || manifest.ProviderProfilesHash != integrations.ProviderProfilesFingerprint() {
+		t.Fatalf("unexpected provider profile hash: %+v", manifest)
+	}
 	if manifest.A2A.Endpoint != "/api/a2a/tasks" || manifest.A2A.ConformanceKind != "a2a" ||
 		manifest.A2A.FullServer || manifest.A2A.MessageContentStored || manifest.A2A.PromptContentStored ||
 		!manifest.A2A.SupportsDelegatedLineage || !manifest.A2A.SupportsEvidenceReferences {
 		t.Fatalf("unexpected A2A discovery metadata: %+v", manifest.A2A)
 	}
-	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.config_status") || !discoveryHasProtocol(manifest, "protocol.readiness") || !discoveryHasProtocol(manifest, "protocol.admission_check") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
+	if !discoveryHasProtocol(manifest, "protocol.runtime_status") || !discoveryHasProtocol(manifest, "protocol.config_status") || !discoveryHasProtocol(manifest, "protocol.readiness") || !discoveryHasProtocol(manifest, "protocol.admission_check") || !discoveryHasProtocol(manifest, "protocol.provider_profiles") || !discoveryHasProtocol(manifest, "protocol.workload_event_feed") {
 		t.Fatalf("missing control-plane protocols: %+v", manifest.Protocols)
 	}
 	if manifest.PromptContentStored || manifest.UsageDataUploaded {
@@ -72,7 +76,7 @@ func TestContractsEndpoint(t *testing.T) {
 	if bundle.Contract != "agent-ledger.contract-bundle" || bundle.BundleHash == "" || !strings.HasPrefix(bundle.BundleHash, "sha256:") {
 		t.Fatalf("unexpected contract bundle: %+v", bundle)
 	}
-	if !contractBundleHasDocument(bundle, "discovery") || !contractBundleHasDocument(bundle, "goal-coverage") || !contractBundleHasDocument(bundle, "openapi") || !contractBundleHasDocument(bundle, "runtime-status") ||
+	if !contractBundleHasDocument(bundle, "discovery") || !contractBundleHasDocument(bundle, "goal-coverage") || !contractBundleHasDocument(bundle, "openapi") || !contractBundleHasDocument(bundle, "provider-profiles") || !contractBundleHasDocument(bundle, "runtime-status") ||
 		!contractBundleHasDocument(bundle, "admission-check") || !contractBundleHasDocument(bundle, "canonical-event-schema") || !contractBundleHasDocument(bundle, "adapter-contract") {
 		t.Fatalf("contract bundle missing core documents: %+v", bundle.Documents)
 	}
@@ -80,6 +84,28 @@ func TestContractsEndpoint(t *testing.T) {
 		t.Fatalf("contracts ETag=%q want %q", rr.Header().Get("ETag"), `"`+bundle.BundleHash+`"`)
 	}
 	assertETagRevalidates(t, srv.handleContracts, "http://127.0.0.1/api/contracts", rr.Header().Get("ETag"))
+}
+
+func TestProviderProfilesEndpoint(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/provider-profiles", nil)
+	rr := httptest.NewRecorder()
+	srv.handleProviderProfiles(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("provider profiles status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var catalog integrations.ProviderProfileCatalog
+	if err := json.Unmarshal(rr.Body.Bytes(), &catalog); err != nil {
+		t.Fatalf("decode provider profiles: %v", err)
+	}
+	if catalog.Contract != "agent-ledger.provider-profile-catalog" || catalog.Summary.Profiles < 6 || catalog.Summary.LocalRuntimeProfiles < 2 {
+		t.Fatalf("unexpected provider profiles: %+v", catalog)
+	}
+	if !strings.Contains(rr.Body.String(), "openrouter-relay") || !strings.Contains(rr.Body.String(), "ollama-local") {
+		t.Fatalf("provider profiles should cover relay and local runtimes: %s", rr.Body.String())
+	}
+	assertETagRevalidates(t, srv.handleProviderProfiles, "http://127.0.0.1/api/provider-profiles", rr.Header().Get("ETag"))
 }
 
 func TestGoalCoverageEndpoint(t *testing.T) {
@@ -97,6 +123,9 @@ func TestGoalCoverageEndpoint(t *testing.T) {
 	}
 	if report.Contract != "agent-ledger.goal-coverage" || report.CoverageHash == "" || report.ContractBundleHash == "" || !report.ReadOnly {
 		t.Fatalf("unexpected goal coverage report: %+v", report)
+	}
+	if report.ProviderProfilesHash != integrations.ProviderProfilesFingerprint() {
+		t.Fatalf("unexpected provider profile hash in goal coverage: %+v", report)
 	}
 	if integrations.GoalCoverageHasGap(report) {
 		t.Fatalf("goal coverage has gaps: %+v", report.Summary)
@@ -140,6 +169,9 @@ func TestContractVerificationEndpoint(t *testing.T) {
 	}
 	if !contractVerificationHasCheck(report, "openapi.path./api/contracts/verify") {
 		t.Fatalf("verification report missing OpenAPI path check: %+v", report.Checks)
+	}
+	if !contractVerificationHasCheck(report, "discovery.provider_profiles") || !contractVerificationHasCheck(report, "adapter.provider_profiles") || !contractVerificationHasCheck(report, "openapi.provider_profiles_hash") || !contractVerificationHasCheck(report, "bundle.document.provider-profiles") {
+		t.Fatalf("verification report missing provider profile checks: %+v", report.Checks)
 	}
 	assertETagRevalidates(t, srv.handleContractVerification, "http://127.0.0.1/api/contracts/verify", rr.Header().Get("ETag"))
 }
@@ -339,6 +371,9 @@ func TestAdapterSpecEndpoint(t *testing.T) {
 	if spec.Contract != "agent-ledger.adapter-contract" || spec.SchemaHash == "" || len(spec.SupportedInputKinds) < 5 {
 		t.Fatalf("unexpected adapter spec: %+v", spec)
 	}
+	if spec.ProviderProfilesURI != "/api/provider-profiles" || spec.ProviderProfilesHash != integrations.ProviderProfilesFingerprint() {
+		t.Fatalf("adapter spec missing provider profile catalog link: %+v", spec)
+	}
 	if !adapterSpecHasKind(spec, "provider-stream") {
 		t.Fatalf("adapter spec missing provider-stream kind: %+v", spec.SupportedInputKinds)
 	}
@@ -383,6 +418,7 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 		handler func(http.ResponseWriter, *http.Request)
 	}{
 		{name: "integrations", url: "http://127.0.0.1/api/integrations", handler: srv.handleIntegrations},
+		{name: "provider-profiles", url: "http://127.0.0.1/api/provider-profiles", handler: srv.handleProviderProfiles},
 		{name: "goal-coverage", url: "http://127.0.0.1/api/goal-coverage", handler: srv.handleGoalCoverage},
 		{name: "contracts", url: "http://127.0.0.1/api/contracts", handler: srv.handleContracts},
 		{name: "contract-verification", url: "http://127.0.0.1/api/contracts/verify", handler: srv.handleContractVerification},
@@ -465,6 +501,7 @@ func TestControlPlaneEndpointsRejectNonGET(t *testing.T) {
 		handler func(http.ResponseWriter, *http.Request)
 	}{
 		{name: "integrations", url: "http://127.0.0.1/api/integrations", handler: srv.handleIntegrations},
+		{name: "provider-profiles", url: "http://127.0.0.1/api/provider-profiles", handler: srv.handleProviderProfiles},
 		{name: "discovery", url: "http://127.0.0.1/api/discovery", handler: srv.handleDiscovery},
 		{name: "contracts", url: "http://127.0.0.1/api/contracts", handler: srv.handleContracts},
 		{name: "contract-verification", url: "http://127.0.0.1/api/contracts/verify", handler: srv.handleContractVerification},

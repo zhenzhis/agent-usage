@@ -23,6 +23,7 @@ type GoalCoverageReport struct {
 	UsageDataUploaded     bool                   `json:"usage_data_uploaded"`
 	PrivacyDefault        string                 `json:"privacy_default"`
 	CapabilityCatalogHash string                 `json:"capability_catalog_hash"`
+	ProviderProfilesHash  string                 `json:"provider_profiles_hash"`
 	OpenAPIHash           string                 `json:"openapi_hash"`
 	ContractBundleHash    string                 `json:"contract_bundle_hash"`
 	CanonicalSchemaHash   string                 `json:"canonical_schema_hash"`
@@ -129,6 +130,7 @@ func goalCoverageReportFor(opts Options, runtime *storage.RuntimeStatus, contrac
 		UsageDataUploaded:     false,
 		PrivacyDefault:        catalog.PrivacyDefault,
 		CapabilityCatalogHash: catalogHash,
+		ProviderProfilesHash:  ProviderProfilesFingerprint(),
 		OpenAPIHash:           openAPIHash,
 		ContractBundleHash:    contractBundleHash,
 		CanonicalSchemaHash:   storage.CanonicalEventSchemaFingerprint(),
@@ -221,12 +223,12 @@ func goalCoverageSections(capabilities map[string]Capability) []GoalCoverageSect
 			Title:         "Ecosystem Adapters, Protocols And Provider Gateway",
 			Category:      "ecosystem",
 			Maturity:      "local-preview",
-			Objective:     "Support current and future agent CLIs, provider envelopes, OpenTelemetry GenAI, OTLP, A2A, provider streams, and optional local gateways.",
-			CapabilityIDs: []string{"collector.claude", "collector.codex", "collector.openclaw", "collector.opencode", "collector.kiro", "collector.pi", "protocol.opentelemetry_genai", "protocol.otlp_receiver", "protocol.a2a", "gateway.provider_api", "gateway.provider_live_proxy"},
+			Objective:     "Support current and future agent CLIs, provider envelopes, OpenTelemetry GenAI, OTLP, A2A, provider streams, provider/runtime profiles, and optional local gateways.",
+			CapabilityIDs: []string{"collector.claude", "collector.codex", "collector.openclaw", "collector.opencode", "collector.kiro", "collector.pi", "protocol.provider_profiles", "protocol.opentelemetry_genai", "protocol.otlp_receiver", "protocol.a2a", "gateway.provider_api", "gateway.provider_live_proxy"},
 			Evidence: GoalCoverageEvidence{
-				Endpoints: []string{"POST /api/otel/genai", "POST /api/otlp/v1/traces", "POST /api/a2a/tasks", "POST /api/provider/calls", "POST /gateway/openai/v1/chat/completions", "POST /gateway/openai/v1/responses", "POST /gateway/anthropic/v1/messages"},
-				Commands:  []string{"agent-ledger adapter conformance", "agent-ledger otel convert", "agent-ledger a2a convert", "agent-ledger provider convert"},
-				Tests:     []string{"internal/collector/*_test.go", "internal/integrations/conformance_test.go", "internal/server/otel_test.go", "internal/server/otel_grpc_test.go", "internal/server/provider_test.go", "internal/server/gateway_test.go"},
+				Endpoints: []string{"GET /api/provider-profiles", "POST /api/otel/genai", "POST /api/otlp/v1/traces", "POST /api/a2a/tasks", "POST /api/provider/calls", "POST /gateway/openai/v1/chat/completions", "POST /gateway/openai/v1/responses", "POST /gateway/anthropic/v1/messages"},
+				Commands:  []string{"agent-ledger provider profiles", "agent-ledger adapter conformance", "agent-ledger otel convert", "agent-ledger a2a convert", "agent-ledger provider convert"},
+				Tests:     []string{"internal/collector/*_test.go", "internal/integrations/conformance_test.go", "internal/integrations/provider_profiles_test.go", "internal/server/otel_test.go", "internal/server/otel_grpc_test.go", "internal/server/provider_test.go", "internal/server/gateway_test.go"},
 				Docs:      []string{"examples/adapter-fixtures", "examples/otel-collector/README.md"},
 			},
 			Privacy:     "Adapters map metadata and token fields; request/response messages, headers, prompts, and secrets are excluded from persistence.",

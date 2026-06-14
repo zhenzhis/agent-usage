@@ -262,6 +262,7 @@ func isReadOnlyHTTPPath(path string) bool {
 		"/api/workload-events/stream",
 		"/api/fleet-attribution",
 		"/api/integrations",
+		"/api/provider-profiles",
 		"/api/goal-coverage",
 		"/api/contracts",
 		"/api/contracts/verify",
@@ -393,6 +394,9 @@ func CLICommandAccessFor(command string, input AdmissionInput) OperationAccess {
 		}
 		return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "operator", Reason: "workload command writes local ledger state"}
 	case "provider", "otel", "a2a":
+		if len(parts) > 1 && parts[0] == "provider" && parts[1] == "profiles" {
+			return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "provider profile catalog is available in read-only mode", RequiredRole: "viewer", Reason: "provider profiles are static metadata and do not write SQLite"}
+		}
 		if len(parts) > 1 && parts[1] == "convert" {
 			return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "convert commands are available in read-only mode", RequiredRole: "viewer", Reason: "convert validates and maps input without writing SQLite"}
 		}

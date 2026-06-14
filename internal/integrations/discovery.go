@@ -38,6 +38,8 @@ type DiscoveryManifest struct {
 	WellKnownURI          string               `json:"well_known_uri"`
 	CapabilityCatalogURI  string               `json:"capability_catalog_uri"`
 	CapabilityCatalogHash string               `json:"capability_catalog_hash"`
+	ProviderProfilesURI   string               `json:"provider_profiles_uri"`
+	ProviderProfilesHash  string               `json:"provider_profiles_hash"`
 	ContractBundleURI     string               `json:"contract_bundle_uri"`
 	OpenAPIURI            string               `json:"openapi_uri"`
 	RuntimeStatusURI      string               `json:"runtime_status_uri"`
@@ -125,6 +127,8 @@ func Discovery(opts Options) DiscoveryManifest {
 		WellKnownURI:          "/.well-known/agent-ledger.json",
 		CapabilityCatalogURI:  "/api/integrations",
 		CapabilityCatalogHash: CatalogFingerprintFrom(catalog),
+		ProviderProfilesURI:   "/api/provider-profiles",
+		ProviderProfilesHash:  ProviderProfilesFingerprint(),
 		ContractBundleURI:     "/api/contracts",
 		OpenAPIURI:            "/api/openapi.json",
 		RuntimeStatusURI:      "/api/runtime/status",

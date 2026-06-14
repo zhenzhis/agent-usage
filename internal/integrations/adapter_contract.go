@@ -25,6 +25,8 @@ type AdapterContract struct {
 	ForbiddenPayloadKeys []string                         `json:"forbidden_payload_keys"`
 	TokenSemantics       []string                         `json:"token_semantics"`
 	QualityGates         []string                         `json:"quality_gates"`
+	ProviderProfilesURI  string                           `json:"provider_profiles_uri"`
+	ProviderProfilesHash string                           `json:"provider_profiles_hash"`
 	Validation           AdapterValidationContract        `json:"validation"`
 	Ingest               AdapterIngestContract            `json:"ingest"`
 	RoadmapCompatibility []string                         `json:"roadmap_compatibility"`
@@ -142,6 +144,8 @@ func AdapterContractSpec() AdapterContract {
 			"cost_usd may be source-reported but local pricing governance remains authoritative for recomputation",
 			"confidence below 1 must explain estimation or fuzzy matching through match_type or payload metadata",
 		},
+		ProviderProfilesURI:  "/api/provider-profiles",
+		ProviderProfilesHash: ProviderProfilesFingerprint(),
 		Validation: AdapterValidationContract{
 			HTTP:    "POST /api/integrations/conformance?kind=auto|canonical|provider|provider-stream|otel|a2a&strict=true",
 			CLI:     "agent-ledger adapter conformance --kind auto --strict --file fixture.json",
