@@ -97,6 +97,36 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, enabledCatalog, "notification.redacted_webhook", "implemented", true)
 }
 
+func TestCatalogEndpointsMatchOpenAPIContract(t *testing.T) {
+	catalog := Registry(Options{})
+	spec := OpenAPISpecFor(Options{}, nil)
+	paths, ok := spec["paths"].(map[string]interface{})
+	if !ok || len(paths) == 0 {
+		t.Fatalf("OpenAPI paths missing: %#v", spec["paths"])
+	}
+	for _, capability := range catalog.Capabilities {
+		for _, endpoint := range capability.Endpoints {
+			methods, path, ok := parseCatalogEndpoint(endpoint)
+			if !ok {
+				t.Fatalf("invalid endpoint declaration for %s: %q", capability.ID, endpoint)
+			}
+			rawPathItem, ok := paths[path]
+			if !ok {
+				t.Fatalf("catalog endpoint path missing from OpenAPI: capability=%s endpoint=%q path=%s", capability.ID, endpoint, path)
+			}
+			pathItem, ok := rawPathItem.(map[string]interface{})
+			if !ok {
+				t.Fatalf("OpenAPI path item invalid for %s: %#v", path, rawPathItem)
+			}
+			for _, method := range methods {
+				if _, ok := pathItem[strings.ToLower(method)]; !ok {
+					t.Fatalf("catalog endpoint method missing from OpenAPI: capability=%s endpoint=%q method=%s path=%s", capability.ID, endpoint, method, path)
+				}
+			}
+		}
+	}
+}
+
 func TestCollectorCapabilitiesDoNotExposeRawPaths(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Collectors.Claude.Enabled = true
@@ -117,6 +147,29 @@ func TestCollectorCapabilitiesDoNotExposeRawPaths(t *testing.T) {
 		}
 	}
 	t.Fatal("collector.claude capability missing")
+}
+
+func parseCatalogEndpoint(endpoint string) ([]string, string, bool) {
+	fields := strings.Fields(endpoint)
+	if len(fields) < 2 {
+		return nil, "", false
+	}
+	methods := strings.Split(fields[0], "/")
+	path := fields[1]
+	if idx := strings.Index(path, "?"); idx >= 0 {
+		path = path[:idx]
+	}
+	if path == "" || !strings.HasPrefix(path, "/") {
+		return nil, "", false
+	}
+	for _, method := range methods {
+		switch method {
+		case "GET", "POST":
+		default:
+			return nil, "", false
+		}
+	}
+	return methods, path, true
 }
 
 func TestRegistryAnnotatesReadOnlyRuntimeCapabilities(t *testing.T) {
