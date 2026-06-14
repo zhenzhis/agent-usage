@@ -14,6 +14,34 @@ import (
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
+func openTestDB(t *testing.T) *storage.DB {
+	t.Helper()
+	dir, err := os.MkdirTemp("", strings.ReplaceAll(t.Name(), "/", "_")+"-")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	db, err := storage.Open(filepath.Join(dir, "agent-ledger.db"))
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+		for i := 0; i < 10; i++ {
+			if err := os.RemoveAll(dir); err == nil {
+				return
+			}
+			time.Sleep(time.Duration(i+1) * 25 * time.Millisecond)
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("RemoveAll %s: %v", dir, err)
+		}
+	})
+	return db
+}
+
 func TestCLICommandRequiresWriteForNotifyDryRun(t *testing.T) {
 	cases := []struct {
 		name string
@@ -93,11 +121,7 @@ func TestCLIReadOnlyGateMatchesAdmission(t *testing.T) {
 }
 
 func TestRuntimeCLIOutputsCompatibilityHashes(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 	cfg := config.DefaultConfig()
 	cfg.RBAC.ReadOnly = true
 
@@ -118,11 +142,7 @@ func TestRuntimeCLIOutputsCompatibilityHashes(t *testing.T) {
 }
 
 func TestContractsCLIOutputsBundle(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 	cfg := config.DefaultConfig()
 	cfg.RBAC.ReadOnly = true
 
@@ -146,11 +166,7 @@ func TestContractsCLIOutputsBundle(t *testing.T) {
 }
 
 func TestContractsCLIVerifyOutputsReport(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 	cfg := config.DefaultConfig()
 	cfg.RBAC.ReadOnly = true
 
@@ -175,11 +191,7 @@ func TestContractsCLIVerifyOutputsReport(t *testing.T) {
 }
 
 func TestOpenAPICLIOutputsControlPlaneSpec(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 	cfg := config.DefaultConfig()
 	cfg.RBAC.ReadOnly = true
 
@@ -203,11 +215,7 @@ func TestOpenAPICLIOutputsControlPlaneSpec(t *testing.T) {
 }
 
 func TestConfigCLIStatusOutputsPrivacySafeReport(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 	cfg := config.DefaultConfig()
 	cfg.Server.AuthToken = "secret-auth-token"
 	cfg.Collectors.Codex.Paths = []string{"C:/Users/zhang/private/.codex/sessions"}
@@ -247,11 +255,7 @@ func TestConfigCLIStatusOutputsPrivacySafeReport(t *testing.T) {
 }
 
 func TestReadinessCLIOutputsPrivacySafeReport(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 	cfg := config.DefaultConfig()
 	cfg.Server.AuthToken = "secret-auth-token"
 	cfg.Collectors.Codex.Paths = []string{"C:/Users/zhang/private/.codex/sessions"}
@@ -341,11 +345,7 @@ func admissionInputForCLIArgs(args []string) controlplane.AdmissionInput {
 }
 
 func TestPolicyRoutesCLIOutputsRedactedSummary(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 
 	if _, err := db.CreateApprovalRequest(storage.ApprovalRequest{
 		Source:           "gateway",
@@ -380,11 +380,7 @@ func TestPolicyRoutesCLIOutputsRedactedSummary(t *testing.T) {
 }
 
 func TestPolicyApprovalsCLIPrivacyAndResolveAudit(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
+	db := openTestDB(t)
 
 	requestID, err := db.CreateApprovalRequest(storage.ApprovalRequest{
 		PolicyDecisionID:       "dec-cli-private",
