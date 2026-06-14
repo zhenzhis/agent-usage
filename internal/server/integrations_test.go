@@ -307,6 +307,7 @@ func TestControlPlaneEndpointETags(t *testing.T) {
 		{name: "readiness", url: "http://127.0.0.1/api/readiness", handler: srv.handleReadiness},
 		{name: "admission", url: "http://127.0.0.1/api/admission/check?surface=mcp&tool=ledger.discovery&role=viewer", handler: srv.handleAdmissionCheck},
 		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
+		{name: "event-examples", url: "http://127.0.0.1/api/event-examples?type=model.call", handler: srv.handleCanonicalEventExamples},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

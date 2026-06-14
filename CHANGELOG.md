@@ -23,6 +23,7 @@
 - Stable `ETag` revalidation for anomaly and watchdog event reads, with OpenAPI `304 Not Modified` coverage for revalidated read endpoints.
 - Stable `ETag` revalidation for workload ledger pages and workload lease list endpoints.
 - Stable `ETag` revalidation and OpenAPI coverage for workload detail, graph, timeline, and terminal-state read endpoints.
+- Stable `ETag` revalidation for canonical event example reads, matching the OpenAPI contract used by adapter CI.
 - OpenAPI/contract coverage for workload close/link and agent run heartbeat write endpoints.
 - MCP resources `agent-ledger://workload/state` and `agent-ledger://workload/timeline` for privacy-safe single-workload monitor context.
 - OpenAPI/contract coverage for OpenTelemetry GenAI, OTLP HTTP traces, A2A task telemetry, provider usage envelopes, and optional provider gateway endpoints.

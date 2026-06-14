@@ -840,7 +840,7 @@ func (s *Server) handleCanonicalEventExamples(w http.ResponseWriter, r *http.Req
 	if eventType == "" {
 		eventType = r.URL.Query().Get("event_type")
 	}
-	writeJSON(w, map[string]interface{}{
+	writeJSONWithPayloadETag(w, r, map[string]interface{}{
 		"contract": "agent-ledger.canonical-event-examples",
 		"version":  "v1",
 		"examples": storage.CanonicalEventExamples(eventType),
