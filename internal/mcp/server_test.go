@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1331,11 +1332,29 @@ func TestMCPValidateAndConformanceAreReadOnly(t *testing.T) {
 
 func openTestDB(t *testing.T) *storage.DB {
 	t.Helper()
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	dir, err := os.MkdirTemp("", strings.ReplaceAll(t.Name(), "/", "_")+"-")
 	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	db, err := storage.Open(filepath.Join(dir, "agent-ledger.db"))
+	if err != nil {
+		_ = os.RemoveAll(dir)
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+		for i := 0; i < 10; i++ {
+			if err := os.RemoveAll(dir); err == nil {
+				return
+			}
+			time.Sleep(time.Duration(i+1) * 25 * time.Millisecond)
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("RemoveAll %s: %v", dir, err)
+		}
+	})
 	return db
 }
 
