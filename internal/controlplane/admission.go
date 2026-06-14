@@ -372,7 +372,7 @@ func CLICommandAccessFor(command string, input AdmissionInput) OperationAccess {
 		return unknownAccess("missing CLI command")
 	}
 	switch parts[0] {
-	case "version", "today", "top", "doctor", "battery", "wrapped", "discovery", "contracts", "openapi", "integrations", "runtime", "config", "readiness", "admission", "adapter", "replay", "badge", "preflight", "chargeback", "fleet":
+	case "version", "today", "top", "doctor", "battery", "wrapped", "discovery", "contracts", "openapi", "integrations", "runtime", "config", "readiness", "admission", "adapter", "replay", "badge", "preflight", "chargeback", "fleet", "export", "audit", "router":
 		return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "available in read-only mode", RequiredRole: "viewer", Reason: "CLI command is read-only or dry-run validation"}
 	case "event":
 		if len(parts) > 1 && parts[1] == "ingest" {
@@ -402,8 +402,21 @@ func CLICommandAccessFor(command string, input AdmissionInput) OperationAccess {
 		return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "operator", Reason: "reconcile import writes local reconciliation records"}
 	case "run":
 		return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "operator", Reason: "CLI command writes local ledger state"}
-	case "pricing", "projection":
-		return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "admin", Reason: "CLI command mutates pricing or derived projections"}
+	case "pricing":
+		if len(parts) > 1 && (parts[1] == "sync" || parts[1] == "recalculate") {
+			return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "admin", Reason: "CLI command mutates pricing or derived costs"}
+		}
+		return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "pricing status is available in read-only mode", RequiredRole: "viewer", Reason: "pricing command reads local pricing state unless sync/recalculate is used"}
+	case "projection":
+		if len(parts) > 1 && parts[1] == "repair" {
+			return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "admin", Reason: "projection repair mutates derived local state"}
+		}
+		if len(parts) > 1 && parts[1] == "quality" {
+			return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "projection quality is available in read-only mode", RequiredRole: "viewer", Reason: "projection quality reads derived local state"}
+		}
+		return unknownAccess("unknown projection command")
+	case "mcp":
+		return OperationAccess{Known: true, WritesLocalState: !input.ReadOnly, WriteMode: "conditional", AvailableInReadOnly: true, ReadOnlyBehavior: "MCP stdio can run in read-only mode; write-capable tools remain denied by per-tool admission", RequiredRole: "operator", Reason: "MCP stdio exposes read-only and write-capable tools through local stdio"}
 	case "bundle":
 		if len(parts) > 1 && parts[1] == "import" {
 			return OperationAccess{Known: true, WritesLocalState: true, WriteMode: "always", AvailableInReadOnly: false, ReadOnlyBehavior: "disabled in read-only mode", RequiredRole: "operator", Reason: "bundle import writes canonical events"}

@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -147,15 +148,76 @@ func TestHTTPAdmissionMatchesOpenAPIContractMethods(t *testing.T) {
 }
 
 func TestAdmissionClassifiesReadOnlyCLISubcommands(t *testing.T) {
-	for _, command := range []string{"agent-ledger workload feed --limit 10", "agent-ledger workload liveness", "agent-ledger workload queue --source codex", "agent-ledger reconcile status", "agent-ledger provider convert --file provider.json"} {
+	for _, command := range []string{
+		"agent-ledger workload feed --limit 10",
+		"agent-ledger workload liveness",
+		"agent-ledger workload queue --source codex",
+		"agent-ledger reconcile status",
+		"agent-ledger provider convert --file provider.json",
+		"agent-ledger export --privacy",
+		"agent-ledger audit --privacy",
+		"agent-ledger router simulate --to-model gpt-5-mini",
+		"agent-ledger pricing",
+		"agent-ledger projection quality",
+	} {
 		decision := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: command, Role: "viewer", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
 		if !decision.Allowed || decision.WritesLocalState {
 			t.Fatalf("expected read-only CLI command to be allowed: command=%q decision=%+v", command, decision)
 		}
 	}
+	pricingSync := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: "agent-ledger pricing sync", Role: "admin", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
+	if pricingSync.Allowed || pricingSync.RequiredRole != "admin" || pricingSync.AvailableInReadOnly {
+		t.Fatalf("expected pricing sync to be admin write rejected in read-only mode: %+v", pricingSync)
+	}
+	projectionRepair := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: "agent-ledger projection repair", Role: "admin", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
+	if projectionRepair.Allowed || projectionRepair.RequiredRole != "admin" || projectionRepair.AvailableInReadOnly {
+		t.Fatalf("expected projection repair to be admin write rejected in read-only mode: %+v", projectionRepair)
+	}
+	mcp := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: "agent-ledger mcp", Role: "operator", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
+	if !mcp.Allowed || mcp.WriteMode != "conditional" || !mcp.AvailableInReadOnly {
+		t.Fatalf("expected MCP stdio command to be conditionally available in read-only mode: %+v", mcp)
+	}
 	writeDecision := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: "agent-ledger workload heartbeat --run-id run_1", Role: "operator", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
 	if writeDecision.Allowed || writeDecision.AvailableInReadOnly {
 		t.Fatalf("expected workload heartbeat to be rejected in read-only mode: %+v", writeDecision)
+	}
+}
+
+func TestCLIAdmissionKnowsPublishedCatalogCommands(t *testing.T) {
+	catalog := integrations.Registry(integrations.Options{})
+	bundle := integrations.ContractBundleFor(integrations.Options{}, nil)
+	commands := map[string]bool{}
+	for _, capability := range catalog.Capabilities {
+		for _, command := range capability.Commands {
+			if strings.HasPrefix(command, "agent-ledger ") {
+				commands[command] = true
+			}
+		}
+	}
+	for _, document := range bundle.Documents {
+		for _, command := range document.CLICommands {
+			if strings.HasPrefix(command, "agent-ledger ") {
+				commands[command] = true
+			}
+		}
+	}
+	if len(commands) == 0 {
+		t.Fatal("no published Agent Ledger CLI commands found")
+	}
+	ordered := make([]string, 0, len(commands))
+	for command := range commands {
+		ordered = append(ordered, command)
+	}
+	sort.Strings(ordered)
+	for _, command := range ordered {
+		access := CLICommandAccessFor(command, AdmissionInput{
+			DryRun:        strings.Contains(command, "--dry-run"),
+			Record:        strings.Contains(command, "--record"),
+			HasWorkloadID: strings.Contains(command, "--workload-id") || strings.Contains(command, "--workload_id"),
+		})
+		if !access.Known {
+			t.Fatalf("published CLI command is unknown to admission: command=%q access=%+v", command, access)
+		}
 	}
 }
 
