@@ -150,6 +150,14 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"/api/report":                         reportOperation(),
 		},
 		"components": map[string]interface{}{
+			"securitySchemes": map[string]interface{}{
+				"AgentLedgerBearer": map[string]interface{}{
+					"type":         "http",
+					"scheme":       "bearer",
+					"bearerFormat": "opaque local token",
+					"description":  "Optional local bearer token. Required when Agent Ledger is configured with auth_token, admin_token, or viewer_token; localhost-only deployments may run without bearer auth.",
+				},
+			},
 			"schemas": map[string]interface{}{
 				"Hash": map[string]interface{}{
 					"type":        "string",
@@ -568,6 +576,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			},
 		},
 	}
+	addAuthResponsesAndSecurity(spec)
 	addMethodNotAllowedResponses(spec)
 	return spec
 }
@@ -617,6 +626,39 @@ func addMethodNotAllowedResponses(spec map[string]interface{}) {
 			}
 			if _, exists := responses["405"]; !exists {
 				responses["405"] = methodNotAllowedResponse(allowValue)
+			}
+		}
+	}
+}
+
+func addAuthResponsesAndSecurity(spec map[string]interface{}) {
+	paths, ok := spec["paths"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	for _, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, method := range []string{"get", "post", "put", "patch", "delete"} {
+			operation, ok := pathItem[method].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			operation["security"] = []map[string][]string{{"AgentLedgerBearer": {}}}
+			meta, ok := operation["x-agent-ledger"].(map[string]interface{})
+			if !ok {
+				meta = map[string]interface{}{}
+				operation["x-agent-ledger"] = meta
+			}
+			meta["auth"] = "localhost or bearer token when configured; prompt content and secrets are never part of auth decisions"
+			responses, ok := operation["responses"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if _, exists := responses["401"]; !exists {
+				responses["401"] = jsonResponse("Error")
 			}
 		}
 	}

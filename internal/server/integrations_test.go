@@ -129,6 +129,29 @@ func TestOpenAPIEndpoint(t *testing.T) {
 	assertETagRevalidates(t, srv.handleOpenAPI, "http://127.0.0.1/api/openapi.json", rr.Header().Get("ETag"))
 }
 
+func TestAuthenticatedAPIRequiresBearerTokenWhenConfigured(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{ViewerToken: "secret-viewer-token"})
+	handler := srv.auth(http.HandlerFunc(srv.handleOpenAPI))
+
+	unauthenticated := httptest.NewRecorder()
+	handler.ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/openapi.json", nil))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d body=%s", unauthenticated.Code, unauthenticated.Body.String())
+	}
+	if strings.Contains(unauthenticated.Body.String(), "secret-viewer-token") {
+		t.Fatalf("unauthenticated response leaked token: %s", unauthenticated.Body.String())
+	}
+
+	authenticatedReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/openapi.json", nil)
+	authenticatedReq.Header.Set("Authorization", "Bearer secret-viewer-token")
+	authenticated := httptest.NewRecorder()
+	handler.ServeHTTP(authenticated, authenticatedReq)
+	if authenticated.Code != http.StatusOK {
+		t.Fatalf("authenticated status=%d body=%s", authenticated.Code, authenticated.Body.String())
+	}
+}
+
 func TestOpenAPIContractPathsMatchRegisteredRoutes(t *testing.T) {
 	raw, err := os.ReadFile("server.go")
 	if err != nil {

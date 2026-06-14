@@ -246,6 +246,28 @@ func TestOpenAPISpecIndexesStableControlPlane(t *testing.T) {
 			t.Fatalf("OpenAPI missing path %s: %#v", path, paths)
 		}
 	}
+	if !openAPIHasBearerSecurityScheme(spec) {
+		t.Fatalf("OpenAPI missing AgentLedgerBearer security scheme: %#v", spec["components"])
+	}
+	for path, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			t.Fatalf("OpenAPI path %s has invalid item: %#v", path, rawPathItem)
+		}
+		for _, method := range []string{"get", "post"} {
+			rawOperation, ok := pathItem[method]
+			if !ok {
+				continue
+			}
+			operation, ok := rawOperation.(map[string]interface{})
+			if !ok {
+				t.Fatalf("OpenAPI %s %s has invalid operation: %#v", method, path, rawOperation)
+			}
+			if !openAPIOperationHasBearerSecurity(operation) || !openAPIMethodHasResponse(paths, path, method, "401") {
+				t.Fatalf("OpenAPI %s %s missing auth contract: %#v", method, path, operation)
+			}
+		}
+	}
 	for _, path := range []string{"/api/dashboard", "/api/pricing/status", "/api/anomalies", "/api/policy/enforcement", "/api/workloads", "/api/workloads/leases", "/api/event-examples"} {
 		if !openAPIGetHasResponse(paths, path, "304") {
 			t.Fatalf("OpenAPI path %s should advertise 304 revalidation: %#v", path, paths[path])
@@ -466,6 +488,35 @@ func openAPIMethodAllowHeader(paths map[string]interface{}, path, method string)
 	}
 	value, _ := schema["const"].(string)
 	return value
+}
+
+func openAPIHasBearerSecurityScheme(spec map[string]interface{}) bool {
+	components, ok := spec["components"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	schemes, ok := components["securitySchemes"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	scheme, ok := schemes["AgentLedgerBearer"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	return scheme["type"] == "http" && scheme["scheme"] == "bearer"
+}
+
+func openAPIOperationHasBearerSecurity(operation map[string]interface{}) bool {
+	security, ok := operation["security"].([]map[string][]string)
+	if !ok {
+		return false
+	}
+	for _, requirement := range security {
+		if _, ok := requirement["AgentLedgerBearer"]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDiscoveryManifestCarriesReadOnlyRuntimeStatus(t *testing.T) {
