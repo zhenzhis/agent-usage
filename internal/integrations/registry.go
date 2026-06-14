@@ -310,7 +310,6 @@ func Registry(opts Options) Catalog {
 			Limitations: []string{"derived snapshot feed; SSE stream is a local polling subscription", "MCP resource subscriptions support parameterized local polling URIs, not native host push transport"},
 			NextMilestones: []string{
 				"add native MCP subscription transport when host clients support it",
-				"allow desktop notification adapters to consume the same event schema",
 			},
 		},
 		{
@@ -356,6 +355,21 @@ func Registry(opts Options) Catalog {
 			Commands:    []string{"agent-ledger notify webhook --dry-run --approval-due-within 24h", "agent-ledger notify webhook --severity warning"},
 			DataClasses: []string{"redacted workload ids", "phase", "severity", "next action", "risk metadata", "redacted approval ids", "hashed approval route metadata"},
 			Limitations: []string{"requires explicit webhooks.enabled and webhooks.url", "does not send prompt content, local paths, project names, branch names, or webhook URL in audit logs"},
+		},
+		{
+			ID:          "notification.desktop_adapter",
+			Name:        "Desktop Notification Adapter Payload",
+			Category:    "notification",
+			Protocol:    "HTTP JSON + CLI JSON",
+			Direction:   "local-adapter",
+			Status:      "implemented",
+			Maturity:    "local-preview",
+			Enabled:     true,
+			Privacy:     "read-only redacted payload for local desktop clients; no outbound delivery and no prompt content",
+			Endpoints:   []string{"GET /api/notifications/desktop"},
+			Commands:    []string{"agent-ledger notify desktop --severity warning --approval-due-within 24h"},
+			DataClasses: []string{"redacted workload state", "severity", "phase", "pending approval counts", "approval route counts"},
+			Limitations: []string{"adapter payload only; OS-specific toast rendering is delegated to a local desktop client"},
 		},
 		{
 			ID:          "governance.pricing",

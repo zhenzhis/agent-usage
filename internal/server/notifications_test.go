@@ -128,6 +128,58 @@ func TestWebhookNotificationEndpointDryRunIncludesApprovals(t *testing.T) {
 	}
 }
 
+func TestDesktopNotificationEndpointIsReadOnlyAndRedacted(t *testing.T) {
+	db := testServerDB(t)
+	now := time.Now().UTC()
+	createStaleWebhookWorkload(t, db, now)
+	if _, err := db.CreateApprovalRequest(storage.ApprovalRequest{
+		RequestID:        "apr-private",
+		WorkloadID:       "wl-private-approval",
+		RunID:            "run-private-approval",
+		Source:           "codex",
+		Model:            "gpt-5.5",
+		Project:          "private-project",
+		Action:           "model.call",
+		Target:           "C:/private/workspace",
+		ActorRole:        "operator",
+		Status:           "pending",
+		ApproverHint:     "desk-lead",
+		EscalationTarget: "research-head",
+		DueAt:            now.Add(30 * time.Minute).Format(time.RFC3339Nano),
+		Reason:           "private approval reason",
+		RequestPayload:   `{"prompt":"do-not-send"}`,
+	}); err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+	srv := New(db, "", Options{RBAC: config.RBACConfig{ReadOnly: true}, Webhooks: config.WebhookConfig{Enabled: false, MaxEvents: 10}})
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/notifications/desktop?from="+now.AddDate(0, 0, -1).Format("2006-01-02")+"&to="+now.Format("2006-01-02")+"&severity=warning&max_age=10m&approval_due_within=1h", nil)
+	rr := httptest.NewRecorder()
+	srv.handleDesktopNotificationPayload(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("desktop notify status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var payload notifications.DesktopPayload
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode desktop payload: %v", err)
+	}
+	if payload.Kind != "desktop_notification_summary" || payload.Summary.PendingApprovals != 1 || payload.Summary.ApprovalRoutes != 1 || len(payload.Notifications) == 0 {
+		t.Fatalf("unexpected desktop payload: %+v", payload)
+	}
+	raw, _ := json.Marshal(payload)
+	for _, forbidden := range []string{"private-project", "zhenzhis/private-project", "feature/private", "C:/private/workspace", "private approval reason", "do-not-send", "desk-lead", "research-head"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("desktop notification leaked %q: %s", forbidden, string(raw))
+		}
+	}
+	audit, err := db.GetAuditLog(10)
+	if err != nil {
+		t.Fatalf("audit: %v", err)
+	}
+	if len(audit) != 0 {
+		t.Fatalf("read-only desktop payload should not append audit log: %+v", audit)
+	}
+}
+
 func createStaleWebhookWorkload(t *testing.T, db *storage.DB, now time.Time) string {
 	t.Helper()
 	workloadID, err := db.CreateWorkload("private webhook goal", "codex", "private-project", "zhenzhis/private-project", "feature/private", "", "research", 0)

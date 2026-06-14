@@ -132,6 +132,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"/api/anomalies":                      derivedReadOperation("diagnostics", "Get anomalies", "Read robust-statistics anomaly events. In control-plane mode the endpoint may update derived local anomaly rows; observer mode stays read-only.", "InsightEventRows", append(scopedTimeParams(), intQueryParam("limit", "Maximum anomaly rows."))),
 			"/api/watchdog/events":                derivedReadOperation("diagnostics", "Get watchdog events", "Read local runaway, call-density, cache-miss-risk, and non-working-hour watchdog events.", "InsightEventRows", append(scopedTimeParams(), intQueryParam("limit", "Maximum watchdog rows."))),
 			"/api/notifications/webhook":          localQueryWriteOperation("governance", "Send redacted webhook notification", "Send or dry-run a redacted local notification summary. Webhooks are disabled unless explicitly configured.", "WebhookNotificationResult", append(scopedTimeParams(), queryParam("dry_run", "true or 1 to return the redacted payload without sending."), queryParam("max_age", "Workload feed stale threshold."), queryParam("approval_due_within", "Approval route deadline window."))),
+			"/api/notifications/desktop":          filteredReadOperation("governance", "Get desktop notification payload", "Read a redacted local desktop notification adapter payload without sending outbound traffic or writing audit metadata.", "DesktopNotificationPayload", append(scopedTimeParams(), queryParam("max_age", "Workload feed stale threshold."), queryParam("approval_due_within", "Approval route deadline window."), intQueryParam("limit", "Maximum notification rows."))),
 			"/api/audit-log":                      filteredReadOperation("diagnostics", "List audit log", "Read local audit rows for scans, exports, pricing sync, policy decisions, and control-plane operations.", "AuditLogRows", append([]map[string]interface{}{queryParam("from", "YYYY-MM-DD lower bound."), queryParam("to", "YYYY-MM-DD upper bound."), queryParam("actor", "Actor filter."), queryParam("role", "Role filter."), queryParam("action", "Action filter."), queryParam("target", "Target filter."), intQueryParam("limit", "Maximum audit rows.")}, privacyParams()...)),
 			"/api/reconciliation/status":          filteredReadOperation("finops", "List reconciliation imports", "Read provider invoice/import reconciliation rows.", "ReconciliationRows", []map[string]interface{}{intQueryParam("limit", "Maximum reconciliation imports.")}),
 			"/api/reconciliation/import":          flexibleWriteOperation("finops", "Import provider reconciliation", "Import provider CSV/JSON or manual balance information for local reconciliation.", "ReconciliationImportRequest", "ReconciliationImportResponse", []map[string]interface{}{queryParam("provider", "Provider name."), queryParam("format", "csv, json, or provider-specific parser."), queryParam("from", "Optional local cost window lower bound."), queryParam("to", "Optional local cost window upper bound.")}, []string{"application/json", "text/csv", "text/plain"}),
@@ -644,6 +645,8 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"WebhookNotificationApprovalRoutes": webhookNotificationApprovalRoutesSchema(),
 				"WebhookNotificationApprovalRoute":  webhookNotificationApprovalRouteSchema(),
 				"WebhookNotificationResult":         webhookNotificationResultSchema(),
+				"DesktopNotificationPayload":        desktopNotificationPayloadSchema(),
+				"DesktopNotificationItem":           desktopNotificationItemSchema(),
 				"AuditEvent":                        auditEventSchema(),
 				"AuditLogRows":                      auditLogRowsSchema(),
 				"ReconciliationImport":              reconciliationImportSchema(),
@@ -989,6 +992,7 @@ func OpenAPIContractPaths() []string {
 		"/api/anomalies",
 		"/api/watchdog/events",
 		"/api/notifications/webhook",
+		"/api/notifications/desktop",
 		"/api/audit-log",
 		"/api/reconciliation/status",
 		"/api/reconciliation/import",
@@ -2707,6 +2711,45 @@ func webhookNotificationResultSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"result":  refSchema("WebhookDeliveryResult"),
 			"payload": refSchema("WebhookNotificationPayload"),
+		},
+	}
+}
+
+func desktopNotificationPayloadSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Privacy-safe local desktop notification adapter payload. It is read-only and does not send outbound traffic.",
+		"additionalProperties": true,
+		"required":             []string{"product", "kind", "generated_at", "title", "body", "severity", "summary", "notifications"},
+		"properties": map[string]interface{}{
+			"product":       stringSchema(),
+			"kind":          stringSchema(),
+			"generated_at":  stringSchema(),
+			"title":         stringSchema(),
+			"body":          stringSchema(),
+			"severity":      stringSchema(),
+			"summary":       refSchema("WebhookNotificationSummary"),
+			"notifications": refArraySchema("DesktopNotificationItem"),
+		},
+	}
+}
+
+func desktopNotificationItemSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One redacted local desktop notification item.",
+		"additionalProperties": true,
+		"required":             []string{"title", "body", "severity"},
+		"properties": map[string]interface{}{
+			"title":       stringSchema(),
+			"body":        stringSchema(),
+			"severity":    stringSchema(),
+			"phase":       stringSchema(),
+			"source":      stringSchema(),
+			"model":       stringSchema(),
+			"action":      stringSchema(),
+			"timestamp":   stringSchema(),
+			"next_action": stringSchema(),
 		},
 	}
 }

@@ -436,6 +436,7 @@ func TestControlPlaneEndpointsRejectNonGET(t *testing.T) {
 		{name: "adapter-spec", url: "http://127.0.0.1/api/integrations/adapter-spec", handler: srv.handleAdapterSpec},
 		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
 		{name: "event-examples", url: "http://127.0.0.1/api/event-examples?type=model.call", handler: srv.handleCanonicalEventExamples},
+		{name: "desktop-notification", url: "http://127.0.0.1/api/notifications/desktop", handler: srv.handleDesktopNotificationPayload},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -154,6 +154,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/anomalies", s.handleAnomalies)
 	mux.HandleFunc("/api/watchdog/events", s.handleWatchdogEvents)
 	mux.HandleFunc("/api/notifications/webhook", s.handleWebhookNotification)
+	mux.HandleFunc("/api/notifications/desktop", s.handleDesktopNotificationPayload)
 	mux.HandleFunc("/api/audit-log", s.handleAuditLog)
 	mux.HandleFunc("/api/reconciliation/status", s.handleReconciliationStatus)
 	mux.HandleFunc("/api/reconciliation/import", s.handleReconciliationImport)

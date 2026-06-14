@@ -77,6 +77,7 @@ CLI：
 ./agent-ledger readiness --format markdown
 ./agent-ledger admission check --surface http --method POST --path /api/events --role operator
 ./agent-ledger notify webhook --dry-run --severity warning --approval-due-within 24h
+./agent-ledger notify desktop --severity warning --approval-due-within 24h
 ./agent-ledger otel convert --file spans.json
 ./agent-ledger otel ingest --file spans.json
 ./agent-ledger a2a convert --file task.json
@@ -226,6 +227,8 @@ gateway:
 
 Webhook 通知默认关闭。显式开启后，`POST /api/notifications/webhook` 与 `agent-ledger notify webhook` 只发送有上限的 workload-event、pending approval 与 approval route 脱敏摘要；goal、project、repo、branch、team、approver route、escalation target、approval target、approval reason、event id、workload id、run id、approval request id 都会被隐藏或 hash。可用 `--dry-run` 或 `dry_run=1` 检查即将发送的 payload，不进行外发。
 
+本地桌面通知适配器可通过 `GET /api/notifications/desktop` 或 `agent-ledger notify desktop` 读取同一份脱敏事件 schema。该接口是只读的：它返回 title、body、severity、workload state、pending approval 与 approval route 条目，供托盘程序或 OS 通知桥接器渲染，但不外发请求，也不写审计元数据。
+
 Gateway 请求可以通过 query 参数或 request `metadata` 附加账本上下文：`agent_ledger.project`、`agent_ledger.goal`、`agent_ledger.workload_id`、`agent_ledger.agent_run_id`、`agent_ledger.session_id`、`agent_ledger.git_branch`。这样 wrapper、MCP 工具和异步 agent 可以把实时模型调用绑定到已有 workload/run，而无需暴露 prompt 内容。
 
 ## 价格与成本
@@ -324,6 +327,7 @@ collectors / CLI wrapper / MCP tools -> canonical events -> workload ledger
 | `GET /api/workload-events` | 面向 monitor、router、通知适配器的本地 workload 状态事件 feed；返回 `cursor`、`generated_at` 与 `ETag`，支持增量轮询 |
 | `GET /api/workload-events/stream` | 面向本地轮询 monitor 与 router subscription 的 SSE workload 状态流；SSE `id` 使用 feed cursor |
 | `POST /api/notifications/webhook?approval_due_within=24h` | 显式发送脱敏 workload-event、approval 与 approval-route 摘要到配置的 webhook |
+| `GET /api/notifications/desktop?approval_due_within=24h` | 读取脱敏本地桌面通知适配器 payload，不做外发 |
 | `GET /api/integrations` | 隐私安全的集成能力目录 |
 | `GET /api/integrations/adapter-spec` | 面向未来 Agent CLI、框架、gateway、OTel、A2A 与 provider 集成的机器可读 adapter 契约 |
 | `POST /api/integrations/conformance` | 校验 canonical、provider、provider-stream、OpenTelemetry GenAI 或 A2A adapter fixture，但不写入 SQLite；`strict=true` 会把 provenance warning 视为失败 |
@@ -545,7 +549,7 @@ Release 使用 GoReleaser 构建多平台归档，使用 GitHub Actions 发布 G
 
 ## Roadmap
 
-已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、workload/run 写操作的 retry-safe control operation idempotency、面向异步执行声明的短期 workload lease、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、隐私安全 discovery manifest、contract bundle index、OpenAPI control-plane contract、runtime status probe、隐私安全 config status probe、control-plane readiness probe、operation admission dry-run、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、带 strict `resourceSpans` fixture、collector exporter 示例与逐请求背压 response/audit metrics 的可选本地 OTLP HTTP JSON/protobuf traces receiver、可选 loopback-only OTLP/gRPC TraceService receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes、审批路由/升级元数据、审批路由摘要与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness/admission 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
+已落地基础：canonical workload schema、metadata-only canonical event ingest、机器可读 adapter contract、workload 依赖/lineage links、workload/run 写操作的 retry-safe control operation idempotency、面向异步执行声明的短期 workload lease、异步 run start/heartbeat/liveness 账本、workload terminal-state 派生快照与本地 workload event feed/SSE stream、显式 workload evaluation 信号、默认关闭的 workload 与 approval 脱敏 webhook 通知、只读本地桌面通知适配器 payload、隐私安全 discovery manifest、contract bundle index、OpenAPI control-plane contract、runtime status probe、隐私安全 config status probe、control-plane readiness probe、operation admission dry-run、canonical-to-usage projection 与 repair、OpenTelemetry GenAI JSON span mapping、带 strict `resourceSpans` fixture、collector exporter 示例与逐请求背压 response/audit metrics 的可选本地 OTLP HTTP JSON/protobuf traces receiver、可选 loopback-only OTLP/gRPC TraceService receiver、A2A task telemetry mapping、provider usage envelope mapping、可选本地 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE 与 Anthropic Messages JSON/SSE gateway、provider 账单导入对账、model router simulation、preflight cost estimates、session cost replay、repo cost badge、integration capability catalog、signed offline bundle export/import、旧 session 自动 backfill、workload API、workload CSV 导出、本地策略审批请求、quorum-based approval votes、审批路由/升级元数据、审批路由摘要与执行证据、CLI workload/event/policy/router/replay/badge/preflight/projection/config/readiness/admission 命令、CLI run wrapper 和本地 MCP stdio tools/resources/resource-subscriptions/prompts。
 
 后续路线：provider-native gateway adapters、Postgres 团队模式、OIDC/SSO、host client 支持后接入原生 MCP subscription transport、外部审批通知适配器。
 

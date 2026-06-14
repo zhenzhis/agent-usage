@@ -285,6 +285,7 @@ func isReadOnlyHTTPPath(path string) bool {
 		"/api/cache/doctor",
 		"/api/anomalies",
 		"/api/watchdog/events",
+		"/api/notifications/desktop",
 		"/api/audit-log",
 		"/api/reconciliation/status",
 		"/api/router/simulate",
@@ -431,6 +432,9 @@ func CLICommandAccessFor(command string, input AdmissionInput) OperationAccess {
 		}
 		return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "policy read commands are available in read-only mode", RequiredRole: "viewer", Reason: "policy command is read-only"}
 	case "notify":
+		if len(parts) > 1 && parts[1] == "desktop" {
+			return OperationAccess{Known: true, WriteMode: "none", AvailableInReadOnly: true, ReadOnlyBehavior: "desktop notification payload preview is available in read-only mode", RequiredRole: "viewer", Reason: "notify desktop only renders a redacted local adapter payload"}
+		}
 		return OperationAccess{Known: true, WritesLocalState: !input.ReadOnly, WriteMode: "conditional", AvailableInReadOnly: input.DryRun, ReadOnlyBehavior: "only dry-run notification previews are allowed in read-only mode", RequiredRole: "operator", Reason: "notify can send outbound traffic and write audit metadata"}
 	default:
 		return unknownAccess("unknown CLI command")

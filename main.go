@@ -572,6 +572,9 @@ func cliCommandRequiresWrite(args []string) bool {
 		if len(args) > 2 {
 			notifyArgs = args[2:]
 		}
+		if sub == "desktop" {
+			return false
+		}
 		return !(sub == "webhook" && cliBool(notifyArgs, "--dry-run"))
 	case "run":
 		return true
@@ -600,66 +603,86 @@ func cliCommandRequiresWrite(args []string) bool {
 
 func runNotifyCLI(args []string, cfg *config.Config, db *storage.DB) error {
 	if len(args) == 0 {
-		return fmt.Errorf("notify command required: webhook")
+		return fmt.Errorf("notify command required: webhook or desktop")
 	}
 	switch args[0] {
 	case "webhook":
-		now := time.Now()
-		from, to, err := cliDateRange(args[1:], now)
-		if err != nil {
-			return err
-		}
-		maxAge := 10 * time.Minute
-		if raw := cliValue(args[1:], "--max-age"); raw != "" {
-			parsed, err := time.ParseDuration(raw)
-			if err != nil {
-				return err
-			}
-			if parsed <= 0 {
-				return fmt.Errorf("--max-age must be positive")
-			}
-			maxAge = parsed
-		}
-		limit := cliInt(args[1:], "--limit", cfg.Webhooks.MaxEvents)
-		feed, err := db.GetWorkloadEventFeed(from, to,
-			cliValue(args[1:], "--source"),
-			cliValue(args[1:], "--model"),
-			cliValue(args[1:], "--project"),
-			cliValue(args[1:], "--phase"),
-			cliValue(args[1:], "--severity"),
-			limit,
-			maxAge)
-		if err != nil {
-			return err
-		}
-		approvals, err := db.ListApprovalRequests("pending", limit)
-		if err != nil {
-			return err
-		}
-		approvalDueWithin := 24 * time.Hour
-		if raw := firstNonEmptyCLI(cliValue(args[1:], "--approval-due-within"), cliValue(args[1:], "--due-within")); raw != "" {
-			parsed, err := time.ParseDuration(raw)
-			if err != nil || parsed <= 0 || parsed > 30*24*time.Hour {
-				return fmt.Errorf("invalid --approval-due-within %q: expected duration from 1ns to 720h", raw)
-			}
-			approvalDueWithin = parsed
-		}
-		routes, err := db.GetApprovalRouteSummary(limit, approvalDueWithin)
+		ctx, err := notificationCLIData(args[1:], cfg, db)
 		if err != nil {
 			return err
 		}
 		dryRun := cliBool(args[1:], "--dry-run")
 		if dryRun {
-			return json.NewEncoder(os.Stdout).Encode(notifications.BuildWebhookPayloadWithApprovalRoutes(feed, approvals, routes, cfg.Webhooks.MaxEvents))
+			return json.NewEncoder(os.Stdout).Encode(notifications.BuildWebhookPayloadWithApprovalRoutes(ctx.feed, ctx.approvals, ctx.routes, cfg.Webhooks.MaxEvents))
 		}
-		result, err := notifications.SendWebhookWithApprovalRoutes(context.Background(), cfg.Webhooks, feed, approvals, routes, false)
+		result, err := notifications.SendWebhookWithApprovalRoutes(context.Background(), cfg.Webhooks, ctx.feed, ctx.approvals, ctx.routes, false)
 		if err != nil {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(result)
+	case "desktop":
+		ctx, err := notificationCLIData(args[1:], cfg, db)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(notifications.BuildDesktopPayloadWithApprovalRoutes(ctx.feed, ctx.approvals, ctx.routes, cfg.Webhooks.MaxEvents))
 	default:
 		return fmt.Errorf("unknown notify command %q", args[0])
 	}
+}
+
+type notificationCLIContext struct {
+	feed      *storage.WorkloadEventFeed
+	approvals []storage.ApprovalRequest
+	routes    *storage.ApprovalRouteSummary
+}
+
+func notificationCLIData(args []string, cfg *config.Config, db *storage.DB) (*notificationCLIContext, error) {
+	now := time.Now()
+	from, to, err := cliDateRange(args, now)
+	if err != nil {
+		return nil, err
+	}
+	maxAge := 10 * time.Minute
+	if raw := cliValue(args, "--max-age"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, err
+		}
+		if parsed <= 0 {
+			return nil, fmt.Errorf("--max-age must be positive")
+		}
+		maxAge = parsed
+	}
+	limit := cliInt(args, "--limit", cfg.Webhooks.MaxEvents)
+	feed, err := db.GetWorkloadEventFeed(from, to,
+		cliValue(args, "--source"),
+		cliValue(args, "--model"),
+		cliValue(args, "--project"),
+		cliValue(args, "--phase"),
+		cliValue(args, "--severity"),
+		limit,
+		maxAge)
+	if err != nil {
+		return nil, err
+	}
+	approvals, err := db.ListApprovalRequests("pending", limit)
+	if err != nil {
+		return nil, err
+	}
+	approvalDueWithin := 24 * time.Hour
+	if raw := firstNonEmptyCLI(cliValue(args, "--approval-due-within"), cliValue(args, "--due-within")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 || parsed > 30*24*time.Hour {
+			return nil, fmt.Errorf("invalid --approval-due-within %q: expected duration from 1ns to 720h", raw)
+		}
+		approvalDueWithin = parsed
+	}
+	routes, err := db.GetApprovalRouteSummary(limit, approvalDueWithin)
+	if err != nil {
+		return nil, err
+	}
+	return &notificationCLIContext{feed: feed, approvals: approvals, routes: routes}, nil
 }
 
 func runChargebackCLI(args []string, cfg *config.Config, db *storage.DB) error {

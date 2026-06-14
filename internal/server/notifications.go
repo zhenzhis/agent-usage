@@ -82,3 +82,63 @@ func (s *Server) handleWebhookNotification(w http.ResponseWriter, r *http.Reques
 	}
 	writeJSON(w, result)
 }
+
+func (s *Server) handleDesktopNotificationPayload(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "viewer") {
+		return
+	}
+	from, to, _, err := s.parseTimeRange(r)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	maxAge := 10 * time.Minute
+	if raw := r.URL.Query().Get("max_age"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			badRequest(w, fmt.Errorf("invalid max_age: %w", err))
+			return
+		}
+		if parsed <= 0 {
+			badRequest(w, fmt.Errorf("invalid max_age: must be positive"))
+			return
+		}
+		maxAge = parsed
+	}
+	limit := parseLimit(r, s.options.Webhooks.MaxEvents)
+	feed, err := s.db.GetWorkloadEventFeed(from, to,
+		r.URL.Query().Get("source"),
+		r.URL.Query().Get("model"),
+		r.URL.Query().Get("project"),
+		r.URL.Query().Get("phase"),
+		r.URL.Query().Get("severity"),
+		limit,
+		maxAge)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	approvals, err := s.db.ListApprovalRequests("pending", limit)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	approvalDueWithin := 24 * time.Hour
+	if raw := firstNonEmpty(r.URL.Query().Get("approval_due_within"), r.URL.Query().Get("due_within")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 || parsed > 30*24*time.Hour {
+			badRequest(w, fmt.Errorf("invalid approval_due_within: expected duration from 1ns to 720h"))
+			return
+		}
+		approvalDueWithin = parsed
+	}
+	routes, err := s.db.GetApprovalRouteSummary(limit, approvalDueWithin)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, notifications.BuildDesktopPayloadWithApprovalRoutes(feed, approvals, routes, s.options.Webhooks.MaxEvents))
+}

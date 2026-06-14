@@ -48,6 +48,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapability(t, catalog, "finops.provider_reconciliation", "implemented", true)
 	assertCapability(t, catalog, "governance.policy_evaluator", "implemented", true)
 	assertCapability(t, catalog, "notification.redacted_webhook", "implemented", false)
+	assertCapability(t, catalog, "notification.desktop_adapter", "implemented", true)
 	assertCapabilityCommand(t, catalog, "protocol.adapter_conformance", "agent-ledger adapter spec")
 	assertCapabilityCommand(t, catalog, "protocol.discovery_manifest", "agent-ledger discovery")
 	assertCapabilityCommand(t, catalog, "protocol.contract_bundle", "agent-ledger contracts")
@@ -74,6 +75,7 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.renew_workload_lease")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.release_workload_lease")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.workload_leases")
+	assertCapabilityCommand(t, catalog, "notification.desktop_adapter", "agent-ledger notify desktop --severity warning --approval-due-within 24h")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://contracts/bundle")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://contracts/verification")
 	assertCapabilityResource(t, catalog, "protocol.mcp_stdio", "agent-ledger://discovery/manifest")
@@ -194,6 +196,7 @@ func TestRegistryAnnotatesReadOnlyRuntimeCapabilities(t *testing.T) {
 	assertRuntimeCapability(t, catalog, "protocol.admission_check", true, false, true)
 	assertRuntimeCapability(t, catalog, "protocol.mcp_stdio", true, true, true)
 	assertRuntimeCapability(t, catalog, "protocol.offline_bundle", true, true, true)
+	assertRuntimeCapability(t, catalog, "notification.desktop_adapter", true, false, true)
 	assertRuntimeCapability(t, catalog, "governance.policy_evaluator", true, true, true)
 	assertRuntimeCapability(t, catalog, "governance.pricing", true, true, true)
 	assertRuntimeCapability(t, catalog, "gateway.provider_live_proxy", false, true, false)
@@ -1285,6 +1288,7 @@ func TestOpenAPICoreControlPlaneSchemasExposeContractFields(t *testing.T) {
 	expectPathResponseRef("/api/events/validate", "post", "#/components/schemas/ValidationResponse")
 	expectPathResponseRef("/api/events", "post", "#/components/schemas/IngestResponse")
 	expectPathResponseRef("/api/notifications/webhook", "post", "#/components/schemas/WebhookNotificationResult")
+	expectPathResponseRef("/api/notifications/desktop", "get", "#/components/schemas/DesktopNotificationPayload")
 
 	expectFields("CapabilityCatalog", "product", "contract", "version", "privacy_default", "summary", "capabilities")
 	expectRef("CapabilityCatalog", "summary", "#/components/schemas/CapabilitySummary")
@@ -1341,6 +1345,10 @@ func TestOpenAPICoreControlPlaneSchemasExposeContractFields(t *testing.T) {
 	expectFields("WebhookNotificationApprovalRoutes", "generated_at", "due_within", "summary", "routes")
 	expectArrayRef("WebhookNotificationApprovalRoutes", "routes", "#/components/schemas/WebhookNotificationApprovalRoute")
 	expectFields("WebhookNotificationApprovalRoute", "route_key_hash", "approver_hash", "escalation_target_hash", "pending", "overdue", "due_soon", "approval_votes", "rejection_votes", "max_required_approvals", "due_next", "sources", "models", "projects", "actions")
+	expectFields("DesktopNotificationPayload", "product", "kind", "generated_at", "title", "body", "severity", "summary", "notifications")
+	expectRef("DesktopNotificationPayload", "summary", "#/components/schemas/WebhookNotificationSummary")
+	expectArrayRef("DesktopNotificationPayload", "notifications", "#/components/schemas/DesktopNotificationItem")
+	expectFields("DesktopNotificationItem", "title", "body", "severity", "phase", "source", "model", "action", "timestamp", "next_action")
 }
 
 func TestOpenAPIEcosystemIngestSchemasExposeTelemetryFields(t *testing.T) {

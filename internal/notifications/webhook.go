@@ -97,6 +97,33 @@ type DeliveryResult struct {
 	Message            string `json:"message"`
 }
 
+// DesktopPayload is a privacy-safe local notification adapter payload. It is
+// intended for tray apps, OS notification bridges, or desktop clients that
+// render local alerts without needing raw workload metadata.
+type DesktopPayload struct {
+	Product       string                `json:"product"`
+	Kind          string                `json:"kind"`
+	GeneratedAt   string                `json:"generated_at"`
+	Title         string                `json:"title"`
+	Body          string                `json:"body"`
+	Severity      string                `json:"severity"`
+	Summary       WebhookSummary        `json:"summary"`
+	Notifications []DesktopNotification `json:"notifications"`
+}
+
+// DesktopNotification is one bounded local notification item.
+type DesktopNotification struct {
+	Title      string `json:"title"`
+	Body       string `json:"body"`
+	Severity   string `json:"severity"`
+	Phase      string `json:"phase,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Model      string `json:"model,omitempty"`
+	Action     string `json:"action,omitempty"`
+	Timestamp  string `json:"timestamp,omitempty"`
+	NextAction string `json:"next_action,omitempty"`
+}
+
 // BuildWebhookPayload creates a privacy-safe notification payload from a workload event feed.
 func BuildWebhookPayload(feed *storage.WorkloadEventFeed, maxEvents int) WebhookPayload {
 	return BuildWebhookPayloadWithApprovals(feed, nil, maxEvents)
@@ -137,6 +164,56 @@ func BuildWebhookPayloadWithApprovalRoutes(feed *storage.WorkloadEventFeed, appr
 		Events:      redacted,
 		Approvals:   redactedApprovals,
 		Routes:      redactedRoutes,
+	}
+}
+
+// BuildDesktopPayloadWithApprovalRoutes adapts the same redacted workload,
+// approval, and route summaries into a compact local desktop notification feed.
+func BuildDesktopPayloadWithApprovalRoutes(feed *storage.WorkloadEventFeed, approvals []storage.ApprovalRequest, routes *storage.ApprovalRouteSummary, maxEvents int) DesktopPayload {
+	payload := BuildWebhookPayloadWithApprovalRoutes(feed, approvals, routes, maxEvents)
+	notifications := make([]DesktopNotification, 0, len(payload.Events)+len(payload.Approvals))
+	for _, event := range payload.Events {
+		notifications = append(notifications, DesktopNotification{
+			Title:      "Agent Ledger " + firstNonEmpty(event.Severity, "info") + ": " + firstNonEmpty(event.Phase, "workload"),
+			Body:       desktopBody(event.Message, event.NextAction),
+			Severity:   firstNonEmpty(event.Severity, "info"),
+			Phase:      event.Phase,
+			Source:     event.Source,
+			Timestamp:  event.Timestamp,
+			NextAction: event.NextAction,
+		})
+	}
+	for _, approval := range payload.Approvals {
+		notifications = append(notifications, DesktopNotification{
+			Title:     "Agent Ledger approval pending",
+			Body:      fmt.Sprintf("%s requires %d approval(s)", firstNonEmpty(approval.Action, "operation"), maxInt(approval.RequiredApprovals, 1)),
+			Severity:  "warning",
+			Source:    approval.Source,
+			Model:     approval.Model,
+			Action:    approval.Action,
+			Timestamp: approval.CreatedAt,
+		})
+	}
+	if payload.Routes != nil {
+		for _, route := range payload.Routes.Routes {
+			notifications = append(notifications, DesktopNotification{
+				Title:    "Agent Ledger approval route",
+				Body:     fmt.Sprintf("%d pending, %d due soon, %d overdue", route.Pending, route.DueSoon, route.Overdue),
+				Severity: routeSeverity(route.Overdue, route.DueSoon),
+			})
+		}
+	}
+	total := payload.Summary.Total + payload.Summary.ApprovalRoutes
+	severity := highestNotificationSeverity(notifications)
+	return DesktopPayload{
+		Product:       "Agent Ledger",
+		Kind:          "desktop_notification_summary",
+		GeneratedAt:   payload.GeneratedAt,
+		Title:         fmt.Sprintf("Agent Ledger: %d local alert(s)", total),
+		Body:          fmt.Sprintf("%d workload event(s), %d pending approval(s), %d approval route(s)", len(payload.Events), payload.Summary.PendingApprovals, payload.Summary.ApprovalRoutes),
+		Severity:      severity,
+		Summary:       payload.Summary,
+		Notifications: notifications,
 	}
 }
 
@@ -327,4 +404,51 @@ func shortHash(value string) string {
 	}
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+func desktopBody(message, nextAction string) string {
+	message = firstNonEmpty(message, "workload state changed")
+	if nextAction == "" {
+		return message
+	}
+	return message + "; next: " + nextAction
+}
+
+func highestNotificationSeverity(notifications []DesktopNotification) string {
+	bySeverity := map[string]int{}
+	for _, notification := range notifications {
+		bySeverity[strings.ToLower(strings.TrimSpace(notification.Severity))]++
+	}
+	for _, severity := range []string{"critical", "warning", "notice", "success", "info"} {
+		if bySeverity[severity] > 0 {
+			return severity
+		}
+	}
+	return "info"
+}
+
+func routeSeverity(overdue, dueSoon int) string {
+	if overdue > 0 {
+		return "critical"
+	}
+	if dueSoon > 0 {
+		return "warning"
+	}
+	return "notice"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

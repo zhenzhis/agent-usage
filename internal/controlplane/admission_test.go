@@ -159,6 +159,7 @@ func TestAdmissionClassifiesReadOnlyCLISubcommands(t *testing.T) {
 		"agent-ledger router simulate --to-model gpt-5-mini",
 		"agent-ledger pricing",
 		"agent-ledger projection quality",
+		"agent-ledger notify desktop --severity warning",
 	} {
 		decision := EvaluateAdmission(AdmissionInput{Surface: "cli", Command: command, Role: "viewer", RBACEnabled: true, ReadOnly: true}, fixedAdmissionTime())
 		if !decision.Allowed || decision.WritesLocalState {

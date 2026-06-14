@@ -116,6 +116,82 @@ func TestWebhookPayloadIncludesRedactedApprovalRoutes(t *testing.T) {
 	}
 }
 
+func TestDesktopPayloadUsesRedactedNotificationSchema(t *testing.T) {
+	approvals := []storage.ApprovalRequest{{
+		RequestID:         "apr-private",
+		PolicyDecisionID:  "pd-private",
+		WorkloadID:        "wl-private-approval",
+		RunID:             "run-private-approval",
+		Source:            "codex",
+		Model:             "gpt-5.5",
+		Project:           "private-project",
+		Action:            "model.call",
+		Target:            "C:/private/path",
+		ActorRole:         "operator",
+		Status:            "pending",
+		RequiredApprovals: 2,
+		Reason:            "private approval reason",
+		RequestPayload:    `{"secret":"do-not-send"}`,
+		CreatedAt:         "2026-06-07T12:00:00Z",
+	}}
+	routes := &storage.ApprovalRouteSummary{
+		GeneratedAt: "2026-06-07T12:00:00Z",
+		DueWithin:   "1h0m0s",
+		Summary:     storage.ApprovalRouteSummaryStats{Routes: 1, Pending: 2, DueSoon: 1},
+		Routes: []storage.ApprovalRouteRow{{
+			RouteKey:         "desk-lead|research-head",
+			Approver:         "desk-lead",
+			EscalationTarget: "research-head",
+			Pending:          2,
+			DueSoon:          1,
+			Projects:         []string{"private-project"},
+			Actions:          []string{"model.call"},
+		}},
+	}
+	payload := BuildDesktopPayloadWithApprovalRoutes(sampleFeed(), approvals, routes, 10)
+	if payload.Kind != "desktop_notification_summary" || payload.Severity != "warning" || payload.Summary.PendingApprovals != 1 || payload.Summary.ApprovalRoutes != 1 || len(payload.Notifications) != 3 {
+		t.Fatalf("unexpected desktop payload: %+v", payload)
+	}
+	raw, _ := json.Marshal(payload)
+	for _, forbidden := range []string{"private-project", "zhenzhis/private-project", "feature/private", "private approval reason", "C:/private/path", "do-not-send", "desk-lead", "research-head", "wl-private"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("desktop payload leaked %q: %s", forbidden, string(raw))
+		}
+	}
+}
+
+func TestDesktopPayloadSeverityIncludesApprovalsAndRoutes(t *testing.T) {
+	infoFeed := &storage.WorkloadEventFeed{Rows: []storage.WorkloadFeedEvent{{
+		EventID:    "evt-info",
+		WorkloadID: "wl-info",
+		Source:     "codex",
+		Phase:      "running",
+		Severity:   "info",
+		Message:    "workload has active agent runs",
+		Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+	}}}
+	approvalPayload := BuildDesktopPayloadWithApprovalRoutes(infoFeed, []storage.ApprovalRequest{{
+		RequestID:         "apr-warning",
+		Source:            "codex",
+		Action:            "model.call",
+		Status:            "pending",
+		RequiredApprovals: 1,
+		CreatedAt:         time.Now().UTC().Format(time.RFC3339Nano),
+	}}, nil, 10)
+	if approvalPayload.Severity != "warning" {
+		t.Fatalf("pending approval should raise desktop severity to warning, got %q", approvalPayload.Severity)
+	}
+
+	routePayload := BuildDesktopPayloadWithApprovalRoutes(infoFeed, nil, &storage.ApprovalRouteSummary{Routes: []storage.ApprovalRouteRow{{
+		RouteKey: "route-private",
+		Pending:  1,
+		Overdue:  1,
+	}}}, 10)
+	if routePayload.Severity != "critical" {
+		t.Fatalf("overdue approval route should raise desktop severity to critical, got %q", routePayload.Severity)
+	}
+}
+
 func TestWebhookSendsOnlyRedactedSummary(t *testing.T) {
 	var payload WebhookPayload
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
