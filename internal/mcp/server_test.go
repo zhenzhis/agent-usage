@@ -177,7 +177,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("resource subscriptions should be advertised: %#v", resourceCaps)
 	}
 	resources := out[1]["result"].(map[string]interface{})["resources"].([]interface{})
-	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://config/status") || !hasResource(resources, "agent-ledger://readiness") || !hasResource(resources, "agent-ledger://admission/check") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/queue") || !hasResource(resources, "agent-ledger://workloads/leases") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://agent-runs/liveness") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
+	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://config/status") || !hasResource(resources, "agent-ledger://readiness") || !hasResource(resources, "agent-ledger://admission/check") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/queue") || !hasResource(resources, "agent-ledger://workloads/leases") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://workload/state") || !hasResource(resources, "agent-ledger://workload/timeline") || !hasResource(resources, "agent-ledger://agent-runs/liveness") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
 		t.Fatalf("expected core resources, got %#v", resources)
 	}
 	resourceText := resourceTextPayload(t, out[2])
@@ -385,6 +385,65 @@ func TestMCPRunLivenessResourceIsPrivacySafeAndCursorStable(t *testing.T) {
 	}
 	if firstCursor != secondCursor {
 		t.Fatalf("liveness cursor changed without semantic change: first=%s second=%s", firstCursor, secondCursor)
+	}
+}
+
+func TestMCPWorkloadStateAndTimelineResourcesArePrivacySafe(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+	workloadID, err := db.CreateWorkload("private state goal", "codex", "private-project", "private/repo", "private-branch", "", "private-team", 100)
+	if err != nil {
+		t.Fatalf("create workload: %v", err)
+	}
+	runID, err := db.StartAgentRun(workloadID, "codex", "private-agent", "codex --token secret", "C:/Users/zhang/private")
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := db.RecordAgentRunHeartbeat("evt-state-resource", runID, "working", "testing", "private status message", 0.5, nil, time.Now().UTC().Add(-20*time.Minute), 1); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+
+	stateURI := "agent-ledger://workload/state?workload_id=" + workloadID + "&max_age=10m"
+	timelineURI := "agent-ledger://workload/timeline?workload_id=" + workloadID + "&limit=20"
+	out := serveLines(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"`+stateURI+`"}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"`+timelineURI+`"}}`,
+	)
+	stateText := resourceTextPayload(t, out[0])
+	timelineText := resourceTextPayload(t, out[1])
+	combined := stateText + "\n" + timelineText
+	for _, forbidden := range []string{workloadID, runID, "private state goal", "private-project", "private/repo", "private-branch", "private-team", "private status message", "C:/Users/zhang/private", "secret", "private-agent"} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("workload state/timeline resource leaked %q:\n%s", forbidden, combined)
+		}
+	}
+	var statePayload map[string]interface{}
+	if err := json.Unmarshal([]byte(stateText), &statePayload); err != nil {
+		t.Fatalf("decode state resource: %v\n%s", err, stateText)
+	}
+	state := statePayload["state"].(map[string]interface{})
+	if state["source"] != "codex" || state["phase"] == "" || state["stale"] != true {
+		t.Fatalf("unexpected privacy-safe state: %#v", state)
+	}
+	var timelinePayload map[string]interface{}
+	if err := json.Unmarshal([]byte(timelineText), &timelinePayload); err != nil {
+		t.Fatalf("decode timeline resource: %v\n%s", err, timelineText)
+	}
+	rows := timelinePayload["rows"].([]interface{})
+	if len(rows) == 0 {
+		t.Fatalf("expected privacy-safe timeline rows: %#v", timelinePayload)
+	}
+	firstCursor, err := srv.resourceCursor(stateURI)
+	if err != nil {
+		t.Fatalf("first state cursor: %v", err)
+	}
+	secondCursor, err := srv.resourceCursor(stateURI)
+	if err != nil {
+		t.Fatalf("second state cursor: %v", err)
+	}
+	if firstCursor != secondCursor {
+		t.Fatalf("state cursor changed without semantic change: first=%s second=%s", firstCursor, secondCursor)
 	}
 }
 

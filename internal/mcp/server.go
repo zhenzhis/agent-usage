@@ -647,6 +647,8 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://workloads/queue", "Workload Queue", "Read-only workload queue claimability and lease pressure stats; supports source/project/repo/team/owner/status/q query parameters.", "application/json"),
 		resource("agent-ledger://workloads/leases", "Workload Leases", "Privacy-safe read-only workload lease rows for router context; supports include_inactive and limit query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
+		resource("agent-ledger://workload/state", "Workload State", "Privacy-safe terminal-state snapshot for one workload; requires workload_id and supports max_age.", "application/json"),
+		resource("agent-ledger://workload/timeline", "Workload Timeline", "Privacy-safe timeline event kinds for one workload; requires workload_id and supports limit.", "application/json"),
 		resource("agent-ledger://agent-runs/liveness", "Agent Run Liveness", "Privacy-safe active run liveness rows for async agent monitors; supports max_age, stale_only, source, project, and limit query parameters.", "application/json"),
 		resource("agent-ledger://policies/status", "Policy Status", "Local policy configuration summary without prompt or secret content.", "application/json"),
 		resource("agent-ledger://policy/approvals", "Policy Approvals", "Local policy approval queue; supports status, limit, and privacy query parameters.", "application/json"),
@@ -930,6 +932,10 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		return s.resourceWorkloadLeases(values)
 	case "agent-ledger://workloads/feed":
 		return s.resourceWorkloadFeed(values)
+	case "agent-ledger://workload/state":
+		return s.resourceWorkloadState(values)
+	case "agent-ledger://workload/timeline":
+		return s.resourceWorkloadTimeline(values)
 	case "agent-ledger://agent-runs/liveness":
 		return s.resourceRunLiveness(values)
 	case "agent-ledger://policies/status":
@@ -1068,6 +1074,99 @@ func privacySafeLeaseRows(rows []storage.WorkloadLease) []map[string]interface{}
 			"released_at":     row.ReleasedAt,
 			"expired":         row.Expired,
 			"ttl_seconds":     row.TTLSeconds,
+		})
+	}
+	return out
+}
+
+func (s *Server) resourceWorkloadState(values url.Values) (map[string]interface{}, error) {
+	workloadID := strings.TrimSpace(values.Get("workload_id"))
+	if workloadID == "" {
+		return nil, fmt.Errorf("workload_id is required")
+	}
+	maxAge, err := queryDuration(values, "max_age", 10*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s.db.GetWorkloadState(workloadID, maxAge)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"max_age":           maxAge.String(),
+		"state":             privacySafeWorkloadState(state),
+		"privacy_redaction": "workload_id, goal, project, repo, git_branch, team, owner, and status messages omitted",
+	}, nil
+}
+
+func privacySafeWorkloadState(state *storage.WorkloadState) map[string]interface{} {
+	if state == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"status":                     state.Status,
+		"source":                     state.Source,
+		"phase":                      state.Phase,
+		"terminal":                   state.Terminal,
+		"stale":                      state.Stale,
+		"readiness_score":            state.ReadinessScore,
+		"progress":                   state.Progress,
+		"next_action":                state.NextAction,
+		"reasons":                    state.Reasons,
+		"risks":                      state.Risks,
+		"last_activity":              state.LastActivity,
+		"stale_after_seconds":        state.StaleAfterSeconds,
+		"runs":                       state.Runs,
+		"active_runs":                state.ActiveRuns,
+		"stale_runs":                 state.StaleRuns,
+		"completed_runs":             state.CompletedRuns,
+		"failed_runs":                state.FailedRuns,
+		"model_calls":                state.ModelCalls,
+		"tool_calls":                 state.ToolCalls,
+		"context_refs":               state.ContextRefs,
+		"artifacts":                  state.Artifacts,
+		"evaluations":                state.Evaluations,
+		"positive_evaluations":       state.PositiveEvaluations,
+		"negative_evaluations":       state.NegativeEvaluations,
+		"policy_blocks":              state.PolicyBlocks,
+		"policy_approvals_required":  state.PolicyApprovalsRequired,
+		"cost_usd":                   state.CostUSD,
+		"tokens":                     state.Tokens,
+		"estimated_remaining_budget": state.EstimatedRemainingBudget,
+		"estimated_budget_exhausted": state.EstimatedBudgetExhausted,
+		"budget_configured":          state.BudgetUSD > 0,
+	}
+}
+
+func (s *Server) resourceWorkloadTimeline(values url.Values) (map[string]interface{}, error) {
+	workloadID := strings.TrimSpace(values.Get("workload_id"))
+	if workloadID == "" {
+		return nil, fmt.Errorf("workload_id is required")
+	}
+	limit := boundedQueryInt(values, "limit", 50, 1, 500)
+	rows, err := s.db.GetWorkloadTimeline(workloadID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"limit":             limit,
+		"rows":              privacySafeWorkloadTimelineRows(rows),
+		"privacy_redaction": "workload_id, event ids, run ids, labels, details, goals, project metadata, status messages, and raw identifiers omitted",
+	}, nil
+}
+
+func privacySafeWorkloadTimelineRows(rows []storage.WorkloadTimelineRow) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, map[string]interface{}{
+			"kind":        row.Kind,
+			"source":      row.Source,
+			"status":      row.Status,
+			"tokens":      row.Tokens,
+			"cost_usd":    row.CostUSD,
+			"duration_ms": row.DurationMS,
+			"timestamp":   row.Timestamp,
+			"confidence":  row.Confidence,
 		})
 	}
 	return out
