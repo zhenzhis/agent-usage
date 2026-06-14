@@ -101,6 +101,22 @@ func TestSessionInsightPerformanceIndexesExist(t *testing.T) {
 	}
 }
 
+func TestSessionLedgerFilterCoveringIndexesExist(t *testing.T) {
+	db := tempDB(t)
+	for _, name := range []string{
+		"idx_usage_model_time_session",
+		"idx_usage_project_time_session",
+		"idx_usage_source_project_time_session",
+		"idx_prompt_project_timestamp_session",
+		"idx_prompt_source_project_timestamp_session",
+	} {
+		var got string
+		if err := db.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&got); err != nil {
+			t.Fatalf("index %s missing: %v", name, err)
+		}
+	}
+}
+
 func TestFileState(t *testing.T) {
 	db := tempDB(t)
 
