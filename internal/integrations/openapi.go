@@ -596,16 +596,25 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"OfflineBundleImportRequest":   looseObjectSchema("Offline bundle JSON. Optional signature verification uses local environment key material only."),
 				"OfflineBundleImportResult":    offlineBundleImportResultSchema(),
 				"OfflineBundleImportResponse":  offlineBundleImportResponseSchema(),
-				"PolicyStatus":                 looseObjectSchema("Policy configuration and enforcement posture summary."),
-				"PolicyEvaluationRequest":      looseObjectSchema("Policy evaluation request for local advisory rules."),
-				"PolicyEvaluationResponse":     looseObjectSchema("Policy evaluation decision result."),
-				"PolicyAuditReport":            looseObjectSchema("Policy audit findings over usage, tool, and workload candidates."),
-				"PolicyEnforcementReport":      looseObjectSchema("Policy enforcement evidence and local approval state."),
-				"PolicyDecisionRows":           looseObjectSchema("Recorded policy decision rows."),
-				"PolicyApprovalRows":           looseObjectSchema("Policy approval request rows."),
-				"PolicyApprovalVoteRequest":    looseObjectSchema("Approval vote payload with request_id, status, note, voter, and required approvals."),
-				"PolicyApprovalVoteResponse":   looseObjectSchema("Approval vote result."),
-				"ApprovalRouteSummary":         looseObjectSchema("Pending approval route summary for operators and notifications."),
+				"PolicyRuleConfig":             policyRuleConfigSchema(),
+				"PolicyStatus":                 policyStatusSchema(),
+				"PolicyEvaluationRequest":      policyEvaluationRequestSchema(),
+				"PolicyDecision":               policyDecisionSchema(),
+				"PolicyEvaluationResponse":     policyEvaluationResponseSchema(),
+				"PolicyAuditRow":               policyAuditRowSchema(),
+				"PolicyAuditReport":            policyAuditReportSchema(),
+				"PolicyDecisionRow":            policyDecisionRowSchema(),
+				"PolicyEnforcementSummary":     policyEnforcementSummarySchema(),
+				"PolicyEnforcementReport":      policyEnforcementReportSchema(),
+				"PolicyDecisionRows":           policyDecisionRowsSchema(),
+				"ApprovalRequest":              approvalRequestSchema(),
+				"PolicyApprovalRows":           policyApprovalRowsSchema(),
+				"PolicyApprovalVoteRequest":    policyApprovalVoteRequestSchema(),
+				"PolicyApprovalVoteResult":     policyApprovalVoteResultSchema(),
+				"PolicyApprovalVoteResponse":   policyApprovalVoteResponseSchema(),
+				"ApprovalRouteSummaryStats":    approvalRouteSummaryStatsSchema(),
+				"ApprovalRouteRow":             approvalRouteRowSchema(),
+				"ApprovalRouteSummary":         approvalRouteSummarySchema(),
 				"OTelGenAIRequest":             looseObjectSchema("OpenTelemetry GenAI JSON span export or span array. Prompt and completion message attributes are ignored by conversion."),
 				"OTLPTraceRequest":             looseObjectSchema("OTLP HTTP JSON/protobuf trace batch. Protobuf requests use application/x-protobuf or application/protobuf."),
 				"A2ATaskRequest":               looseObjectSchema("A2A task snapshot/event payload. Message history, message parts, and artifact parts are excluded from persistence."),
@@ -2878,6 +2887,375 @@ func offlineBundleImportResponseSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"ok":     boolSchema(),
 			"result": refSchema("OfflineBundleImportResult"),
+		},
+	}
+}
+
+func policyRuleConfigSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Policy rule as currently emitted from configuration status. Field names follow the Go config structure.",
+		"additionalProperties": true,
+		"properties": map[string]interface{}{
+			"Name":              stringSchema(),
+			"Scope":             stringSchema(),
+			"Match":             stringSchema(),
+			"Action":            stringSchema(),
+			"Message":           stringSchema(),
+			"RequiredApprovals": integerSchema(),
+			"Approvers":         stringArraySchema(),
+			"EscalateAfter":     integerSchema(),
+			"EscalateTo":        stringArraySchema(),
+		},
+	}
+}
+
+func policyStatusSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Policy configuration and enforcement posture summary.",
+		"additionalProperties": true,
+		"required":             []string{"enabled", "read_only", "require_privacy_export", "rules", "webhooks_enabled"},
+		"properties": map[string]interface{}{
+			"enabled":                boolSchema(),
+			"read_only":              boolSchema(),
+			"require_privacy_export": boolSchema(),
+			"rules":                  map[string]interface{}{"type": "array", "items": refSchema("PolicyRuleConfig")},
+			"webhooks_enabled":       boolSchema(),
+		},
+	}
+}
+
+func policyEvaluationRequestSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Policy evaluation request for local advisory rules. Optional record=true writes policy decision metadata only when workload_id is present.",
+		"additionalProperties": false,
+		"properties": map[string]interface{}{
+			"workload_id": stringSchema(),
+			"run_id":      stringSchema(),
+			"source":      stringSchema(),
+			"model":       stringSchema(),
+			"project":     stringSchema(),
+			"repo":        stringSchema(),
+			"git_branch":  stringSchema(),
+			"team":        stringSchema(),
+			"action":      stringSchema(),
+			"target":      stringSchema(),
+			"role":        stringSchema(),
+			"record":      boolSchema(),
+		},
+	}
+}
+
+func policyDecisionSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One matched policy rule decision from the local evaluator.",
+		"additionalProperties": true,
+		"required":             []string{"rule", "scope", "match", "action", "message"},
+		"properties": map[string]interface{}{
+			"decision_id":            stringSchema(),
+			"rule":                   stringSchema(),
+			"scope":                  stringSchema(),
+			"match":                  stringSchema(),
+			"action":                 stringSchema(),
+			"message":                stringSchema(),
+			"required_approvals":     integerSchema(),
+			"approvers":              stringArraySchema(),
+			"escalate_after_seconds": integerSchema(),
+			"escalate_to":            stringArraySchema(),
+		},
+	}
+}
+
+func policyEvaluationResponseSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Policy evaluation decision result.",
+		"additionalProperties": true,
+		"required":             []string{"enabled", "action", "decisions", "webhooks", "privacy_export"},
+		"properties": map[string]interface{}{
+			"enabled":        boolSchema(),
+			"action":         stringSchema(),
+			"decisions":      map[string]interface{}{"type": "array", "items": refSchema("PolicyDecision")},
+			"webhooks":       stringSchema(),
+			"privacy_export": boolSchema(),
+		},
+	}
+}
+
+func policyAuditRowSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Historical policy match over usage, tool, or workload metadata. Prompt and response content are not included.",
+		"additionalProperties": true,
+		"required":             []string{"kind", "action", "effective_action", "decisions"},
+		"properties": map[string]interface{}{
+			"kind":             stringSchema(),
+			"workload_id":      stringSchema(),
+			"run_id":           stringSchema(),
+			"session_id":       stringSchema(),
+			"source":           stringSchema(),
+			"model":            stringSchema(),
+			"project":          stringSchema(),
+			"repo":             stringSchema(),
+			"git_branch":       stringSchema(),
+			"team":             stringSchema(),
+			"action":           stringSchema(),
+			"target":           stringSchema(),
+			"role":             stringSchema(),
+			"tokens":           integerSchema(),
+			"cost_usd":         numberSchema(),
+			"timestamp":        stringSchema(),
+			"evidence":         stringSchema(),
+			"effective_action": stringSchema(),
+			"decisions":        map[string]interface{}{"type": "array", "items": refSchema("PolicyDecision")},
+		},
+	}
+}
+
+func policyAuditReportSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Policy audit findings over usage, tool, and workload candidates.",
+		"additionalProperties": true,
+		"required":             []string{"enabled", "checked", "matches", "blocks", "approvals", "warnings", "rows", "scope"},
+		"properties": map[string]interface{}{
+			"enabled":     boolSchema(),
+			"checked":     integerSchema(),
+			"matches":     integerSchema(),
+			"blocks":      integerSchema(),
+			"approvals":   integerSchema(),
+			"warnings":    integerSchema(),
+			"rows":        map[string]interface{}{"type": "array", "items": refSchema("PolicyAuditRow")},
+			"scope":       stringSchema(),
+			"window_from": stringSchema(),
+			"window_to":   stringSchema(),
+		},
+	}
+}
+
+func policyDecisionRowSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Recorded local policy decision row.",
+		"additionalProperties": true,
+		"required":             []string{"decision_id", "workload_id", "run_id", "rule_id", "action", "reason", "actor_role", "created_at"},
+		"properties": map[string]interface{}{
+			"decision_id": stringSchema(),
+			"workload_id": stringSchema(),
+			"run_id":      stringSchema(),
+			"rule_id":     stringSchema(),
+			"action":      stringSchema(),
+			"reason":      stringSchema(),
+			"actor_role":  stringSchema(),
+			"created_at":  stringSchema(),
+		},
+	}
+}
+
+func policyDecisionRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Recorded policy decision rows.",
+		"items":       refSchema("PolicyDecisionRow"),
+	}
+}
+
+func approvalRequestSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Local policy approval request. Privacy filters redact request ids, projects, targets, routing hints, reasons, and payload summaries when requested.",
+		"additionalProperties": true,
+		"required": []string{
+			"request_id", "policy_decision_id", "workload_id", "run_id", "source", "model", "project", "action", "target", "actor_role", "status", "required_approvals", "approval_votes", "rejection_votes", "approver_hint", "escalation_target", "escalation_after_seconds", "due_at", "overdue", "reason", "request_payload", "created_at", "updated_at", "decided_at", "decided_by", "decision_note",
+		},
+		"properties": map[string]interface{}{
+			"request_id":               stringSchema(),
+			"policy_decision_id":       stringSchema(),
+			"workload_id":              stringSchema(),
+			"run_id":                   stringSchema(),
+			"source":                   stringSchema(),
+			"model":                    stringSchema(),
+			"project":                  stringSchema(),
+			"action":                   stringSchema(),
+			"target":                   stringSchema(),
+			"actor_role":               stringSchema(),
+			"status":                   stringSchema(),
+			"required_approvals":       integerSchema(),
+			"approval_votes":           integerSchema(),
+			"rejection_votes":          integerSchema(),
+			"approver_hint":            stringSchema(),
+			"escalation_target":        stringSchema(),
+			"escalation_after_seconds": integerSchema(),
+			"due_at":                   stringSchema(),
+			"overdue":                  boolSchema(),
+			"reason":                   stringSchema(),
+			"request_payload":          stringSchema(),
+			"created_at":               stringSchema(),
+			"updated_at":               stringSchema(),
+			"decided_at":               stringSchema(),
+			"decided_by":               stringSchema(),
+			"decision_note":            stringSchema(),
+		},
+	}
+}
+
+func policyApprovalRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Policy approval request rows plus the requested status filter.",
+		"additionalProperties": true,
+		"required":             []string{"rows", "status"},
+		"properties": map[string]interface{}{
+			"rows":   map[string]interface{}{"type": "array", "items": refSchema("ApprovalRequest")},
+			"status": stringSchema(),
+		},
+	}
+}
+
+func policyApprovalVoteRequestSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Approval vote payload. Note text is not persisted into audit log details.",
+		"additionalProperties": false,
+		"required":             []string{"request_id", "status"},
+		"properties": map[string]interface{}{
+			"request_id":         stringSchema(),
+			"status":             stringSchema(),
+			"note":               stringSchema(),
+			"voter":              stringSchema(),
+			"required_approvals": integerSchema(),
+		},
+	}
+}
+
+func policyApprovalVoteResultSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Approval vote result after quorum evaluation.",
+		"additionalProperties": true,
+		"required":             []string{"request_id", "status", "required_approvals", "approval_votes", "rejection_votes", "decided"},
+		"properties": map[string]interface{}{
+			"request_id":         stringSchema(),
+			"status":             stringSchema(),
+			"required_approvals": integerSchema(),
+			"approval_votes":     integerSchema(),
+			"rejection_votes":    integerSchema(),
+			"decided":            boolSchema(),
+		},
+	}
+}
+
+func policyApprovalVoteResponseSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Approval vote response.",
+		"additionalProperties": true,
+		"required":             []string{"ok", "result"},
+		"properties": map[string]interface{}{
+			"ok":     boolSchema(),
+			"result": refSchema("PolicyApprovalVoteResult"),
+		},
+	}
+}
+
+func policyEnforcementSummarySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Counts of local policy decisions, approvals, votes, overdue approvals, and audit events.",
+		"additionalProperties": true,
+		"required": []string{
+			"decisions", "blocks", "warnings", "approvals_required", "approval_requests", "pending_approvals", "approved_approvals", "rejected_approvals", "approval_votes", "rejection_votes", "overdue_approvals", "policy_audit_events",
+		},
+		"properties": map[string]interface{}{
+			"decisions":           integerSchema(),
+			"blocks":              integerSchema(),
+			"warnings":            integerSchema(),
+			"approvals_required":  integerSchema(),
+			"approval_requests":   integerSchema(),
+			"pending_approvals":   integerSchema(),
+			"approved_approvals":  integerSchema(),
+			"rejected_approvals":  integerSchema(),
+			"approval_votes":      integerSchema(),
+			"rejection_votes":     integerSchema(),
+			"overdue_approvals":   integerSchema(),
+			"policy_audit_events": integerSchema(),
+		},
+	}
+}
+
+func policyEnforcementReportSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Policy enforcement evidence and local approval state.",
+		"additionalProperties": true,
+		"required":             []string{"generated_at", "summary", "decisions", "approval_requests", "audit_events"},
+		"properties": map[string]interface{}{
+			"generated_at":      stringSchema(),
+			"summary":           refSchema("PolicyEnforcementSummary"),
+			"decisions":         map[string]interface{}{"type": "array", "items": refSchema("PolicyDecisionRow")},
+			"approval_requests": map[string]interface{}{"type": "array", "items": refSchema("ApprovalRequest")},
+			"audit_events":      map[string]interface{}{"type": "array", "items": refSchema("AuditEvent")},
+		},
+	}
+}
+
+func approvalRouteSummaryStatsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Approval routing queue summary.",
+		"additionalProperties": true,
+		"required":             []string{"routes", "pending", "overdue", "due_soon", "unassigned"},
+		"properties": map[string]interface{}{
+			"routes":     integerSchema(),
+			"pending":    integerSchema(),
+			"overdue":    integerSchema(),
+			"due_soon":   integerSchema(),
+			"unassigned": integerSchema(),
+		},
+	}
+}
+
+func approvalRouteRowSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Pending approval route rollup for operators and notification adapters.",
+		"additionalProperties": true,
+		"required": []string{
+			"route_key", "approver", "escalation_target", "pending", "overdue", "due_soon", "approval_votes", "rejection_votes", "max_required_approvals", "due_next", "sources", "models", "projects", "actions",
+		},
+		"properties": map[string]interface{}{
+			"route_key":              stringSchema(),
+			"approver":               stringSchema(),
+			"escalation_target":      stringSchema(),
+			"pending":                integerSchema(),
+			"overdue":                integerSchema(),
+			"due_soon":               integerSchema(),
+			"approval_votes":         integerSchema(),
+			"rejection_votes":        integerSchema(),
+			"max_required_approvals": integerSchema(),
+			"due_next":               stringSchema(),
+			"sources":                stringArraySchema(),
+			"models":                 stringArraySchema(),
+			"projects":               stringArraySchema(),
+			"actions":                stringArraySchema(),
+		},
+	}
+}
+
+func approvalRouteSummarySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Pending approval route summary for operators and notifications.",
+		"additionalProperties": true,
+		"required":             []string{"generated_at", "due_within", "summary", "routes"},
+		"properties": map[string]interface{}{
+			"generated_at": stringSchema(),
+			"due_within":   stringSchema(),
+			"summary":      refSchema("ApprovalRouteSummaryStats"),
+			"routes":       map[string]interface{}{"type": "array", "items": refSchema("ApprovalRouteRow")},
 		},
 	}
 }

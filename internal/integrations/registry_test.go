@@ -835,6 +835,117 @@ func TestOpenAPIEnterpriseReportSchemasExposeLedgerFields(t *testing.T) {
 	expectRef("OfflineBundleImportResponse", "result", "#/components/schemas/OfflineBundleImportResult")
 }
 
+func TestOpenAPIPolicyGovernanceSchemasExposeControlFields(t *testing.T) {
+	spec := OpenAPISpecFor(Options{}, nil)
+	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+
+	schema := func(name string) map[string]interface{} {
+		t.Helper()
+		raw, ok := schemas[name].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s schema missing: %#v", name, schemas[name])
+		}
+		return raw
+	}
+	props := func(name string) map[string]interface{} {
+		t.Helper()
+		raw := schema(name)
+		properties, ok := raw["properties"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s schema missing properties: %#v", name, raw)
+		}
+		return properties
+	}
+	expectFields := func(name string, fields ...string) map[string]interface{} {
+		t.Helper()
+		properties := props(name)
+		for _, field := range fields {
+			if properties[field] == nil {
+				t.Fatalf("%s schema missing field %q: %#v", name, field, properties)
+			}
+		}
+		return properties
+	}
+	expectArrayRef := func(name, ref string) {
+		t.Helper()
+		raw := schema(name)
+		if raw["type"] != "array" {
+			t.Fatalf("%s should be an array schema: %#v", name, raw)
+		}
+		items, ok := raw["items"].(map[string]interface{})
+		if !ok || items["$ref"] != ref {
+			t.Fatalf("%s items should reference %s: %#v", name, ref, raw["items"])
+		}
+	}
+	expectArrayPropertyRef := func(name, field, ref string) {
+		t.Helper()
+		properties := props(name)
+		arraySchema, ok := properties[field].(map[string]interface{})
+		if !ok || arraySchema["type"] != "array" {
+			t.Fatalf("%s.%s should be an array: %#v", name, field, properties[field])
+		}
+		items, ok := arraySchema["items"].(map[string]interface{})
+		if !ok || items["$ref"] != ref {
+			t.Fatalf("%s.%s items should reference %s: %#v", name, field, ref, arraySchema["items"])
+		}
+	}
+	expectRef := func(name, field, ref string) {
+		t.Helper()
+		properties := props(name)
+		fieldSchema, ok := properties[field].(map[string]interface{})
+		if !ok || fieldSchema["$ref"] != ref {
+			t.Fatalf("%s.%s should reference %s: %#v", name, field, ref, properties[field])
+		}
+	}
+	expectType := func(name, field, kind string) {
+		t.Helper()
+		properties := props(name)
+		fieldSchema, ok := properties[field].(map[string]interface{})
+		if !ok || fieldSchema["type"] != kind {
+			t.Fatalf("%s.%s should be %s: %#v", name, field, kind, properties[field])
+		}
+	}
+
+	expectFields("PolicyStatus", "enabled", "read_only", "require_privacy_export", "rules", "webhooks_enabled")
+	expectArrayPropertyRef("PolicyStatus", "rules", "#/components/schemas/PolicyRuleConfig")
+	expectFields("PolicyRuleConfig", "Name", "Scope", "Match", "Action", "Message", "RequiredApprovals", "Approvers", "EscalateAfter", "EscalateTo")
+	expectType("PolicyStatus", "require_privacy_export", "boolean")
+
+	expectFields("PolicyEvaluationRequest", "workload_id", "run_id", "source", "model", "project", "repo", "git_branch", "team", "action", "target", "role", "record")
+	expectFields("PolicyEvaluationResponse", "enabled", "action", "decisions", "webhooks", "privacy_export")
+	expectArrayPropertyRef("PolicyEvaluationResponse", "decisions", "#/components/schemas/PolicyDecision")
+	expectFields("PolicyDecision", "decision_id", "rule", "scope", "match", "action", "message", "required_approvals", "approvers", "escalate_after_seconds", "escalate_to")
+
+	expectFields("PolicyAuditReport", "enabled", "checked", "matches", "blocks", "approvals", "warnings", "rows", "scope", "window_from", "window_to")
+	expectArrayPropertyRef("PolicyAuditReport", "rows", "#/components/schemas/PolicyAuditRow")
+	expectFields("PolicyAuditRow", "kind", "workload_id", "run_id", "session_id", "source", "model", "project", "repo", "git_branch", "team", "action", "target", "role", "tokens", "cost_usd", "timestamp", "evidence", "effective_action", "decisions")
+	expectArrayPropertyRef("PolicyAuditRow", "decisions", "#/components/schemas/PolicyDecision")
+
+	expectArrayRef("PolicyDecisionRows", "#/components/schemas/PolicyDecisionRow")
+	expectFields("PolicyDecisionRow", "decision_id", "workload_id", "run_id", "rule_id", "action", "reason", "actor_role", "created_at")
+	expectFields("PolicyEnforcementReport", "generated_at", "summary", "decisions", "approval_requests", "audit_events")
+	expectRef("PolicyEnforcementReport", "summary", "#/components/schemas/PolicyEnforcementSummary")
+	expectArrayPropertyRef("PolicyEnforcementReport", "decisions", "#/components/schemas/PolicyDecisionRow")
+	expectArrayPropertyRef("PolicyEnforcementReport", "approval_requests", "#/components/schemas/ApprovalRequest")
+	expectArrayPropertyRef("PolicyEnforcementReport", "audit_events", "#/components/schemas/AuditEvent")
+	expectFields("PolicyEnforcementSummary", "decisions", "blocks", "warnings", "approvals_required", "approval_requests", "pending_approvals", "approved_approvals", "rejected_approvals", "approval_votes", "rejection_votes", "overdue_approvals", "policy_audit_events")
+
+	expectFields("PolicyApprovalRows", "rows", "status")
+	expectArrayPropertyRef("PolicyApprovalRows", "rows", "#/components/schemas/ApprovalRequest")
+	expectFields("ApprovalRequest", "request_id", "policy_decision_id", "workload_id", "run_id", "source", "model", "project", "action", "target", "actor_role", "status", "required_approvals", "approval_votes", "rejection_votes", "approver_hint", "escalation_target", "escalation_after_seconds", "due_at", "overdue", "reason", "request_payload", "created_at", "updated_at", "decided_at", "decided_by", "decision_note")
+	expectFields("PolicyApprovalVoteRequest", "request_id", "status", "note", "voter", "required_approvals")
+	expectFields("PolicyApprovalVoteResponse", "ok", "result")
+	expectRef("PolicyApprovalVoteResponse", "result", "#/components/schemas/PolicyApprovalVoteResult")
+	expectFields("PolicyApprovalVoteResult", "request_id", "status", "required_approvals", "approval_votes", "rejection_votes", "decided")
+	expectType("PolicyApprovalVoteResult", "decided", "boolean")
+
+	expectFields("ApprovalRouteSummary", "generated_at", "due_within", "summary", "routes")
+	expectRef("ApprovalRouteSummary", "summary", "#/components/schemas/ApprovalRouteSummaryStats")
+	expectArrayPropertyRef("ApprovalRouteSummary", "routes", "#/components/schemas/ApprovalRouteRow")
+	expectFields("ApprovalRouteSummaryStats", "routes", "pending", "overdue", "due_soon", "unassigned")
+	expectFields("ApprovalRouteRow", "route_key", "approver", "escalation_target", "pending", "overdue", "due_soon", "approval_votes", "rejection_votes", "max_required_approvals", "due_next", "sources", "models", "projects", "actions")
+}
+
 func TestOpenAPIRequestBodyOperationsAdvertiseBodyLimits(t *testing.T) {
 	spec := OpenAPISpecFor(Options{}, nil)
 	paths := spec["paths"].(map[string]interface{})
