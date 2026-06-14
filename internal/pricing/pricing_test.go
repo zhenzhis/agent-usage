@@ -3,6 +3,7 @@ package pricing
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,10 +106,20 @@ func TestSyncWithConfigAppliesOfficialAndOverrideWhenLiteLLMFails(t *testing.T) 
 		t.Fatal(err)
 	}
 	status := map[string]string{}
+	byName := map[string]storage.PricingSourceStatus{}
 	for _, source := range sources {
 		status[source.Name] = source.Status
+		byName[source.Name] = source
 	}
 	if status["litellm"] != "error" || status["openai-official"] != "seeded" || status["anthropic-official"] != "seeded" {
 		t.Fatalf("unexpected source statuses: %+v", sources)
+	}
+	if status["contract"] != "configured" || byName["contract"].Kind != "override" || byName["contract"].Priority != 1 || byName["contract"].ModelCount != 1 {
+		t.Fatalf("local override source was not recorded: %+v", sources)
+	}
+	for _, name := range []string{"openai-official", "anthropic-official", "contract"} {
+		if !strings.HasPrefix(byName[name].SHA256, "sha256:") {
+			t.Fatalf("pricing source %s missing stable sha256 hash: %+v", name, byName[name])
+		}
 	}
 }

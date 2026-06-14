@@ -75,6 +75,9 @@ func SyncWithConfig(db *storage.DB, cfg config.PricingConfig) error {
 			return err
 		}
 	}
+	if err := recordOverrideSources(db, cfg.Overrides, now); err != nil {
+		return err
+	}
 	message := "pricing sync completed with official overlays and LiteLLM fallback"
 	if len(warnings) > 0 {
 		message = "pricing sync completed with official/local rules; " + strings.Join(warnings, "; ")
@@ -90,7 +93,7 @@ func syncLiteLLM(db *storage.DB) error {
 		return err
 	}
 	sum := sha256.Sum256(body)
-	sha := hex.EncodeToString(sum[:])
+	sha := "sha256:" + hex.EncodeToString(sum[:])
 	var data map[string]json.RawMessage
 	if err := json.Unmarshal(body, &data); err != nil {
 		return err
@@ -141,22 +144,69 @@ func applyOfficialSeeds(db *storage.DB) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	official := officialPriceRows()
 	sourceCounts := map[string]int{}
+	sourceRows := map[string][]storage.PricingAuditRow{}
 	for _, row := range official {
 		if err := db.UpsertPricingDetailed(row); err != nil {
 			return err
 		}
 		sourceCounts[row.PricingSource]++
+		sourceRows[row.PricingSource] = append(sourceRows[row.PricingSource], row)
 	}
 	for _, s := range []storage.PricingSourceStatus{
-		{Name: "openai-official", Kind: "official", Priority: 20, URL: openAIPricingURL, LastFetchAt: now, ModelCount: sourceCounts["openai-official"], Status: "seeded"},
-		{Name: "anthropic-official", Kind: "official", Priority: 20, URL: anthropicPricingURL, LastFetchAt: now, ModelCount: sourceCounts["anthropic-official"], Status: "seeded"},
+		{Name: "openai-official", Kind: "official", Priority: 20, URL: openAIPricingURL, LastFetchAt: now, SHA256: hashPricingRows(sourceRows["openai-official"]), ModelCount: sourceCounts["openai-official"], Status: "seeded"},
+		{Name: "anthropic-official", Kind: "official", Priority: 20, URL: anthropicPricingURL, LastFetchAt: now, SHA256: hashPricingRows(sourceRows["anthropic-official"]), ModelCount: sourceCounts["anthropic-official"], Status: "seeded"},
 	} {
 		if err := db.UpsertPricingSource(s); err != nil {
 			return err
 		}
-		_ = db.InsertPricingSnapshot(s.Name, "seed-"+s.Name, s.ModelCount, map[string]string{"url": s.URL, "mode": "official-seed"})
+		_ = db.InsertPricingSnapshot(s.Name, s.SHA256, s.ModelCount, map[string]string{"url": s.URL, "mode": "official-seed"})
 	}
 	return nil
+}
+
+func recordOverrideSources(db *storage.DB, overrides []config.PriceRule, now string) error {
+	sourceRows := map[string][]storage.PricingAuditRow{}
+	for _, override := range overrides {
+		if strings.TrimSpace(override.Model) == "" {
+			continue
+		}
+		source := override.Source
+		if source == "" {
+			source = "local-override"
+		}
+		sourceRows[source] = append(sourceRows[source], storage.PricingAuditRow{
+			Model:                  override.Model,
+			PricingSource:          source,
+			MatchedModel:           override.Model,
+			MatchType:              "override",
+			Priority:               1,
+			InputCostPerToken:      override.InputCostPerToken,
+			OutputCostPerToken:     override.OutputCostPerToken,
+			CacheReadCostPerToken:  override.CacheReadCostPerToken,
+			CacheWriteCostPerToken: override.CacheWriteCostPerToken,
+			EffectiveAt:            override.EffectiveAt,
+			Confidence:             "override",
+		})
+	}
+	for source, rows := range sourceRows {
+		sha := hashPricingRows(rows)
+		if err := db.UpsertPricingSource(storage.PricingSourceStatus{
+			Name: source, Kind: "override", Priority: 1, URL: "local-config", LastFetchAt: now, SHA256: sha, ModelCount: len(rows), Status: "configured",
+		}); err != nil {
+			return err
+		}
+		_ = db.InsertPricingSnapshot(source, sha, len(rows), map[string]string{"source": source, "mode": "local-override"})
+	}
+	return nil
+}
+
+func hashPricingRows(rows []storage.PricingAuditRow) string {
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func officialPriceRows() []storage.PricingAuditRow {

@@ -46,6 +46,67 @@ func TestRecalcCostsDetailedAnnotatesPricing(t *testing.T) {
 	}
 }
 
+func TestRecalcCostsDetailedPreservesSourceReportedAndMarksUnpriced(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ts := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	if err := db.InsertUsageBatch([]*UsageRecord{
+		{
+			Source: "gateway", SessionID: "source-cost", Model: "gpt-5",
+			InputTokens: 1000, OutputTokens: 500, CostUSD: 12.34, Timestamp: ts,
+			PricingSource: "gateway", PricingModel: "gpt-5", PricingConfidence: "source-reported",
+		},
+		{
+			Source: "gateway", SessionID: "missing-price", Model: "unknown-frontier-model",
+			InputTokens: 1000, OutputTokens: 500, CostUSD: 0, Timestamp: ts.Add(time.Minute),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prices := map[string]PricingAuditRow{
+		"gpt-5": {
+			Model: "gpt-5", PricingSource: "openai-official", MatchedModel: "gpt-5", MatchType: "official-seed", Priority: 20,
+			InputCostPerToken: 1, OutputCostPerToken: 2, Confidence: "official",
+		},
+	}
+	if err := db.RecalcCostsDetailed(prices, func(inputTokens, outputTokens, cacheCreation, cacheRead int64, prices [4]float64) float64 {
+		return 999
+	}, "all", false); err != nil {
+		t.Fatal(err)
+	}
+	var sourceCost float64
+	var sourcePricing, sourceConfidence string
+	if err := db.db.QueryRow(`SELECT cost_usd,pricing_source,pricing_confidence FROM usage_records WHERE session_id='source-cost'`).
+		Scan(&sourceCost, &sourcePricing, &sourceConfidence); err != nil {
+		t.Fatal(err)
+	}
+	if sourceCost != 12.34 || sourcePricing != "gateway" || sourceConfidence != "source-reported" {
+		t.Fatalf("source-reported cost was overwritten: cost=%f source=%q confidence=%q", sourceCost, sourcePricing, sourceConfidence)
+	}
+	var missingConfidence, missingNote string
+	if err := db.db.QueryRow(`SELECT pricing_confidence,pricing_note FROM usage_records WHERE session_id='missing-price'`).
+		Scan(&missingConfidence, &missingNote); err != nil {
+		t.Fatal(err)
+	}
+	if missingConfidence != "unpriced" || !strings.Contains(missingNote, "no pricing rule matched") {
+		t.Fatalf("unpriced row not annotated: confidence=%q note=%q", missingConfidence, missingNote)
+	}
+	quality, err := db.GetDataQuality(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unpricedRecords := 0
+	for _, source := range quality.SourceQuality {
+		unpricedRecords += source.UnpricedRecords
+	}
+	if unpricedRecords != 1 || len(quality.UnpricedModels) != 1 || quality.UnpricedModels[0].Model != "unknown-frontier-model" {
+		t.Fatalf("data quality did not expose unpriced model: %+v", quality)
+	}
+}
+
 func TestRebuildUsageAggregates(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {
