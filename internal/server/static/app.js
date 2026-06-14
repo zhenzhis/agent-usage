@@ -490,7 +490,7 @@ const I18N = {
 const PRESETS = ["today", "thisWeek", "thisMonth", "thisYear", "last3d", "last7d", "last30d", "custom"];
 const GRANULARITIES = ["1m", "30m", "1h", "6h", "12h", "1d", "1w", "1M"];
 const REFRESH_INTERVALS = [30, 60, 300, 1800, 3600];
-const COLORS = ["#f5f5f5", "#d4d4d4", "#a3a3a3", "#737373", "#525252", "#bdbdbd", "#8a8a8a", "#e5e5e5", "#6b6b6b", "#c7c7c7"];
+const FALLBACK_SERIES = ["#f5f5f5", "#d4d4d4", "#a3a3a3", "#737373", "#525252", "#bdbdbd", "#8a8a8a", "#e5e5e5", "#6b6b6b", "#c7c7c7"];
 const SOURCES = [
   ["", "allSources"],
   ["claude", "claudeCode"],
@@ -577,6 +577,8 @@ function applyTheme() {
 
 function getThemeColors() {
   const cs = getComputedStyle(document.documentElement);
+  const series = Array.from({ length: 10 }, (_, index) => cs.getPropertyValue(`--chart-series-${index}`).trim()).filter(Boolean);
+  const heatmap = Array.from({ length: 4 }, (_, index) => cs.getPropertyValue(`--chart-heatmap-${index}`).trim()).filter(Boolean);
   return {
     bg: cs.getPropertyValue("--chart-bg").trim() || "transparent",
     text: cs.getPropertyValue("--chart-text").trim() || "#edf2f7",
@@ -589,6 +591,8 @@ function getThemeColors() {
     amber: cs.getPropertyValue("--amber").trim() || "#a3a3a3",
     blue: cs.getPropertyValue("--blue").trim() || "#f5f5f5",
     purple: cs.getPropertyValue("--purple").trim() || "#737373",
+    series: series.length ? series : FALLBACK_SERIES,
+    heatmap: heatmap.length ? heatmap : ["#1a1a1a", "#575757", "#a3a3a3", "#f5f5f5"],
   };
 }
 
@@ -795,9 +799,10 @@ function initCharts() {
 
 function buildModelColorMap(costModel) {
   const map = new Map();
+  const colors = getThemeColors().series;
   (costModel || []).forEach((row, index) => {
     const model = row.model || t("unknownModel");
-    if (!map.has(model)) map.set(model, COLORS[index % COLORS.length]);
+    if (!map.has(model)) map.set(model, colors[index % colors.length]);
   });
   return map;
 }
@@ -1449,7 +1454,7 @@ function renderActivityMatrix(tokensTime) {
       itemWidth: 110,
       itemHeight: 8,
       textStyle: { color: tc.muted, fontSize: 11 },
-      inRange: { color: ["#1a1a1a", "#575757", "#a3a3a3", "#f5f5f5"] },
+      inRange: { color: tc.heatmap },
     },
     series: [{
       type: "heatmap",
@@ -1551,7 +1556,7 @@ function renderCostTrend(costTime, modelColorMap) {
       type: "bar",
       stack: "cost",
       barMaxWidth: 38,
-      color: modelColorMap.get(model) || COLORS[0],
+      color: modelColorMap.get(model) || tc.series[0],
       emphasis: { focus: "series" },
       data: dates.map((date) => Number((valueMap.get(`${date}\u0000${model}`) || 0).toFixed(4))),
     })),
@@ -1591,7 +1596,7 @@ function renderModelAllocation(costModel, modelColorMap) {
       type: "bar",
       data: rows.map((row) => ({
         value: Number(row.cost || 0),
-        itemStyle: { color: modelColorMap.get(row.model || t("unknownModel")) || COLORS[0] },
+        itemStyle: { color: modelColorMap.get(row.model || t("unknownModel")) || tc.series[0] },
       })),
       barMaxWidth: 18,
       label: {
