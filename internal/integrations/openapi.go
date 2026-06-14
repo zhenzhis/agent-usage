@@ -705,6 +705,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"ProviderUsage":                     providerUsageSchema(),
 				"ProviderCall":                      providerCallSchema(),
 				"ProviderUsageEnvelope":             providerUsageEnvelopeSchema(),
+				"ProviderMetadataWrapper":           providerMetadataWrapperSchema(),
 				"ProviderUsageRequest":              providerUsageRequestSchema(),
 				"EcosystemIngestResponse":           ecosystemIngestResponseSchema(),
 				"GatewayLedgerMetadata":             gatewayLedgerMetadataSchema(),
@@ -2980,7 +2981,7 @@ func providerUsageSchema() map[string]interface{} {
 func providerCallSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":                 "object",
-		"description":          "OpenAI-compatible, Anthropic-style, LiteLLM-style, usage_metadata/usageMetadata relay, or generic provider usage envelope.",
+		"description":          "OpenAI-compatible, Anthropic-style, LiteLLM-style, usage_metadata/usageMetadata relay, metadata wrapper response, or generic provider usage envelope.",
 		"additionalProperties": true,
 		"properties": map[string]interface{}{
 			"id":                   stringSchema(),
@@ -3008,6 +3009,11 @@ func providerCallSchema() map[string]interface{} {
 			"usage":                refSchema("ProviderUsage"),
 			"usage_metadata":       refSchema("ProviderUsage"),
 			"usageMetadata":        refSchema("ProviderUsage"),
+			"request":              looseObjectSchema("Optional request metadata wrapper. Message/content bodies are ignored by conversion."),
+			"response":             looseObjectSchema("Optional response metadata wrapper. Output/content bodies are ignored by conversion."),
+			"request_metadata":     looseObjectSchema("Optional request metadata wrapper fields such as request id, endpoint path, stream, project, workload, or run ids."),
+			"response_metadata":    looseObjectSchema("Optional response metadata wrapper fields such as status code, latency, and provider response id."),
+			"reconciliation":       looseObjectSchema("Optional provider bill or invoice reference. Raw refs are hashed before persistence."),
 			"metadata":             refSchema("GatewayLedgerMetadata"),
 		},
 	}
@@ -3026,13 +3032,32 @@ func providerUsageEnvelopeSchema() map[string]interface{} {
 	}
 }
 
+func providerMetadataWrapperSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Request/response metadata wrapper for provider usage ingestion. Request messages, response content, headers, and secrets are ignored; only whitelisted metadata and usage are converted.",
+		"additionalProperties": true,
+		"properties": map[string]interface{}{
+			"provider":          stringSchema(),
+			"model":             stringSchema(),
+			"request":           looseObjectSchema("Provider request metadata. Message/content bodies are ignored."),
+			"response":          refSchema("ProviderCall"),
+			"request_metadata":  looseObjectSchema("Whitelisted request metadata: request id, endpoint path, stream, project, workload, run, source, session, branch."),
+			"response_metadata": looseObjectSchema("Whitelisted response metadata: response id, status code, latency, finish reason."),
+			"reconciliation":    looseObjectSchema("Provider bill/invoice reference metadata. Raw refs are hashed before persistence."),
+			"metadata":          refSchema("GatewayLedgerMetadata"),
+		},
+	}
+}
+
 func providerUsageRequestSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"description": "Provider usage call, usage call array, or batch envelope. Request and response message content is ignored by conversion.",
+		"description": "Provider usage call, usage call array, batch envelope, or request/response metadata wrapper. Request and response message content is ignored by conversion.",
 		"oneOf": []map[string]interface{}{
 			refSchema("ProviderCall"),
 			map[string]interface{}{"type": "array", "items": refSchema("ProviderCall")},
 			refSchema("ProviderUsageEnvelope"),
+			refSchema("ProviderMetadataWrapper"),
 		},
 	}
 }
@@ -3044,14 +3069,17 @@ func ecosystemIngestResponseSchema() map[string]interface{} {
 		"additionalProperties": true,
 		"required":             []string{"ok", "events", "results"},
 		"properties": map[string]interface{}{
-			"ok":           boolSchema(),
-			"spans":        integerSchema(),
-			"calls":        integerSchema(),
-			"tasks":        integerSchema(),
-			"events":       integerSchema(),
-			"warning":      stringSchema(),
-			"backpressure": looseObjectSchema("Per-request receiver pressure metrics for OTLP HTTP ingest: status, body bytes, max body bytes, spans seen, max spans, and events produced."),
-			"results":      refArraySchema("CanonicalEventResult"),
+			"ok":                   boolSchema(),
+			"spans":                integerSchema(),
+			"calls":                integerSchema(),
+			"tasks":                integerSchema(),
+			"events":               integerSchema(),
+			"warning":              stringSchema(),
+			"budget_advisories":    refArraySchema("BudgetStatus"),
+			"budget_warning":       stringSchema(),
+			"reconciliation_hooks": integerSchema(),
+			"backpressure":         looseObjectSchema("Per-request receiver pressure metrics for OTLP HTTP ingest: status, body bytes, max body bytes, spans seen, max spans, and events produced."),
+			"results":              refArraySchema("CanonicalEventResult"),
 		},
 	}
 }

@@ -3,6 +3,8 @@ package integrations
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
 
 func TestConvertOpenAIResponsesUsage(t *testing.T) {
@@ -49,6 +51,80 @@ func TestConvertOpenAIResponsesUsage(t *testing.T) {
 	}
 	if containsAny(string(modelEvent.Payload), "must not persist") {
 		t.Fatalf("provider content leaked: %s", string(modelEvent.Payload))
+	}
+}
+
+func TestConvertProviderRequestResponseMetadataWrapper(t *testing.T) {
+	raw := []byte(`{
+		"provider":"openai",
+		"request":{
+			"id":"req_123",
+			"model":"gpt-5.5",
+			"messages":[{"role":"user","content":"secret wrapper prompt must not persist"}],
+			"metadata":{"agent_ledger.project":"wrapped-project","agent_ledger.session_id":"wrapped-session"}
+		},
+		"request_metadata":{
+			"endpoint":"https://api.openai.com/v1/responses?api_key=secret",
+			"stream":true,
+			"agent_ledger.goal":"wrapped provider call"
+		},
+		"response":{
+			"id":"resp_123",
+			"model":"gpt-5.5",
+			"output":[{"content":[{"text":"secret wrapper output must not persist"}]}],
+			"usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":40},"output_tokens":30}
+		},
+		"response_metadata":{"status_code":200,"latency_ms":345},
+		"reconciliation":{"statement_id":"provider-statement-secret","billing_window_start":"2026-06-01","billing_window_end":"2026-06-30"}
+	}`)
+	calls, err := DecodeProviderCalls(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls=%d", len(calls))
+	}
+	call := calls[0]
+	if call.ID != "resp_123" || call.Model != "gpt-5.5" || call.Project != "wrapped-project" || call.SessionID != "wrapped-session" {
+		t.Fatalf("unexpected wrapped call identity: %#v", call)
+	}
+	events, err := ConvertProviderCalls(calls)
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("events=%d want model call, response context, reconciliation context", len(events))
+	}
+	modelEvent := findCanonical(events, "model.call")
+	reconciliationEvent := storage.CanonicalEvent{}
+	for _, event := range events {
+		if event.EventType == "context.ref" && event.EventID == "providerrecon:resp_123" {
+			reconciliationEvent = event
+		}
+	}
+	if reconciliationEvent.EventID == "" {
+		t.Fatalf("missing provider reconciliation context: %+v", events)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(modelEvent.Payload, &payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if payload["input_tokens"].(float64) != 80 || payload["cache_read_input_tokens"].(float64) != 40 || payload["output_tokens"].(float64) != 30 {
+		t.Fatalf("unexpected wrapper usage payload: %#v", payload)
+	}
+	if payload["provider_endpoint"] != "/v1/responses" || payload["provider_status_code"].(float64) != 200 || payload["provider_stream"] != true {
+		t.Fatalf("wrapper metadata missing or unsafe: %#v", payload)
+	}
+	if payload["provider_request_id"] != "req_123" || payload["provider_response_id"] != "resp_123" {
+		t.Fatalf("provider request/response ids missing: %#v", payload)
+	}
+	reconHash, _ := payload["reconciliation_ref_hash"].(string)
+	if reconHash == "" || reconHash == "provider-statement-secret" {
+		t.Fatalf("reconciliation hash missing or raw ref leaked: %#v", payload)
+	}
+	serialized, _ := json.Marshal(events)
+	if containsAny(string(serialized), "secret wrapper prompt", "secret wrapper output", "provider-statement-secret", "api_key=secret") {
+		t.Fatalf("wrapped provider content leaked: %s", string(serialized))
 	}
 }
 

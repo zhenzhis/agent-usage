@@ -165,13 +165,17 @@ func gatewayFallbackModel(models map[string]string, model string) string {
 }
 
 func (s *Server) gatewayBudgetStatus(model string, ledgerCtx gatewayLedgerContext, now time.Time) (*BudgetStatus, error) {
+	return s.usageBudgetStatus("gateway", model, ledgerCtx.Project, now)
+}
+
+func (s *Server) usageBudgetStatus(source, model, project string, now time.Time) (*BudgetStatus, error) {
 	statuses, err := s.evaluateBudgets(now)
 	if err != nil {
 		return nil, err
 	}
 	var selected *BudgetStatus
 	for _, status := range statuses {
-		if budgetSeverityRank(status.Severity) == 0 || !gatewayBudgetRelevant(status, model, ledgerCtx.Project) {
+		if budgetSeverityRank(status.Severity) == 0 || !usageBudgetRelevant(status, source, model, project) {
 			continue
 		}
 		current := status
@@ -184,13 +188,13 @@ func (s *Server) gatewayBudgetStatus(model string, ledgerCtx gatewayLedgerContex
 	return selected, nil
 }
 
-func gatewayBudgetRelevant(status BudgetStatus, model, project string) bool {
+func usageBudgetRelevant(status BudgetStatus, source, model, project string) bool {
 	match := strings.TrimSpace(status.Match)
 	switch normalizedScope(status.Scope) {
 	case "global":
 		return true
 	case "source":
-		return strings.EqualFold(match, "gateway")
+		return match != "" && strings.EqualFold(match, strings.TrimSpace(source))
 	case "model":
 		return match != "" && strings.EqualFold(match, strings.TrimSpace(model))
 	case "project":

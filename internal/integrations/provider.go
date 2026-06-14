@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/zhenzhis/agent-ledger/internal/storage"
@@ -49,13 +51,14 @@ func DecodeProviderCalls(raw []byte) ([]ProviderCall, error) {
 	if err := json.Unmarshal(trimmed, &obj); err != nil {
 		return nil, err
 	}
+	inheritedMetadata := providerEnvelopeMetadataFromRaw(trimmed)
 	for _, key := range []string{"responses", "calls", "items"} {
 		if rawEntries, ok := obj[key]; ok {
 			var entries []json.RawMessage
 			if err := json.Unmarshal(rawEntries, &entries); err != nil {
 				return nil, err
 			}
-			return decodeProviderEntries(entries)
+			return decodeProviderEntries(entries, inheritedMetadata)
 		}
 	}
 	call, err := decodeProviderEntry(trimmed)
@@ -85,6 +88,7 @@ func ConvertProviderCalls(calls []ProviderCall) ([]storage.CanonicalEvent, error
 		parserVersion := firstNonEmpty(metadataString(call.Metadata, "agent_ledger.parser_version"), "agent-ledger-provider-usage@v1")
 		rawRef := firstNonEmpty(metadataString(call.Metadata, "agent_ledger.raw_ref", "raw_ref"), "provider:"+firstNonEmpty(call.Provider, "unknown")+":"+callID)
 		matchType := firstNonEmpty(metadataString(call.Metadata, "agent_ledger.match_type", "match_type"), "source_reported")
+		reconciliationHash := providerReconciliationHash(call)
 		payload := map[string]interface{}{
 			"goal":                         goal,
 			"call_id":                      callID,
@@ -101,7 +105,14 @@ func ConvertProviderCalls(calls []ProviderCall) ([]storage.CanonicalEvent, error
 			"pricing_source":               firstNonEmpty(metadataString(call.Metadata, "pricing_source"), "provider-reported"),
 			"pricing_confidence":           firstNonEmpty(metadataString(call.Metadata, "pricing_confidence"), "provider-usage"),
 			"finish_reason":                metadataString(call.Metadata, "finish_reason"),
-			"provider_response_id":         call.ID,
+			"provider_request_id":          metadataString(call.Metadata, "provider_request_id", "request_id"),
+			"provider_response_id":         firstNonEmpty(call.ID, metadataString(call.Metadata, "provider_response_id", "response_id")),
+			"provider_status_code":         metadataInt(call.Metadata, "provider_status_code", "status_code", "statusCode"),
+			"provider_endpoint":            metadataString(call.Metadata, "provider_endpoint", "endpoint_path", "endpoint"),
+			"provider_stream":              metadataBool(call.Metadata, "provider_stream", "stream"),
+			"reconciliation_ref_hash":      reconciliationHash,
+			"reconciliation_window_start":  metadataString(call.Metadata, "reconciliation_window_start", "billing_window_start", "window_start"),
+			"reconciliation_window_end":    metadataString(call.Metadata, "reconciliation_window_end", "billing_window_end", "window_end"),
 			"provider_usage_schema":        metadataString(call.Metadata, "provider_usage_schema"),
 			"agent_ledger_provider_mapper": "v1",
 		}
@@ -161,16 +172,58 @@ func ConvertProviderCalls(calls []ProviderCall) ([]storage.CanonicalEvent, error
 			Payload:       contextJSON,
 			Confidence:    modelEvent.Confidence,
 		})
+		if reconciliationHash != "" {
+			reconciliationJSON, err := json.Marshal(map[string]interface{}{
+				"context_ref_id": "providerrecon:" + callID,
+				"ref_type":       "provider_reconciliation",
+				"ref_hash":       reconciliationHash,
+				"label":          firstNonEmpty(call.Provider, "provider") + " billing evidence",
+				"privacy_label":  "local",
+				"goal":           goal,
+			})
+			if err != nil {
+				return nil, err
+			}
+			events = append(events, storage.CanonicalEvent{
+				EventID:       "providerrecon:" + callID,
+				Source:        source,
+				EventType:     "context.ref",
+				SchemaVersion: modelEvent.SchemaVersion,
+				SourceVersion: modelEvent.SourceVersion,
+				ParserVersion: modelEvent.ParserVersion,
+				SourceEventID: "providerrecon:" + callID,
+				RawRef:        modelEvent.RawRef + ":reconciliation",
+				MatchType:     "reconstructed",
+				WorkloadID:    workloadID,
+				AgentRunID:    runID,
+				SessionID:     call.SessionID,
+				Model:         call.Model,
+				Project:       call.Project,
+				GitBranch:     modelEvent.GitBranch,
+				Timestamp:     timestamp,
+				Payload:       reconciliationJSON,
+				Confidence:    modelEvent.Confidence,
+			})
+		}
 	}
 	return events, nil
 }
 
-func decodeProviderEntries(entries []json.RawMessage) ([]ProviderCall, error) {
+func decodeProviderEntries(entries []json.RawMessage, inheritedMetadata ...map[string]interface{}) ([]ProviderCall, error) {
 	out := make([]ProviderCall, 0, len(entries))
 	for _, entry := range entries {
 		call, err := decodeProviderEntry(entry)
 		if err != nil {
 			return nil, err
+		}
+		if len(inheritedMetadata) > 0 {
+			call.Metadata = mergeProviderMetadata(inheritedMetadata[0], call.Metadata)
+			if call.Project == "" {
+				call.Project = firstNonEmpty(metadataString(call.Metadata, "agent_ledger.project", "project"), call.Project)
+			}
+			if call.SessionID == "" {
+				call.SessionID = firstNonEmpty(metadataString(call.Metadata, "agent_ledger.session_id", "session_id"), call.SessionID)
+			}
 		}
 		out = append(out, call)
 	}
@@ -182,31 +235,173 @@ func decodeProviderEntry(raw json.RawMessage) (ProviderCall, error) {
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return ProviderCall{}, err
 	}
-	metadata := map[string]interface{}{}
-	if rawMetadata, ok := obj["metadata"]; ok {
-		if typed, ok := rawMetadata.(map[string]interface{}); ok {
-			metadata = typed
-		}
-	}
-	provider := firstNonNilString(obj, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName")
+	metadata := providerEnvelopeMetadata(obj)
+	request, _ := objectValue(obj["request"])
+	response, _ := objectValue(obj["response"])
+	provider := firstNonEmpty(
+		firstNonNilString(obj, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName"),
+		stringFromObject(response, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName"),
+		stringFromObject(request, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName"),
+		metadataString(metadata, "provider", "provider_name", "providerName"),
+	)
 	usage, schema := providerUsage(obj)
 	if schema == "" {
 		return ProviderCall{}, fmt.Errorf("provider usage object is required")
 	}
-	metadata["provider_usage_schema"] = schema
-	if finish := firstNonNilString(obj, "finish_reason", "stop_reason"); finish != "" {
+	if metadataString(metadata, "provider_usage_schema") == "" {
+		metadata["provider_usage_schema"] = schema
+	}
+	if finish := firstNonEmpty(firstNonNilString(obj, "finish_reason", "stop_reason"), stringFromObject(response, "finish_reason", "stop_reason")); finish != "" {
 		metadata["finish_reason"] = finish
 	}
 	return ProviderCall{
-		ID:        firstNonNilString(obj, "id", "response_id", "completion_id", "request_id", "run_id"),
+		ID: firstNonEmpty(
+			firstNonNilString(obj, "id", "response_id", "completion_id", "request_id", "run_id"),
+			stringFromObject(response, "id", "response_id", "completion_id", "request_id", "run_id"),
+			stringFromObject(request, "id", "request_id", "run_id"),
+			metadataString(metadata, "provider_response_id", "response_id", "provider_request_id", "request_id"),
+		),
 		Provider:  provider,
-		Model:     firstNonNilString(obj, "model", "model_id", "modelID", "model_name", "modelName"),
+		Model:     firstNonEmpty(firstNonNilString(obj, "model", "model_id", "modelID", "model_name", "modelName"), stringFromObject(response, "model", "model_id", "modelID", "model_name", "modelName"), stringFromObject(request, "model", "model_id", "modelID", "model_name", "modelName"), metadataString(metadata, "model", "model_id", "modelID", "model_name", "modelName")),
 		Project:   firstNonEmpty(metadataString(metadata, "agent_ledger.project", "project"), firstNonNilString(obj, "project")),
 		SessionID: firstNonEmpty(metadataString(metadata, "agent_ledger.session_id", "session_id"), firstNonNilString(obj, "session_id")),
-		Timestamp: providerTimestamp(obj),
+		Timestamp: firstTime(providerTimestamp(obj), providerTimestamp(response), providerTimestamp(request), metadataTimestamp(metadata)),
 		Usage:     usage,
 		Metadata:  metadata,
 	}, nil
+}
+
+func providerEnvelopeMetadataFromRaw(raw []byte) map[string]interface{} {
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return map[string]interface{}{}
+	}
+	return providerEnvelopeMetadata(obj)
+}
+
+func providerEnvelopeMetadata(obj map[string]interface{}) map[string]interface{} {
+	metadata := map[string]interface{}{}
+	mergeProviderMetadataInto(metadata, objectOrEmpty(obj["metadata"]), false)
+	mergeSafeProviderMetadataInto(metadata, obj)
+	for _, key := range []string{"request_metadata", "requestMetadata", "response_metadata", "responseMetadata", "billing", "reconciliation"} {
+		mergeSafeProviderMetadataInto(metadata, objectOrEmpty(obj[key]))
+	}
+	if request, ok := objectValue(obj["request"]); ok {
+		mergeSafeProviderMetadataInto(metadata, request)
+		mergeSafeProviderMetadataInto(metadata, objectOrEmpty(request["metadata"]))
+		if id := firstNonNilString(request, "id", "request_id", "requestId", "run_id"); id != "" {
+			metadata["provider_request_id"] = id
+		}
+	}
+	if response, ok := objectValue(obj["response"]); ok {
+		mergeSafeProviderMetadataInto(metadata, response)
+		mergeSafeProviderMetadataInto(metadata, objectOrEmpty(response["metadata"]))
+		if id := firstNonNilString(response, "id", "response_id", "responseId", "completion_id"); id != "" {
+			metadata["provider_response_id"] = id
+		}
+	}
+	return metadata
+}
+
+func mergeProviderMetadata(base, override map[string]interface{}) map[string]interface{} {
+	merged := map[string]interface{}{}
+	mergeProviderMetadataInto(merged, base, false)
+	mergeProviderMetadataInto(merged, override, false)
+	return merged
+}
+
+func mergeProviderMetadataInto(dst, src map[string]interface{}, onlyIfAbsent bool) {
+	for key, value := range src {
+		if value == nil {
+			continue
+		}
+		if onlyIfAbsent {
+			if _, exists := dst[key]; exists {
+				continue
+			}
+		}
+		dst[key] = value
+	}
+}
+
+func mergeSafeProviderMetadataInto(dst map[string]interface{}, src map[string]interface{}) {
+	for _, key := range providerSafeMetadataKeys() {
+		if value, ok := src[key]; ok && value != nil {
+			normalized := providerSafeMetadataValue(key, value)
+			if normalized != "" {
+				dst[key] = normalized
+			}
+		}
+	}
+	if id := firstNonNilString(src, "request_id", "requestId"); id != "" {
+		dst["provider_request_id"] = id
+	}
+	if id := firstNonNilString(src, "response_id", "responseId", "completion_id", "id"); id != "" {
+		dst["provider_response_id"] = id
+	}
+	if endpoint := firstNonNilString(src, "endpoint", "endpoint_path", "path", "url"); endpoint != "" {
+		dst["provider_endpoint"] = sanitizeProviderEndpoint(endpoint)
+	}
+	if status := intFromMap(src, "status_code", "statusCode", "http_status", "httpStatus"); status > 0 {
+		dst["provider_status_code"] = status
+	}
+	if latency := intFromMap(src, "latency_ms", "latencyMs", "duration_ms", "durationMs"); latency > 0 {
+		dst["latency_ms"] = latency
+	}
+	if stream, ok := boolFromMap(src, "stream", "streaming"); ok {
+		dst["provider_stream"] = stream
+	}
+}
+
+func providerSafeMetadataKeys() []string {
+	return []string{
+		"agent_ledger.source", "agent_ledger.goal", "agent_ledger.project", "agent_ledger.workload_id", "agent_ledger.agent_run_id", "agent_ledger.session_id", "agent_ledger.git_branch", "agent_ledger.source_version", "agent_ledger.parser_version", "agent_ledger.raw_ref", "agent_ledger.match_type", "agent_ledger.model_alias", "agent_ledger.latency_ms",
+		"source", "goal", "project", "workload_id", "agent_run_id", "run_id", "session_id", "git_branch", "branch", "source_version", "provider_version", "parser_version", "raw_ref", "match_type", "model_alias", "pricing_source", "pricing_confidence", "finish_reason",
+		"provider", "provider_name", "providerName", "model", "model_id", "modelID", "model_name", "modelName", "provider_usage_schema",
+		"reconciliation_ref_hash", "provider_statement_hash", "statement_hash", "payload_sha256", "invoice_hash", "reconciliation_ref", "statement_id", "invoice_id", "provider_bill_ref", "reconciliation_window_start", "reconciliation_window_end", "billing_window_start", "billing_window_end", "window_start", "window_end", "provider_account_hash", "organization_hash",
+	}
+}
+
+func providerSafeMetadataValue(key string, value interface{}) string {
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "" || text == "<nil>" {
+		return ""
+	}
+	switch key {
+	case "endpoint", "endpoint_path", "path", "url":
+		return sanitizeProviderEndpoint(text)
+	case "reconciliation_ref_hash", "provider_statement_hash", "statement_hash", "payload_sha256", "invoice_hash", "provider_account_hash", "organization_hash":
+		return providerHashValue(text)
+	default:
+		return text
+	}
+}
+
+func objectOrEmpty(value interface{}) map[string]interface{} {
+	if obj, ok := objectValue(value); ok {
+		return obj
+	}
+	return map[string]interface{}{}
+}
+
+func sanitizeProviderEndpoint(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(raw); err == nil && parsed.Path != "" {
+		return parsed.Path
+	}
+	if idx := strings.Index(raw, "?"); idx >= 0 {
+		raw = raw[:idx]
+	}
+	if idx := strings.Index(raw, "#"); idx >= 0 {
+		raw = raw[:idx]
+	}
+	if raw == "" || strings.Contains(raw, " ") {
+		return ""
+	}
+	return raw
 }
 
 func providerUsage(obj map[string]interface{}) (ProviderUsage, string) {
@@ -407,6 +602,97 @@ func metadataInt(metadata map[string]interface{}, keys ...string) int {
 		}
 	}
 	return 0
+}
+
+func metadataBool(metadata map[string]interface{}, keys ...string) bool {
+	value, ok := boolFromMap(metadata, keys...)
+	return ok && value
+}
+
+func metadataTimestamp(metadata map[string]interface{}) time.Time {
+	for _, key := range []string{"timestamp", "created_at", "created", "request_timestamp", "response_timestamp"} {
+		value, ok := metadata[key]
+		if !ok || value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case time.Time:
+			return typed.UTC()
+		case string:
+			if parsed, err := time.Parse(time.RFC3339Nano, typed); err == nil {
+				return parsed.UTC()
+			}
+			if seconds, err := strconv.ParseInt(typed, 10, 64); err == nil {
+				return time.Unix(seconds, 0).UTC()
+			}
+		case float64:
+			return time.Unix(int64(typed), 0).UTC()
+		case int:
+			return time.Unix(int64(typed), 0).UTC()
+		case int64:
+			return time.Unix(typed, 0).UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func boolFromMap(obj map[string]interface{}, keys ...string) (bool, bool) {
+	for _, key := range keys {
+		value, ok := obj[key]
+		if !ok || value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case bool:
+			return typed, true
+		case string:
+			switch strings.ToLower(strings.TrimSpace(typed)) {
+			case "1", "true", "yes":
+				return true, true
+			case "0", "false", "no":
+				return false, true
+			}
+		case float64:
+			return typed != 0, true
+		case int:
+			return typed != 0, true
+		}
+	}
+	return false, false
+}
+
+func providerReconciliationHash(call ProviderCall) string {
+	if hash := metadataString(call.Metadata, "reconciliation_ref_hash", "provider_statement_hash", "statement_hash", "payload_sha256", "invoice_hash"); hash != "" {
+		return providerHashValue(hash)
+	}
+	ref := metadataString(call.Metadata, "reconciliation_ref", "statement_id", "invoice_id", "provider_bill_ref")
+	if ref == "" {
+		return ""
+	}
+	return hashRef(firstNonEmpty(call.Provider, "provider") + ":" + ref)
+}
+
+func providerHashValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(value), "sha256:") {
+		return value
+	}
+	if len(value) == 64 && isLowerHex(value) {
+		return "sha256:" + value
+	}
+	return hashRef(value)
+}
+
+func isLowerHex(value string) bool {
+	for _, ch := range value {
+		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func providerConfidence(call ProviderCall) float64 {

@@ -81,13 +81,13 @@ func AdapterContractSpec() AdapterContract {
 			},
 			{
 				Kind:            "provider",
-				Description:     "Provider usage envelopes from OpenAI-compatible, Anthropic-compatible, LiteLLM, usage_metadata/usageMetadata relay, gateway, or billing-export sources.",
+				Description:     "Provider usage envelopes from OpenAI-compatible, Anthropic-compatible, LiteLLM, usage_metadata/usageMetadata relay, gateway, request/response metadata wrappers, or billing-export sources.",
 				ConformanceKind: "provider",
 				ConvertCommand:  "agent-ledger provider convert --file response.json",
 				IngestCommand:   "agent-ledger provider ingest --file response.json",
 				Endpoint:        "POST /api/provider/calls",
-				RequiredSignals: []string{"provider or source", "model", "usage tokens", "timestamp or source event time"},
-				PrivacyNotes:    []string{"drop request/response bodies before conversion", "prefer provider request ids or hashes as raw_ref"},
+				RequiredSignals: []string{"provider or source", "model", "usage tokens", "timestamp or source event time", "optional request/response metadata ids", "optional hashed reconciliation reference"},
+				PrivacyNotes:    []string{"request/response message bodies are ignored", "headers and secrets are not persisted", "provider bill refs are hashed before persistence", "prefer provider request ids or hashes as raw_ref"},
 			},
 			{
 				Kind:            "provider-stream",
