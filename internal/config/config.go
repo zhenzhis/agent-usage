@@ -188,15 +188,18 @@ type IntegrationsConfig struct {
 
 // GatewayConfig controls the optional local provider gateway.
 type GatewayConfig struct {
-	Enabled                  bool          `yaml:"enabled"`
-	UpstreamBaseURL          string        `yaml:"upstream_base_url"`
-	APIKeyEnv                string        `yaml:"api_key_env"`
-	AnthropicUpstreamBaseURL string        `yaml:"anthropic_upstream_base_url"`
-	AnthropicAPIKeyEnv       string        `yaml:"anthropic_api_key_env"`
-	IncludeStreamUsage       bool          `yaml:"include_stream_usage"`
-	MaxBodyBytes             int64         `yaml:"max_body_bytes"`
-	MaxResponseBytes         int64         `yaml:"max_response_bytes"`
-	Timeout                  time.Duration `yaml:"timeout"`
+	Enabled                  bool              `yaml:"enabled"`
+	UpstreamBaseURL          string            `yaml:"upstream_base_url"`
+	APIKeyEnv                string            `yaml:"api_key_env"`
+	AnthropicUpstreamBaseURL string            `yaml:"anthropic_upstream_base_url"`
+	AnthropicAPIKeyEnv       string            `yaml:"anthropic_api_key_env"`
+	IncludeStreamUsage       bool              `yaml:"include_stream_usage"`
+	FallbackEnabled          bool              `yaml:"fallback_enabled"`
+	FallbackOnBudgetSeverity string            `yaml:"fallback_on_budget_severity"`
+	FallbackModels           map[string]string `yaml:"fallback_models"`
+	MaxBodyBytes             int64             `yaml:"max_body_bytes"`
+	MaxResponseBytes         int64             `yaml:"max_response_bytes"`
+	Timeout                  time.Duration     `yaml:"timeout"`
 }
 
 // OTLPReceiverConfig controls the local OTLP HTTP JSON/protobuf traces receiver.
@@ -278,6 +281,9 @@ func DefaultConfig() *Config {
 			AnthropicUpstreamBaseURL: "https://api.anthropic.com",
 			AnthropicAPIKeyEnv:       "ANTHROPIC_API_KEY",
 			IncludeStreamUsage:       true,
+			FallbackEnabled:          false,
+			FallbackOnBudgetSeverity: "critical",
+			FallbackModels:           map[string]string{},
 			MaxBodyBytes:             4 << 20,
 			MaxResponseBytes:         32 << 20,
 			Timeout:                  120 * time.Second,

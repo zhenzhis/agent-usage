@@ -206,6 +206,10 @@ gateway:
   anthropic_upstream_base_url: "https://api.anthropic.com"
   anthropic_api_key_env: "ANTHROPIC_API_KEY"
   include_stream_usage: true
+  fallback_enabled: false
+  fallback_on_budget_severity: "critical"
+  fallback_models:
+    # "gpt-5.5": "gpt-5-mini"
   max_body_bytes: 4194304
   max_response_bytes: 33554432
   timeout: 120s
@@ -215,7 +219,7 @@ gateway:
 
 企业合同价、三方中转价、地区倍率和内部折扣请通过 `pricing.overrides` 配置。
 
-可选 gateway 是本地 provider 代理，支持 OpenAI-compatible Chat Completions、OpenAI Responses 与 Anthropic Messages。它默认关闭，支持 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE，以及 Anthropic Messages JSON/SSE，只从配置的环境变量读取上游 API key，并只记录 token usage 与审计元数据，不保存 request messages 或 response content。OpenAI Responses streaming usage 会从最终 `response.completed` 事件记录。Anthropic Messages streaming usage 会合并 `message_start` 与 `message_delta` SSE 事件中的 usage。对 OpenAI Chat Completions streaming 请求，`include_stream_usage: true` 会在客户端没有显式设置 `stream_options.include_usage` 时请求兼容上游返回最终 usage chunk；如果三方中转拒绝该选项，可设为 `false`。如果成功的上游响应没有可解析 usage，Agent Ledger 会保留原始上游响应，不伪造 usage row，并返回 `X-Agent-Ledger-Usage-Warning`。当本地预算规则启用，且相关 global/source/model/project 规则已经处于 `warning` 或 `critical` 状态时，gateway 响应会带上 `X-Agent-Ledger-Budget-Severity`、`X-Agent-Ledger-Budget-Rule` 与 `X-Agent-Ledger-Budget-Ratio`，并写入一条只含元数据的本地审计事件。这些预算信号只做提醒；阻断或重路由必须由显式 policy/routing 规则配置。
+可选 gateway 是本地 provider 代理，支持 OpenAI-compatible Chat Completions、OpenAI Responses 与 Anthropic Messages。它默认关闭，支持 OpenAI-compatible Chat Completions JSON/SSE、OpenAI Responses JSON/SSE，以及 Anthropic Messages JSON/SSE，只从配置的环境变量读取上游 API key，并只记录 token usage 与审计元数据，不保存 request messages 或 response content。OpenAI Responses streaming usage 会从最终 `response.completed` 事件记录。Anthropic Messages streaming usage 会合并 `message_start` 与 `message_delta` SSE 事件中的 usage。对 OpenAI Chat Completions streaming 请求，`include_stream_usage: true` 会在客户端没有显式设置 `stream_options.include_usage` 时请求兼容上游返回最终 usage chunk；如果三方中转拒绝该选项，可设为 `false`。如果成功的上游响应没有可解析 usage，Agent Ledger 会保留原始上游响应，不伪造 usage row，并返回 `X-Agent-Ledger-Usage-Warning`。当本地预算规则启用，且相关 global/source/model/project 规则已经处于 `warning` 或 `critical` 状态时，gateway 响应会带上 `X-Agent-Ledger-Budget-Severity`、`X-Agent-Ledger-Budget-Rule` 与 `X-Agent-Ledger-Budget-Ratio`，并写入一条只含元数据的本地审计事件。自动预算 fallback 仍需显式开启且默认关闭：设置 `gateway.fallback_enabled: true`、`gateway.fallback_on_budget_severity` 与 `gateway.fallback_models` 后，才会在代理前改写已配置的模型请求。fallback 响应会包含 `X-Agent-Ledger-Requested-Model`、`X-Agent-Ledger-Routed-Model` 与 `X-Agent-Ledger-Fallback-*` headers。
 
 Webhook 通知默认关闭。显式开启后，`POST /api/notifications/webhook` 与 `agent-ledger notify webhook` 只发送有上限的 workload-event、pending approval 与 approval route 脱敏摘要；goal、project、repo、branch、team、approver route、escalation target、approval target、approval reason、event id、workload id、run id、approval request id 都会被隐藏或 hash。可用 `--dry-run` 或 `dry_run=1` 检查即将发送的 payload，不进行外发。
 
@@ -511,7 +515,7 @@ agent-ledger doctor --format markdown
 - MCP `ledger.get_policy` 在观测模式下仍可做 advisory read；但一旦传入 `workload_id`，该调用会记录 policy decision，因此会按写操作拒绝。
 - 策略审批请求只保存本地 metadata。批准后只授权相同 action/target 的重试，不包含 prompt 内容。
 - 审批队列隐私模式会在 REST、CLI 与 MCP 中隐藏审批路由元数据和 payload。审批投票审计只记录 quorum/投票事实和 `note_present`，不记录 note 明文。
-- 可选 provider gateway 默认关闭。它只在内存中把 prompt content 转发给配置的上游，只从环境变量读取 API key，并只保存 usage 元数据而不是消息内容。
+- 可选 provider gateway 默认关闭。它只在内存中把 prompt content 转发给配置的上游，只从环境变量读取 API key，并只保存 usage 元数据而不是消息内容。预算 fallback 同样默认关闭，只会在显式配置阈值和模型映射后改写已映射模型。
 - Run command 会作为 metadata 保存，但常见命令行密钥模式，例如 `API_KEY=...`、`--token ...`、`--api-key=...`、`Bearer ...`，会在持久化前做 best-effort 脱敏。敏感值仍建议使用环境变量或密钥管理器，不要放进长期命令参数。
 - 隐私 preset 可隐藏路径、项目、分支、机器名和 session id。
 - Webhook 默认关闭，只发送脱敏 workload-event、pending approval 与 approval-route 摘要。

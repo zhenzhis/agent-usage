@@ -220,6 +220,89 @@ func TestGatewayBudgetAdvisoryHeadersAndAudit(t *testing.T) {
 	}
 }
 
+func TestGatewayBudgetFallbackRoutesConfiguredModel(t *testing.T) {
+	db := testServerDB(t)
+	if err := db.InsertUsage(&storage.UsageRecord{
+		Source:       "gateway",
+		SessionID:    "fallback-budget-seed",
+		Model:        "gpt-5.5",
+		InputTokens:  900,
+		OutputTokens: 100,
+		CostUSD:      0.95,
+		Timestamp:    time.Now().Add(-time.Minute),
+		Project:      "fallback-project",
+	}); err != nil {
+		t.Fatalf("InsertUsage: %v", err)
+	}
+	t.Setenv("AGENT_LEDGER_TEST_OPENAI_KEY", "sk-test")
+	upstreamModel := ""
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var upstreamBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&upstreamBody); err != nil {
+			t.Fatalf("decode upstream body: %v", err)
+		}
+		upstreamModel, _ = upstreamBody["model"].(string)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_budget_fallback",
+			"choices":[],
+			"usage":{"prompt_tokens":10,"completion_tokens":2}
+		}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testGatewayConfig(upstream.URL)
+	cfg.FallbackEnabled = true
+	cfg.FallbackOnBudgetSeverity = "warning"
+	cfg.FallbackModels = map[string]string{"gpt-5.5": "gpt-5-mini"}
+	srv := New(db, "", Options{
+		Gateway: cfg,
+		Budgets: config.BudgetConfig{Enabled: true, Rules: []config.BudgetRule{{
+			Name: "gateway-model-cap", Period: "day", Scope: "model", Match: "gpt-5.5", Metric: "cost_usd", Limit: 1.00, WarnRatio: 0.50,
+		}}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/gateway/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-5.5","messages":[{"role":"user","content":"secret fallback prompt must not persist"}],"metadata":{"agent_ledger.project":"fallback-project"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handleOpenAIChatGateway(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if upstreamModel != "gpt-5-mini" {
+		t.Fatalf("upstream model=%q want fallback model", upstreamModel)
+	}
+	if rr.Header().Get("X-Agent-Ledger-Fallback-Applied") != "true" ||
+		rr.Header().Get("X-Agent-Ledger-Requested-Model") != "gpt-5.5" ||
+		rr.Header().Get("X-Agent-Ledger-Routed-Model") != "gpt-5-mini" ||
+		rr.Header().Get("X-Agent-Ledger-Fallback-Rule") != "gateway-model-cap" {
+		t.Fatalf("unexpected fallback headers: %+v", rr.Header())
+	}
+	usageRows, err := db.GetModelCalls(time.Now().Add(-time.Hour), time.Now().Add(time.Hour), "gateway", "gpt-5-mini", "fallback-project", 10)
+	if err != nil {
+		t.Fatalf("GetModelCalls: %v", err)
+	}
+	if len(usageRows) != 1 || usageRows[0].Calls != 1 || usageRows[0].Tokens != 12 {
+		t.Fatalf("unexpected fallback usage projection: %+v", usageRows)
+	}
+	audit, err := db.GetAuditLog(30)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	found := false
+	rawAudit, _ := json.Marshal(audit)
+	if strings.Contains(string(rawAudit), "secret fallback prompt") || strings.Contains(string(rawAudit), "sk-test") {
+		t.Fatalf("sensitive fallback gateway data leaked into audit log: %s", string(rawAudit))
+	}
+	for _, row := range audit {
+		if row.Action == "gateway.budget.fallback" && row.Target == "gpt-5.5" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("fallback audit event missing: %+v", audit)
+	}
+}
+
 func TestGatewayBudgetAdvisoryIgnoresUnrelatedScope(t *testing.T) {
 	db := testServerDB(t)
 	if err := db.InsertUsage(&storage.UsageRecord{

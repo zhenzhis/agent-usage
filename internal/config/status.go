@@ -80,20 +80,25 @@ type ConfigPrivacyStatus struct {
 }
 
 type ConfigFeatureStatus struct {
-	BudgetsEnabled      bool `json:"budgets_enabled"`
-	BudgetRuleCount     int  `json:"budget_rule_count"`
-	QuotaEnabled        bool `json:"quota_enabled"`
-	WatchdogEnabled     bool `json:"watchdog_enabled"`
-	PoliciesEnabled     bool `json:"policies_enabled"`
-	PolicyRuleCount     int  `json:"policy_rule_count"`
-	OTLPReceiverEnabled bool `json:"otlp_receiver_enabled"`
-	GatewayEnabled      bool `json:"gateway_enabled"`
+	BudgetsEnabled           bool `json:"budgets_enabled"`
+	BudgetRuleCount          int  `json:"budget_rule_count"`
+	QuotaEnabled             bool `json:"quota_enabled"`
+	WatchdogEnabled          bool `json:"watchdog_enabled"`
+	PoliciesEnabled          bool `json:"policies_enabled"`
+	PolicyRuleCount          int  `json:"policy_rule_count"`
+	OTLPReceiverEnabled      bool `json:"otlp_receiver_enabled"`
+	GatewayEnabled           bool `json:"gateway_enabled"`
+	GatewayFallbackEnabled   bool `json:"gateway_fallback_enabled"`
+	GatewayFallbackRuleCount int  `json:"gateway_fallback_rule_count"`
 }
 
 type ConfigOutboundStatus struct {
 	WebhooksEnabled              bool     `json:"webhooks_enabled"`
 	WebhookURLConfigured         bool     `json:"webhook_url_configured"`
 	GatewayEnabled               bool     `json:"gateway_enabled"`
+	GatewayFallbackEnabled       bool     `json:"gateway_fallback_enabled"`
+	GatewayFallbackSeverity      string   `json:"gateway_fallback_severity"`
+	GatewayFallbackRuleCount     int      `json:"gateway_fallback_rule_count"`
 	GatewayUpstreamConfigured    bool     `json:"gateway_upstream_configured"`
 	GatewayAPIKeyEnvConfigured   bool     `json:"gateway_api_key_env_configured"`
 	AnthropicUpstreamConfigured  bool     `json:"anthropic_upstream_configured"`
@@ -176,14 +181,16 @@ func StatusReport(cfg *Config) *ConfigStatusReport {
 			DefaultPreset:    firstNonEmpty(cfg.Privacy.DefaultPreset, "normal"),
 		},
 		Features: ConfigFeatureStatus{
-			BudgetsEnabled:      cfg.Budgets.Enabled,
-			BudgetRuleCount:     len(cfg.Budgets.Rules),
-			QuotaEnabled:        cfg.Quota.Enabled,
-			WatchdogEnabled:     cfg.Watchdog.Enabled,
-			PoliciesEnabled:     cfg.Policies.Enabled,
-			PolicyRuleCount:     len(cfg.Policies.Rules),
-			OTLPReceiverEnabled: cfg.Integrations.OTLPReceiver.Enabled,
-			GatewayEnabled:      cfg.Gateway.Enabled,
+			BudgetsEnabled:           cfg.Budgets.Enabled,
+			BudgetRuleCount:          len(cfg.Budgets.Rules),
+			QuotaEnabled:             cfg.Quota.Enabled,
+			WatchdogEnabled:          cfg.Watchdog.Enabled,
+			PoliciesEnabled:          cfg.Policies.Enabled,
+			PolicyRuleCount:          len(cfg.Policies.Rules),
+			OTLPReceiverEnabled:      cfg.Integrations.OTLPReceiver.Enabled,
+			GatewayEnabled:           cfg.Gateway.Enabled,
+			GatewayFallbackEnabled:   cfg.Gateway.FallbackEnabled,
+			GatewayFallbackRuleCount: len(cfg.Gateway.FallbackModels),
 		},
 		Outbound: outbound,
 		Teams: ConfigTeamStatus{
@@ -267,6 +274,12 @@ func (r *ConfigStatusReport) addValidationIssues(cfg *Config) {
 		}
 		if strings.TrimSpace(cfg.Gateway.APIKeyEnv) == "" && strings.TrimSpace(cfg.Gateway.AnthropicAPIKeyEnv) == "" {
 			r.addIssue("gateway.api_key_env_missing", "warning", "gateway is enabled without API key environment variable names", "configure provider API key environment variable names")
+		}
+		if cfg.Gateway.FallbackEnabled {
+			r.addIssue("gateway.fallback_enabled", "info", "gateway budget fallback can rewrite configured model requests before proxying upstream", "confirm fallback model policy and budget thresholds before enabling for shared teams")
+			if len(cfg.Gateway.FallbackModels) == 0 {
+				r.addIssue("gateway.fallback_models_missing", "warning", "gateway fallback is enabled but no fallback model mappings are configured", "set gateway.fallback_models or disable gateway.fallback_enabled")
+			}
 		}
 	}
 	if cfg.Policies.Enabled && !cfg.RBAC.Enabled {
@@ -403,6 +416,9 @@ func outboundStatus(cfg *Config) ConfigOutboundStatus {
 		WebhooksEnabled:              cfg.Webhooks.Enabled,
 		WebhookURLConfigured:         strings.TrimSpace(cfg.Webhooks.URL) != "",
 		GatewayEnabled:               cfg.Gateway.Enabled,
+		GatewayFallbackEnabled:       cfg.Gateway.FallbackEnabled,
+		GatewayFallbackSeverity:      firstNonEmpty(cfg.Gateway.FallbackOnBudgetSeverity, "critical"),
+		GatewayFallbackRuleCount:     len(cfg.Gateway.FallbackModels),
 		GatewayUpstreamConfigured:    strings.TrimSpace(cfg.Gateway.UpstreamBaseURL) != "",
 		GatewayAPIKeyEnvConfigured:   strings.TrimSpace(cfg.Gateway.APIKeyEnv) != "",
 		AnthropicUpstreamConfigured:  strings.TrimSpace(cfg.Gateway.AnthropicUpstreamBaseURL) != "",
