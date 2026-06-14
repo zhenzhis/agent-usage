@@ -517,12 +517,17 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"WorkloadTimelineResponse":  looseObjectSchema("Chronological metadata-only workload audit timeline."),
 				"WorkloadState":             looseObjectSchema("Derived terminal-state snapshot for one async agent workload."),
 				"WorkloadEventFeed":         looseObjectSchema("Cursor-stable workload state feed."),
-				"DashboardStats":            looseObjectSchema("Aggregate usage, token, cost, prompt, session, cache, budget, and runtime totals."),
-				"DashboardBundle":           looseObjectSchema("Full dashboard bundle with aggregate chart data, consistency metadata, and runtime state."),
-				"CostByModelRows":           looseObjectSchema("Cost distribution rows grouped by model."),
-				"CostTrendRows":             looseObjectSchema("Aggregate cost trend points."),
-				"TokenTrendRows":            looseObjectSchema("Aggregate token trend points."),
-				"SessionPage":               looseObjectSchema("Server-side paginated session ledger page."),
+				"DashboardStats":            dashboardStatsSchema(),
+				"DashboardConsistencyIssue": dashboardConsistencyIssueSchema(),
+				"CostByModel":               costByModelSchema(),
+				"TimeSeriesPoint":           timeSeriesPointSchema(),
+				"TokenTimeSeriesPoint":      tokenTimeSeriesPointSchema(),
+				"SessionInfo":               sessionInfoSchema(),
+				"DashboardBundle":           dashboardBundleSchema(),
+				"CostByModelRows":           costByModelRowsSchema(),
+				"CostTrendRows":             costTrendRowsSchema(),
+				"TokenTrendRows":            tokenTrendRowsSchema(),
+				"SessionPage":               sessionPageSchema(),
 				"SessionDetail":             looseObjectSchema("Scoped session detail with records and prompt counts."),
 				"SessionReplay":             looseObjectSchema("Per-call token and cost replay points for one session."),
 				"FleetAttributionReport":    looseObjectSchema("Heuristic sub-agent, parent/child, and parallel-run attribution report."),
@@ -1779,6 +1784,186 @@ func stringArraySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":  "array",
 		"items": stringSchema(),
+	}
+}
+
+func dashboardStatsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Aggregate usage, token, cost, prompt, session, call, and cache totals for one scoped time window.",
+		"additionalProperties": true,
+		"required":             []string{"total_cost", "total_tokens", "total_sessions", "total_prompts", "total_calls", "cache_hit_rate"},
+		"properties": map[string]interface{}{
+			"total_cost":     numberSchema(),
+			"total_tokens":   integerSchema(),
+			"total_sessions": integerSchema(),
+			"total_prompts":  integerSchema(),
+			"total_calls":    integerSchema(),
+			"cache_hit_rate": numberSchema(),
+		},
+	}
+}
+
+func dashboardConsistencyIssueSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "A visible mismatch between dashboard modules, usually indicating stale aggregates or a rebuild requirement.",
+		"additionalProperties": true,
+		"required":             []string{"metric", "expected", "actual", "delta", "severity", "message"},
+		"properties": map[string]interface{}{
+			"metric":   stringSchema(),
+			"expected": numberSchema(),
+			"actual":   numberSchema(),
+			"delta":    numberSchema(),
+			"severity": stringSchema(),
+			"message":  stringSchema(),
+		},
+	}
+}
+
+func costByModelSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Cost total for one model in the scoped time window.",
+		"additionalProperties": true,
+		"required":             []string{"model", "cost"},
+		"properties": map[string]interface{}{
+			"model": stringSchema(),
+			"cost":  numberSchema(),
+		},
+	}
+}
+
+func timeSeriesPointSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One cost trend point, optionally grouped by model.",
+		"additionalProperties": true,
+		"required":             []string{"date", "value"},
+		"properties": map[string]interface{}{
+			"date":  stringSchema(),
+			"value": numberSchema(),
+			"model": stringSchema(),
+		},
+	}
+}
+
+func tokenTimeSeriesPointSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One token trend point using non-overlapping token components.",
+		"additionalProperties": true,
+		"required":             []string{"date", "input_tokens", "output_tokens", "cache_read", "cache_create"},
+		"properties": map[string]interface{}{
+			"date":          stringSchema(),
+			"input_tokens":  integerSchema(),
+			"output_tokens": integerSchema(),
+			"cache_read":    integerSchema(),
+			"cache_create":  integerSchema(),
+		},
+	}
+}
+
+func sessionInfoSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One server-side aggregated session ledger row after privacy filters are applied.",
+		"additionalProperties": true,
+		"required":             []string{"session_id", "source", "project", "cwd", "git_branch", "start_time", "last_activity", "prompts", "total_cost", "tokens"},
+		"properties": map[string]interface{}{
+			"session_id":    stringSchema(),
+			"source":        stringSchema(),
+			"project":       stringSchema(),
+			"cwd":           stringSchema(),
+			"git_branch":    stringSchema(),
+			"start_time":    stringSchema(),
+			"last_activity": stringSchema(),
+			"prompts":       integerSchema(),
+			"total_cost":    numberSchema(),
+			"tokens":        integerSchema(),
+		},
+	}
+}
+
+func dashboardBundleSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Full dashboard bundle with aggregate/raw data source disclosure, chart rows, consistency metadata, and optional runtime state.",
+		"additionalProperties": true,
+		"required": []string{
+			"generated_at", "from", "to", "granularity", "data_source", "stats", "cost_by_model", "cost_over_time", "tokens_over_time", "consistency",
+		},
+		"properties": map[string]interface{}{
+			"generated_at": stringSchema(),
+			"from":         stringSchema(),
+			"to":           stringSchema(),
+			"granularity":  stringSchema(),
+			"data_source":  stringSchema(),
+			"source":       stringSchema(),
+			"model":        stringSchema(),
+			"project":      stringSchema(),
+			"stats":        refSchema("DashboardStats"),
+			"cost_by_model": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("CostByModel"),
+			},
+			"cost_over_time": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("TimeSeriesPoint"),
+			},
+			"tokens_over_time": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("TokenTimeSeriesPoint"),
+			},
+			"consistency": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("DashboardConsistencyIssue"),
+			},
+			"runtime": refSchema("RuntimeStatus"),
+		},
+	}
+}
+
+func costByModelRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Cost distribution rows grouped by model.",
+		"items":       refSchema("CostByModel"),
+	}
+}
+
+func costTrendRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Aggregate cost trend points.",
+		"items":       refSchema("TimeSeriesPoint"),
+	}
+}
+
+func tokenTrendRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Aggregate token trend points.",
+		"items":       refSchema("TokenTimeSeriesPoint"),
+	}
+}
+
+func sessionPageSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Server-side paginated session ledger page. The next_cursor is an offset-compatible cursor string.",
+		"additionalProperties": true,
+		"required":             []string{"rows", "total", "limit", "offset"},
+		"properties": map[string]interface{}{
+			"rows": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("SessionInfo"),
+			},
+			"total":       integerSchema(),
+			"limit":       integerSchema(),
+			"offset":      integerSchema(),
+			"next_cursor": stringSchema(),
+		},
 	}
 }
 

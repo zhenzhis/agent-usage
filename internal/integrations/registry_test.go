@@ -413,6 +413,93 @@ func TestOpenAPICostIntelligenceSchemaExposesTrustFields(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDashboardSchemasExposeDataSourceAndPagination(t *testing.T) {
+	spec := OpenAPISpecFor(Options{}, nil)
+	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+
+	statsSchema, ok := schemas["DashboardStats"].(map[string]interface{})
+	if !ok || statsSchema["type"] != "object" {
+		t.Fatalf("DashboardStats should be an object schema: %#v", schemas["DashboardStats"])
+	}
+	statsProps, ok := statsSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("DashboardStats missing properties: %#v", statsSchema)
+	}
+	for _, field := range []string{"total_cost", "total_tokens", "total_sessions", "total_prompts", "total_calls", "cache_hit_rate"} {
+		if statsProps[field] == nil {
+			t.Fatalf("DashboardStats schema missing field %q: %#v", field, statsProps)
+		}
+	}
+
+	bundleSchema, ok := schemas["DashboardBundle"].(map[string]interface{})
+	if !ok || bundleSchema["type"] != "object" {
+		t.Fatalf("DashboardBundle should be an object schema: %#v", schemas["DashboardBundle"])
+	}
+	bundleProps, ok := bundleSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("DashboardBundle missing properties: %#v", bundleSchema)
+	}
+	for _, field := range []string{"generated_at", "from", "to", "granularity", "data_source", "stats", "cost_by_model", "cost_over_time", "tokens_over_time", "consistency"} {
+		if bundleProps[field] == nil {
+			t.Fatalf("DashboardBundle schema missing field %q: %#v", field, bundleProps)
+		}
+	}
+	if bundleProps["data_source"].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("DashboardBundle data_source should be string: %#v", bundleProps["data_source"])
+	}
+	if bundleProps["stats"].(map[string]interface{})["$ref"] != "#/components/schemas/DashboardStats" {
+		t.Fatalf("DashboardBundle stats should reference DashboardStats: %#v", bundleProps["stats"])
+	}
+	for field, ref := range map[string]string{
+		"cost_by_model":    "#/components/schemas/CostByModel",
+		"cost_over_time":   "#/components/schemas/TimeSeriesPoint",
+		"tokens_over_time": "#/components/schemas/TokenTimeSeriesPoint",
+		"consistency":      "#/components/schemas/DashboardConsistencyIssue",
+	} {
+		arraySchema, ok := bundleProps[field].(map[string]interface{})
+		if !ok || arraySchema["type"] != "array" {
+			t.Fatalf("DashboardBundle field %q should be array: %#v", field, bundleProps[field])
+		}
+		items, ok := arraySchema["items"].(map[string]interface{})
+		if !ok || items["$ref"] != ref {
+			t.Fatalf("DashboardBundle field %q should reference %s: %#v", field, ref, arraySchema["items"])
+		}
+	}
+
+	sessionPageSchema, ok := schemas["SessionPage"].(map[string]interface{})
+	if !ok || sessionPageSchema["type"] != "object" {
+		t.Fatalf("SessionPage should be an object schema: %#v", schemas["SessionPage"])
+	}
+	sessionProps, ok := sessionPageSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("SessionPage missing properties: %#v", sessionPageSchema)
+	}
+	for _, field := range []string{"rows", "total", "limit", "offset", "next_cursor"} {
+		if sessionProps[field] == nil {
+			t.Fatalf("SessionPage schema missing field %q: %#v", field, sessionProps)
+		}
+	}
+	rowArray, ok := sessionProps["rows"].(map[string]interface{})
+	if !ok || rowArray["type"] != "array" {
+		t.Fatalf("SessionPage rows should be array: %#v", sessionProps["rows"])
+	}
+	rowItems, ok := rowArray["items"].(map[string]interface{})
+	if !ok || rowItems["$ref"] != "#/components/schemas/SessionInfo" {
+		t.Fatalf("SessionPage rows should reference SessionInfo: %#v", rowArray["items"])
+	}
+	sessionInfo, ok := schemas["SessionInfo"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("SessionInfo schema missing: %#v", schemas)
+	}
+	sessionInfoProps, ok := sessionInfo["properties"].(map[string]interface{})
+	if !ok || sessionInfoProps["session_id"] == nil || sessionInfoProps["tokens"] == nil || sessionInfoProps["total_cost"] == nil {
+		t.Fatalf("SessionInfo missing ledger fields: %#v", sessionInfo)
+	}
+	if sessionInfoProps["tokens"].(map[string]interface{})["type"] != "integer" || sessionInfoProps["total_cost"].(map[string]interface{})["type"] != "number" {
+		t.Fatalf("SessionInfo tokens/cost types are wrong: %#v", sessionInfoProps)
+	}
+}
+
 func TestOpenAPIPricingStatusSchemaExposesSourceFreshness(t *testing.T) {
 	spec := OpenAPISpecFor(Options{}, nil)
 	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
