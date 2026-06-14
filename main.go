@@ -25,6 +25,7 @@ import (
 	"github.com/zhenzhis/agent-ledger/internal/reconciliation"
 	"github.com/zhenzhis/agent-ledger/internal/server"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
+	"github.com/zhenzhis/agent-ledger/internal/ui"
 )
 
 var (
@@ -455,6 +456,8 @@ func runCLI(args []string, cfg *config.Config, db *storage.DB) error {
 		return json.NewEncoder(os.Stdout).Encode(integrations.Registry(integrations.OptionsFromConfig(cfg)))
 	case "goal":
 		return runGoalCLI(args[1:], cfg)
+	case "ui":
+		return runUICLI(args[1:])
 	case "runtime":
 		return json.NewEncoder(os.Stdout).Encode(server.RuntimeStatusFromConfig(cfg))
 	case "config":
@@ -484,6 +487,22 @@ func runGoalCLI(args []string, cfg *config.Config) error {
 		return fmt.Errorf("usage: agent-ledger goal coverage")
 	}
 	return json.NewEncoder(os.Stdout).Encode(integrations.GoalCoverageReportFor(integrations.OptionsFromConfig(cfg), server.RuntimeStatusFromConfig(cfg)))
+}
+
+func runUICLI(args []string) error {
+	if len(args) == 0 || args[0] != "check" {
+		return fmt.Errorf("usage: agent-ledger ui check [--root path] [--format json|markdown]")
+	}
+	root := cliValue(args[1:], "--root")
+	report, err := ui.Check(root)
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(cliValue(args[1:], "--format"), "markdown") {
+		_, err := os.Stdout.Write([]byte(ui.FormatMarkdown(report)))
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(report)
 }
 
 func runConfigCLI(args []string, cfg *config.Config) error {

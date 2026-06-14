@@ -1,29 +1,29 @@
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #090b10;
-  --surface: #101419;
-  --surface-2: #151b22;
-  --surface-3: #1a222c;
-  --border: #27313d;
-  --border-strong: #3a4654;
-  --text: #edf2f7;
-  --muted: #83909e;
-  --muted-2: #5f6b78;
-  --accent: #2dd4bf;
-  --accent-2: #38bdf8;
-  --green: #22c55e;
-  --amber: #f59e0b;
-  --red: #ef4444;
-  --blue: #60a5fa;
-  --purple: #a78bfa;
+  --bg: #050505;
+  --surface: #0d0d0d;
+  --surface-2: #151515;
+  --surface-3: #1f1f1f;
+  --border: #2d2d2d;
+  --border-strong: #6a6a6a;
+  --text: #f5f5f5;
+  --muted: #a3a3a3;
+  --muted-2: #737373;
+  --accent: #f5f5f5;
+  --accent-2: #d4d4d4;
+  --green: #cfcfcf;
+  --amber: #a3a3a3;
+  --red: #f5f5f5;
+  --blue: #e5e5e5;
+  --purple: #858585;
   --shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
   --chart-bg: transparent;
-  --chart-text: #edf2f7;
-  --chart-muted: #83909e;
-  --chart-grid: #25303b;
+  --chart-text: #f5f5f5;
+  --chart-muted: #a3a3a3;
+  --chart-grid: #2d2d2d;
   --tooltip-bg: rgba(16, 20, 25, 0.96);
-  --tooltip-border: #3a4654;
+  --tooltip-border: #6a6a6a;
 }
 
 .workload-panel {
@@ -175,29 +175,29 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f4f6f8;
+  --bg: #f7f7f7;
   --surface: #ffffff;
-  --surface-2: #f8fafc;
-  --surface-3: #eef2f6;
-  --border: #d8e0e8;
-  --border-strong: #b8c4d0;
-  --text: #111827;
-  --muted: #5b6673;
-  --muted-2: #7a8794;
-  --accent: #0f766e;
-  --accent-2: #0369a1;
-  --green: #15803d;
-  --amber: #b45309;
-  --red: #b91c1c;
-  --blue: #2563eb;
-  --purple: #7c3aed;
+  --surface-2: #eeeeee;
+  --surface-3: #e4e4e4;
+  --border: #d4d4d4;
+  --border-strong: #737373;
+  --text: #111111;
+  --muted: #555555;
+  --muted-2: #777777;
+  --accent: #111111;
+  --accent-2: #333333;
+  --green: #404040;
+  --amber: #666666;
+  --red: #111111;
+  --blue: #222222;
+  --purple: #555555;
   --shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
   --chart-bg: transparent;
-  --chart-text: #111827;
-  --chart-muted: #5b6673;
-  --chart-grid: #d8e0e8;
+  --chart-text: #111111;
+  --chart-muted: #555555;
+  --chart-grid: #d4d4d4;
   --tooltip-bg: rgba(255, 255, 255, 0.97);
-  --tooltip-border: #cbd5e1;
+  --tooltip-border: #737373;
 }
 
 * {
@@ -297,9 +297,7 @@ button:focus-visible {
   flex: 0 0 auto;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  background:
-    linear-gradient(90deg, transparent 0 30%, color-mix(in srgb, var(--accent) 24%, transparent) 30% 34%, transparent 34% 64%, color-mix(in srgb, var(--green) 24%, transparent) 64% 68%, transparent 68%),
-    linear-gradient(0deg, color-mix(in srgb, var(--surface-3) 76%, transparent), var(--surface));
+  background: var(--surface);
   position: relative;
 }
 
@@ -471,7 +469,7 @@ input::placeholder {
 
 .icon-btn.primary {
   background: var(--accent);
-  color: #051312;
+  color: var(--bg);
   border-color: var(--accent);
   font-weight: 700;
 }
@@ -537,11 +535,6 @@ input::placeholder {
   width: 3px;
   background: var(--kpi-accent, var(--accent));
 }
-
-.accent-cyan { --kpi-accent: var(--accent); }
-.accent-green { --kpi-accent: var(--green); }
-.accent-blue { --kpi-accent: var(--blue); }
-.accent-amber { --kpi-accent: var(--amber); }
 
 .kpi-label {
   display: block;
@@ -713,7 +706,7 @@ td {
 .source-openclaw { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 42%, var(--border)); }
 .source-opencode { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 42%, var(--border)); }
 .source-kiro { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 42%, var(--border)); }
-.source-pi { color: #fb7185; border-color: color-mix(in srgb, #fb7185 42%, var(--border)); }
+.source-pi { color: var(--text); border-color: color-mix(in srgb, var(--text) 42%, var(--border)); }
 
 .mono,
 .num,
@@ -824,7 +817,7 @@ td {
 }
 
 .page-btn.active {
-  color: #051312;
+  color: var(--bg);
   background: var(--accent);
   border-color: var(--accent);
   font-weight: 760;

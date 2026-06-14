@@ -581,11 +581,11 @@ function getThemeColors() {
   const heatmap = Array.from({ length: 4 }, (_, index) => cs.getPropertyValue(`--chart-heatmap-${index}`).trim()).filter(Boolean);
   return {
     bg: cs.getPropertyValue("--chart-bg").trim() || "transparent",
-    text: cs.getPropertyValue("--chart-text").trim() || "#edf2f7",
-    muted: cs.getPropertyValue("--chart-muted").trim() || "#83909e",
-    grid: cs.getPropertyValue("--chart-grid").trim() || "#25303b",
+    text: cs.getPropertyValue("--chart-text").trim() || "#f5f5f5",
+    muted: cs.getPropertyValue("--chart-muted").trim() || "#a3a3a3",
+    grid: cs.getPropertyValue("--chart-grid").trim() || "#2d2d2d",
     tooltipBg: cs.getPropertyValue("--tooltip-bg").trim() || "rgba(16,20,25,0.96)",
-    tooltipBorder: cs.getPropertyValue("--tooltip-border").trim() || "#3a4654",
+    tooltipBorder: cs.getPropertyValue("--tooltip-border").trim() || "#6a6a6a",
     accent: cs.getPropertyValue("--accent").trim() || "#f5f5f5",
     green: cs.getPropertyValue("--green").trim() || "#d4d4d4",
     amber: cs.getPropertyValue("--amber").trim() || "#a3a3a3",

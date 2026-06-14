@@ -5,6 +5,7 @@
 ### Added
 
 - Official Agent Ledger naming across module path, binary, Docker, release metadata, and documentation.
+- Read-only `agent-ledger ui check` static UI/UX contract for the embedded black/white/gray dashboard, covering local assets, accessibility, chart summaries, privacy entrypoints, monochrome palette, responsive breakpoints, touch targets, skeleton reduced-motion, and contained table overflow.
 - Pricing governance with local override, official OpenAI/Anthropic seed rows, LiteLLM fallback, pricing source health, snapshots, audit events, and per-record pricing confidence.
 - Pricing sync now still applies official seed rows and local overrides when LiteLLM fallback fetch fails, and pricing status exposes effective rule counts by source and confidence.
 - Cost Intelligence, Cache Doctor, Data Quality Center, Model Call Analytics, Quota Status, Watchdog events, evidence bundles, reconciliation imports, audit log, policy status, and expanded export types.

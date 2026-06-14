@@ -141,6 +141,7 @@ func goalCoverageReportFor(opts Options, runtime *storage.RuntimeStatus, contrac
 			"go vet ./...",
 			"govulncheck ./...",
 			"node --check internal/server/static/app.js",
+			"agent-ledger ui check",
 			"git diff --check",
 			"agent-ledger contracts verify",
 			"agent-ledger integrations",
@@ -332,11 +333,12 @@ func goalCoverageSections(capabilities map[string]Capability) []GoalCoverageSect
 			Evidence: GoalCoverageEvidence{
 				Endpoints: []string{"/"},
 				Docs:      []string{"internal/server/static/index.html", "internal/server/static/app.js", "internal/server/static/styles.css"},
-				Tests:     []string{"node --check internal/server/static/app.js", "browser smoke at 375/768/1024/1440px"},
+				Commands:  []string{"agent-ledger ui check"},
+				Tests:     []string{"internal/ui/contract_test.go", "node --check internal/server/static/app.js", "browser smoke at 375/768/1024/1440px after layout changes"},
 			},
 			Privacy: "UI privacy mode hides sensitive identifiers in screenshots and shareable views.",
 			Remaining: []string{
-				"Continue visual browser regression checks when dashboard layout changes.",
+				"Continue visual browser regression checks when dashboard layout changes; static UI contract is enforced by agent-ledger ui check.",
 			},
 		},
 	}

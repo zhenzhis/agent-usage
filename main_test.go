@@ -12,6 +12,7 @@ import (
 	"github.com/zhenzhis/agent-ledger/internal/config"
 	"github.com/zhenzhis/agent-ledger/internal/controlplane"
 	"github.com/zhenzhis/agent-ledger/internal/storage"
+	"github.com/zhenzhis/agent-ledger/internal/ui"
 )
 
 func openTestDB(t *testing.T) *storage.DB {
@@ -62,6 +63,7 @@ func TestCLICommandRequiresWriteForNotifyDryRun(t *testing.T) {
 		{name: "workload leases default list is read-only", args: []string{"workload", "leases"}, want: false},
 		{name: "workload leases with flags is read-only", args: []string{"workload", "leases", "--limit", "50"}, want: false},
 		{name: "workload lease acquire writes", args: []string{"workload", "lease", "acquire", "--workload-id", "wl_1"}, want: true},
+		{name: "ui check is read-only", args: []string{"ui", "check"}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,6 +102,7 @@ func TestCLIReadOnlyGateMatchesAdmission(t *testing.T) {
 		{"policy", "resolve", "--id", "apr_1", "--status", "approved"},
 		{"notify", "webhook", "--dry-run"},
 		{"notify", "webhook"},
+		{"ui", "check"},
 		{"workload", "feed"},
 		{"workload", "heartbeat", "--run-id", "run_1"},
 		{"workload", "lease", "list"},
@@ -211,6 +214,36 @@ func TestOpenAPICLIOutputsControlPlaneSpec(t *testing.T) {
 	paths := spec["paths"].(map[string]interface{})
 	if paths["/api/openapi.json"] == nil || paths["/api/contracts/verify"] == nil || paths["/api/config/status"] == nil || paths["/api/readiness"] == nil || paths["/api/admission/check"] == nil || paths["/api/events/validate"] == nil || paths["/api/workloads"] == nil || paths["/api/workloads/lease"] == nil || paths["/api/workloads/lease/renew"] == nil || paths["/api/workloads/lease/release"] == nil || paths["/api/workloads/leases"] == nil || paths["/api/agent-runs"] == nil {
 		t.Fatalf("openapi output missing expected paths: %+v", paths)
+	}
+}
+
+func TestUICLICheckOutputsContractReport(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	cfg.RBAC.ReadOnly = true
+
+	out, err := captureStdout(t, func() error {
+		return runCLI([]string{"ui", "check"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI ui check: %v", err)
+	}
+	var report ui.ContractReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("decode ui check output: %v\n%s", err, out)
+	}
+	if report.Contract != ui.ContractName || !report.OK || report.ContractHash == "" || report.Checked == 0 || report.Failed != 0 {
+		t.Fatalf("unexpected ui contract output: %+v", report)
+	}
+
+	md, err := captureStdout(t, func() error {
+		return runCLI([]string{"ui", "check", "--format", "markdown"}, cfg, db)
+	})
+	if err != nil {
+		t.Fatalf("runCLI ui check markdown: %v", err)
+	}
+	if !strings.Contains(md, "Agent Ledger UI Contract") || !strings.Contains(md, "charts.accessible") {
+		t.Fatalf("unexpected ui contract markdown: %s", md)
 	}
 }
 

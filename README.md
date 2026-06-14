@@ -74,6 +74,7 @@ CLI:
 ./agent-ledger openapi
 ./agent-ledger integrations
 ./agent-ledger runtime
+./agent-ledger ui check
 ./agent-ledger config status --format markdown
 ./agent-ledger readiness --format markdown
 ./agent-ledger admission check --surface http --method POST --path /api/events --role operator
@@ -536,8 +537,11 @@ If costs differ from a provider invoice:
 go test ./...
 go vet ./...
 node --check internal/server/static/app.js
+go run . ui check
 docker compose up -d --build
 ```
+
+`agent-ledger ui check` is a read-only static UI/UX contract for the embedded dashboard. It verifies local-only assets, viewport and skip-link accessibility, labelled controls, chart ARIA summaries, privacy-mode entrypoints, monochrome palette constraints, absence of decorative gradients, responsive breakpoint coverage for 375/768/1024/1440px smoke, mobile touch targets, skeleton reduced-motion support, and contained table overflow.
 
 On hosts without Go installed:
 

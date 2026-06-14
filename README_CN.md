@@ -74,6 +74,7 @@ CLI：
 ./agent-ledger openapi
 ./agent-ledger integrations
 ./agent-ledger runtime
+./agent-ledger ui check
 ./agent-ledger config status --format markdown
 ./agent-ledger readiness --format markdown
 ./agent-ledger admission check --surface http --method POST --path /api/events --role operator
@@ -536,8 +537,11 @@ agent-ledger doctor --format markdown
 go test ./...
 go vet ./...
 node --check internal/server/static/app.js
+go run . ui check
 docker compose up -d --build
 ```
+
+`agent-ledger ui check` 是只读的 embedded dashboard 静态 UI/UX 契约检查。它会验证本地资源、viewport 与 skip link、按钮标签、图表 ARIA 摘要、隐私模式入口、黑白灰调色板、无装饰性渐变、375/768/1024/1440px smoke 所需响应式断点、移动端触控目标、skeleton reduced-motion 支持，以及表格横向滚动是否被限制在组件内部。
 
 主机没有 Go 时：
 

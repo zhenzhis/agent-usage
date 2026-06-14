@@ -119,22 +119,22 @@
 
   <main id="main-content" tabindex="-1">
     <section class="kpi-grid" aria-label="Usage summary">
-      <article class="kpi-card accent-cyan">
+      <article class="kpi-card">
         <span class="kpi-label" data-i18n="totalTokens">Total Tokens</span>
         <strong class="kpi-value" id="s-tokens">0</strong>
         <span class="kpi-sub" id="s-token-mix">-</span>
       </article>
-      <article class="kpi-card accent-green">
+      <article class="kpi-card">
         <span class="kpi-label" data-i18n="totalCost">Total Cost</span>
         <strong class="kpi-value" id="s-cost">$0.00</strong>
         <span class="kpi-sub" id="s-cost-per-call">-</span>
       </article>
-      <article class="kpi-card accent-blue">
+      <article class="kpi-card">
         <span class="kpi-label" data-i18n="sessions">Sessions</span>
         <strong class="kpi-value" id="s-sessions">0</strong>
         <span class="kpi-sub" id="s-calls">0 calls</span>
       </article>
-      <article class="kpi-card accent-amber">
+      <article class="kpi-card">
         <span class="kpi-label" data-i18n="prompts">Prompts</span>
         <strong class="kpi-value" id="s-prompts">0</strong>
         <span class="kpi-sub" id="s-cache-hit">0% cache</span>
@@ -182,26 +182,26 @@
           <h2 data-i18n="activityMatrix">Activity Matrix</h2>
           <span class="panel-meta" id="activity-meta"></span>
         </div>
-        <div class="chart chart-compact" id="chart-activity"></div>
+        <div class="chart chart-compact" id="chart-activity" role="img" tabindex="0" aria-label="Activity matrix chart showing AI coding activity by time bucket"></div>
       </article>
       <article class="panel panel-wide">
         <div class="panel-header">
           <h2 data-i18n="tokenThroughput">Token Throughput</h2>
           <span class="panel-meta" id="throughput-meta"></span>
         </div>
-        <div class="chart" id="chart-tokens"></div>
+        <div class="chart" id="chart-tokens" role="img" tabindex="0" aria-label="Token throughput chart showing input output and cache token trends"></div>
       </article>
       <article class="panel">
         <div class="panel-header">
           <h2 data-i18n="costOverTime">Cost Trend</h2>
         </div>
-        <div class="chart" id="chart-cost"></div>
+        <div class="chart" id="chart-cost" role="img" tabindex="0" aria-label="Cost trend chart showing local estimated AI agent cost over time"></div>
       </article>
       <article class="panel">
         <div class="panel-header">
           <h2 data-i18n="modelAllocation">Model Allocation</h2>
         </div>
-        <div class="chart" id="chart-models"></div>
+        <div class="chart" id="chart-models" role="img" tabindex="0" aria-label="Model allocation chart showing cost and calls by model"></div>
       </article>
       <article class="panel">
         <div class="panel-header">
