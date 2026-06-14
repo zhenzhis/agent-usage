@@ -134,7 +134,7 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 			"/api/offline-bundle/export":          offlineBundleExportOperation(),
 			"/api/offline-bundle/import":          flexibleWriteOperation("reports", "Import offline bundle", "Import a local offline usage bundle. Optional signature verification uses AGENT_LEDGER_BUNDLE_KEY from the environment.", "OfflineBundleImportRequest", "OfflineBundleImportResponse", []map[string]interface{}{boolQueryParam("verify", "Require bundle signature verification.")}, []string{"application/json"}),
 			"/api/policies/status":                filteredReadOperation("governance", "Get policy status", "Read local policy configuration summary and advisory enforcement posture.", "PolicyStatus", []map[string]interface{}{}),
-			"/api/policy/evaluate":                flexibleWriteOperation("governance", "Evaluate policy", "Evaluate local advisory policy rules for an operation. Optional record=true writes local policy decision metadata.", "PolicyEvaluationRequest", "PolicyEvaluationResponse", []map[string]interface{}{}, []string{"application/json"}),
+			"/api/policy/evaluate":                policyEvaluateOperation(),
 			"/api/policy/audit":                   filteredReadOperation("governance", "Audit policy candidates", "Read policy audit findings over usage, tool, and workload candidates.", "PolicyAuditReport", append(scopedTimeParams(), intQueryParam("limit", "Maximum policy findings."))),
 			"/api/policy/enforcement":             filteredReadOperation("governance", "Get policy enforcement evidence", "Read local policy enforcement decisions and approval evidence.", "PolicyEnforcementReport", []map[string]interface{}{intQueryParam("limit", "Maximum enforcement rows.")}),
 			"/api/policy/decisions":               filteredReadOperation("governance", "List policy decisions", "Read policy decisions by workload id.", "PolicyDecisionRows", []map[string]interface{}{queryParam("workload_id", "Optional workload id filter."), intQueryParam("limit", "Maximum policy decisions.")}),
@@ -956,6 +956,14 @@ func policyApprovalsOperation() map[string]interface{} {
 		"get":  get,
 		"post": post,
 	}
+}
+
+func policyEvaluateOperation() map[string]interface{} {
+	op := flexibleWriteOperation("governance", "Evaluate policy", "Evaluate local advisory policy rules for an operation. Optional record=true or workload_id writes local policy decision metadata.", "PolicyEvaluationRequest", "PolicyEvaluationResponse", []map[string]interface{}{}, []string{"application/json"})
+	meta := op["post"].(map[string]interface{})["x-agent-ledger"].(map[string]interface{})
+	meta["writes_local_state"] = "conditional: record=true or workload_id writes local policy decision metadata"
+	meta["read_only_safe"] = "true when record=false and no workload_id is supplied"
+	return op
 }
 
 func exportOperation() map[string]interface{} {

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zhenzhis/agent-ledger/internal/integrations"
 )
 
 func TestAdmissionAllowsReadOnlyValidation(t *testing.T) {
@@ -73,6 +75,70 @@ func TestAdmissionRoleAndUnknownOperation(t *testing.T) {
 	unknown := EvaluateAdmission(AdmissionInput{Surface: "mcp", Tool: "private.tool", Role: "admin"}, fixedAdmissionTime())
 	if unknown.Allowed || unknown.KnownOperation {
 		t.Fatalf("unknown operation should be denied: %+v", unknown)
+	}
+}
+
+func TestAdmissionRejectsUnknownHTTPPathsAndMethodMismatches(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "unknown-get", method: "GET", path: "/private/path"},
+		{name: "get-post-only", method: "GET", path: "/api/events"},
+		{name: "post-get-only", method: "POST", path: "/api/dashboard"},
+		{name: "head-get-only", method: "HEAD", path: "/api/dashboard"},
+		{name: "options-get-only", method: "OPTIONS", path: "/api/dashboard"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			decision := EvaluateAdmission(AdmissionInput{
+				Surface:     "http",
+				Method:      tc.method,
+				Path:        tc.path,
+				Role:        "admin",
+				RBACEnabled: true,
+				ReadOnly:    true,
+			}, fixedAdmissionTime())
+			if decision.Allowed || decision.KnownOperation {
+				t.Fatalf("expected unknown HTTP operation to be denied: %+v", decision)
+			}
+		})
+	}
+}
+
+func TestHTTPAdmissionMatchesOpenAPIContractMethods(t *testing.T) {
+	spec := integrations.OpenAPISpecFor(integrations.Options{}, nil)
+	paths := spec["paths"].(map[string]interface{})
+	for path, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			t.Fatalf("OpenAPI path %s has invalid item: %#v", path, rawPathItem)
+		}
+		for _, method := range []string{"get", "post"} {
+			rawOperation, ok := pathItem[method]
+			if !ok {
+				continue
+			}
+			operation, ok := rawOperation.(map[string]interface{})
+			if !ok {
+				t.Fatalf("OpenAPI %s %s has invalid operation: %#v", method, path, rawOperation)
+			}
+			access := HTTPAccessFor(strings.ToUpper(method), path, AdmissionInput{ReadOnly: true})
+			if !access.Known {
+				t.Fatalf("admission does not know OpenAPI operation %s %s: %+v", method, path, access)
+			}
+			if method == "get" {
+				if !access.AvailableInReadOnly || access.WritesLocalState {
+					t.Fatalf("GET %s should be read-only in admission: %+v", path, access)
+				}
+				continue
+			}
+			expectedReadOnly := openAPIOperationReadOnlySafe(operation)
+			if access.AvailableInReadOnly != expectedReadOnly {
+				t.Fatalf("OpenAPI/admission read-only mismatch for %s %s: openapi=%t admission=%+v", method, path, expectedReadOnly, access)
+			}
+		}
 	}
 }
 
@@ -185,6 +251,22 @@ func TestAdmissionPrivacyAndFingerprint(t *testing.T) {
 	md := FormatAdmissionMarkdown(decision)
 	if !strings.Contains(md, "Agent Ledger Admission") || strings.Contains(md, "C:/Users/zhang/private") {
 		t.Fatalf("unexpected markdown: %s", md)
+	}
+}
+
+func openAPIOperationReadOnlySafe(operation map[string]interface{}) bool {
+	meta, ok := operation["x-agent-ledger"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	switch value := meta["read_only_safe"].(type) {
+	case bool:
+		return value
+	case string:
+		lower := strings.ToLower(value)
+		return strings.Contains(lower, "true") || strings.Contains(lower, "available")
+	default:
+		return false
 	}
 }
 

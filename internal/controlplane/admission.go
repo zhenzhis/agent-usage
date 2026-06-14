@@ -179,18 +179,14 @@ func IsReadOnlyAllowedHTTP(method, path string, dryRun bool) bool {
 func HTTPAccessFor(method, path string, input AdmissionInput) OperationAccess {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = canonicalPath(path)
-	if IsHTTPSafeMethod(method) {
-		return OperationAccess{
-			Known:               true,
-			WriteMode:           "none",
-			AvailableInReadOnly: true,
-			ReadOnlyBehavior:    "safe HTTP method; available in read-only mode",
-			RequiredRole:        "viewer",
-			Reason:              "safe HTTP query",
+	if method == "GET" {
+		if isReadOnlyHTTPPath(path) {
+			return readOnlyHTTPAccess("HTTP read endpoint is available in read-only mode")
 		}
+		return unknownAccess("HTTP GET is not part of the contract for this path")
 	}
-	if method != "POST" && method != "PUT" && method != "PATCH" && method != "DELETE" {
-		return unknownAccess("unsupported HTTP method")
+	if method != "POST" {
+		return unknownAccess("HTTP method is not part of the control-plane contract")
 	}
 	switch path {
 	case "/api/events/validate", "/api/integrations/conformance":
@@ -239,6 +235,76 @@ func HTTPAccessFor(method, path string, input AdmissionInput) OperationAccess {
 		return writeHTTPAccess("operator", "gateway calls proxy upstream traffic and write usage/audit metadata")
 	default:
 		return unknownAccess("unknown HTTP path")
+	}
+}
+
+func isReadOnlyHTTPPath(path string) bool {
+	switch path {
+	case "/.well-known/agent-ledger.json",
+		"/api/discovery",
+		"/api/stats",
+		"/api/dashboard",
+		"/api/cost-by-model",
+		"/api/cost-over-time",
+		"/api/tokens-over-time",
+		"/api/sessions",
+		"/api/session-detail",
+		"/api/session-replay",
+		"/api/workloads",
+		"/api/workloads/queue",
+		"/api/workloads/leases",
+		"/api/agent-runs/liveness",
+		"/api/workload-detail",
+		"/api/workload-graph",
+		"/api/workload-timeline",
+		"/api/workload-state",
+		"/api/workload-events",
+		"/api/workload-events/stream",
+		"/api/fleet-attribution",
+		"/api/integrations",
+		"/api/contracts",
+		"/api/contracts/verify",
+		"/api/openapi.json",
+		"/api/integrations/adapter-spec",
+		"/api/runtime/status",
+		"/api/config/status",
+		"/api/readiness",
+		"/api/admission/check",
+		"/api/event-schema",
+		"/api/event-examples",
+		"/api/health/ingestion",
+		"/api/pricing/status",
+		"/api/pricing/audit",
+		"/api/budgets/status",
+		"/api/quota/status",
+		"/api/data-quality",
+		"/api/doctor",
+		"/api/model-calls",
+		"/api/model-registry",
+		"/api/cost-intelligence",
+		"/api/cache/doctor",
+		"/api/anomalies",
+		"/api/watchdog/events",
+		"/api/audit-log",
+		"/api/reconciliation/status",
+		"/api/router/simulate",
+		"/api/preflight/estimate",
+		"/api/chargeback",
+		"/api/wrapped",
+		"/api/badge/repo.svg",
+		"/api/evidence-bundle",
+		"/api/offline-bundle/export",
+		"/api/policies/status",
+		"/api/policy/audit",
+		"/api/policy/enforcement",
+		"/api/policy/decisions",
+		"/api/policy/approvals",
+		"/api/policy/approval-routes",
+		"/api/export",
+		"/api/report":
+		return true
+	default:
+		return false
 	}
 }
 
