@@ -534,7 +534,11 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 				"PricingAuditRows":          looseObjectSchema("Pricing audit rows for official, fallback, override, stale, fuzzy, and unpriced matches."),
 				"BudgetStatusResponse":      looseObjectSchema("Configured budget rules and current severity state."),
 				"QuotaStatus":               looseObjectSchema("Local estimated quota windows, reset calendar, burn-rate, and remaining usage."),
-				"DataQualityReport":         looseObjectSchema("Trust and completeness diagnostics for usage, pricing, provenance, duplicates, and malformed rows."),
+				"UnpricedModel":             unpricedModelSchema(),
+				"QualitySource":             qualitySourceSchema(),
+				"ProvenanceQuality":         provenanceQualitySchema(),
+				"ProjectionQuality":         projectionQualitySchema(),
+				"DataQualityReport":         dataQualityReportSchema(),
 				"DoctorReport":              looseObjectSchema("One-click local diagnostic report. Privacy filters redact paths, projects, branches, and session ids."),
 				"ModelCallRows":             looseObjectSchema("Model call analytics grouped by source, model, project, and session."),
 				"ModelRegistryRows":         looseObjectSchema("Model pricing and provenance registry rows."),
@@ -1843,6 +1847,127 @@ func pricingStatusSchema() map[string]interface{} {
 			},
 			"mode":        stringSchema(),
 			"stale_after": stringSchema(),
+		},
+	}
+}
+
+func stringIntMapSchema(description string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          description,
+		"additionalProperties": integerSchema(),
+	}
+}
+
+func unpricedModelSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One source/model group with usage records that could not be priced.",
+		"additionalProperties": true,
+		"required":             []string{"source", "model", "records"},
+		"properties": map[string]interface{}{
+			"source":  stringSchema(),
+			"model":   stringSchema(),
+			"records": integerSchema(),
+		},
+	}
+}
+
+func qualitySourceSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Source-level trust signals for pricing completeness, aggregate estimates, cache awareness, and confidence.",
+		"additionalProperties": true,
+		"required": []string{
+			"source", "records", "sessions", "unpriced_records", "estimated_aggregate_records", "cache_aware_records", "confidence", "message",
+		},
+		"properties": map[string]interface{}{
+			"source":                      stringSchema(),
+			"records":                     integerSchema(),
+			"sessions":                    integerSchema(),
+			"unpriced_records":            integerSchema(),
+			"estimated_aggregate_records": integerSchema(),
+			"cache_aware_records":         integerSchema(),
+			"confidence":                  numberSchema(),
+			"message":                     stringSchema(),
+		},
+	}
+}
+
+func provenanceQualitySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Traceability diagnostics for canonical events and source adapter provenance. Raw prompt and response content are not included.",
+		"additionalProperties": true,
+		"required": []string{
+			"events", "missing_schema_version", "missing_source_version", "missing_parser_version", "missing_raw_ref", "missing_match_type", "schema_version_mix", "match_type_mix", "confidence", "message",
+		},
+		"properties": map[string]interface{}{
+			"events":                 integerSchema(),
+			"missing_schema_version": integerSchema(),
+			"missing_source_version": integerSchema(),
+			"missing_parser_version": integerSchema(),
+			"missing_raw_ref":        integerSchema(),
+			"missing_match_type":     integerSchema(),
+			"schema_version_mix":     stringIntMapSchema("Canonical event counts grouped by schema version."),
+			"match_type_mix":         stringIntMapSchema("Canonical event counts grouped by raw-source match type."),
+			"confidence":             numberSchema(),
+			"message":                stringSchema(),
+		},
+	}
+}
+
+func projectionQualitySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Alignment diagnostics between canonical model calls and projected usage records.",
+		"additionalProperties": true,
+		"required": []string{
+			"model_calls", "projected_usage_records", "missing_usage_projection", "cost_mismatch_records", "cost_delta_usd", "duplicate_session_owners", "confidence", "message",
+		},
+		"properties": map[string]interface{}{
+			"model_calls":              integerSchema(),
+			"projected_usage_records":  integerSchema(),
+			"missing_usage_projection": integerSchema(),
+			"cost_mismatch_records":    integerSchema(),
+			"cost_delta_usd":           numberSchema(),
+			"duplicate_session_owners": integerSchema(),
+			"confidence":               numberSchema(),
+			"message":                  stringSchema(),
+		},
+	}
+}
+
+func dataQualityReportSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Trust and completeness diagnostics for usage, pricing, provenance, canonical projection, source confidence, and malformed rows.",
+		"additionalProperties": true,
+		"required": []string{
+			"generated_at", "pricing_sources", "source_quality", "unpriced_models", "confidence_mix", "provenance", "projection", "issues",
+		},
+		"properties": map[string]interface{}{
+			"generated_at": stringSchema(),
+			"pricing_sources": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("PricingSourceStatus"),
+			},
+			"source_quality": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("QualitySource"),
+			},
+			"unpriced_models": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("UnpricedModel"),
+			},
+			"confidence_mix": stringIntMapSchema("Usage record counts grouped by pricing confidence."),
+			"provenance":     refSchema("ProvenanceQuality"),
+			"projection":     refSchema("ProjectionQuality"),
+			"issues": map[string]interface{}{
+				"type":        "array",
+				"description": "Anomaly, watchdog, or diagnostic issues. Privacy filters redact paths, projects, branches, and session ids where requested.",
+				"items":       looseObjectSchema("Insight event row."),
+			},
 		},
 	}
 }

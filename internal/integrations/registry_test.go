@@ -450,6 +450,64 @@ func TestOpenAPIPricingStatusSchemaExposesSourceFreshness(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDataQualitySchemaExposesTrustFields(t *testing.T) {
+	spec := OpenAPISpecFor(Options{}, nil)
+	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+	reportSchema, ok := schemas["DataQualityReport"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("DataQualityReport schema missing: %#v", schemas)
+	}
+	if reportSchema["type"] != "object" {
+		t.Fatalf("DataQualityReport should be an object schema: %#v", reportSchema)
+	}
+	reportProps, ok := reportSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("DataQualityReport missing properties: %#v", reportSchema)
+	}
+	for _, field := range []string{"generated_at", "pricing_sources", "source_quality", "unpriced_models", "confidence_mix", "provenance", "projection", "issues"} {
+		if reportProps[field] == nil {
+			t.Fatalf("DataQualityReport schema missing field %q: %#v", field, reportProps)
+		}
+	}
+	sourceQuality, ok := reportProps["source_quality"].(map[string]interface{})
+	if !ok || sourceQuality["type"] != "array" {
+		t.Fatalf("DataQualityReport source_quality should be an array: %#v", reportProps["source_quality"])
+	}
+	sourceItems, ok := sourceQuality["items"].(map[string]interface{})
+	if !ok || sourceItems["$ref"] != "#/components/schemas/QualitySource" {
+		t.Fatalf("DataQualityReport source_quality should reference QualitySource: %#v", sourceQuality["items"])
+	}
+	pricingSources, ok := reportProps["pricing_sources"].(map[string]interface{})
+	if !ok || pricingSources["type"] != "array" {
+		t.Fatalf("DataQualityReport pricing_sources should be an array: %#v", reportProps["pricing_sources"])
+	}
+	pricingItems, ok := pricingSources["items"].(map[string]interface{})
+	if !ok || pricingItems["$ref"] != "#/components/schemas/PricingSourceStatus" {
+		t.Fatalf("DataQualityReport pricing_sources should reference PricingSourceStatus: %#v", pricingSources["items"])
+	}
+	qualitySchema, ok := schemas["QualitySource"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("QualitySource schema missing: %#v", schemas)
+	}
+	qualityProps, ok := qualitySchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("QualitySource missing properties: %#v", qualitySchema)
+	}
+	for _, field := range []string{"source", "records", "sessions", "unpriced_records", "estimated_aggregate_records", "cache_aware_records", "confidence", "message"} {
+		if qualityProps[field] == nil {
+			t.Fatalf("QualitySource schema missing field %q: %#v", field, qualityProps)
+		}
+	}
+	if qualityProps["estimated_aggregate_records"].(map[string]interface{})["type"] != "integer" {
+		t.Fatalf("QualitySource estimated_aggregate_records should be integer: %#v", qualityProps["estimated_aggregate_records"])
+	}
+	for _, name := range []string{"UnpricedModel", "ProvenanceQuality", "ProjectionQuality"} {
+		if _, ok := schemas[name].(map[string]interface{}); !ok {
+			t.Fatalf("%s schema missing: %#v", name, schemas)
+		}
+	}
+}
+
 func TestOpenAPIRequestBodyOperationsAdvertiseBodyLimits(t *testing.T) {
 	spec := OpenAPISpecFor(Options{}, nil)
 	paths := spec["paths"].(map[string]interface{})
