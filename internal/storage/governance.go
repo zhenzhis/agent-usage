@@ -98,21 +98,38 @@ type ModelCallRow struct {
 
 // CostInsightRow explains one high-impact session without reading prompt text.
 type CostInsightRow struct {
-	Source       string   `json:"source"`
-	SessionID    string   `json:"session_id"`
-	Project      string   `json:"project"`
-	GitBranch    string   `json:"git_branch"`
-	Models       int      `json:"models"`
-	Calls        int      `json:"calls"`
-	Prompts      int      `json:"prompts"`
-	Tokens       int64    `json:"tokens"`
-	CostUSD      float64  `json:"cost_usd"`
-	CacheHitRate float64  `json:"cache_hit_rate"`
-	OutputRatio  float64  `json:"output_ratio"`
-	QualityScore float64  `json:"quality_score"`
-	Reasons      []string `json:"reasons"`
-	Advice       []string `json:"advice"`
-	LastActivity string   `json:"last_activity"`
+	Source              string   `json:"source"`
+	SessionID           string   `json:"session_id"`
+	Project             string   `json:"project"`
+	GitBranch           string   `json:"git_branch"`
+	Models              int      `json:"models"`
+	Calls               int      `json:"calls"`
+	Prompts             int      `json:"prompts"`
+	InputTokens         int64    `json:"input_tokens"`
+	CacheReadTokens     int64    `json:"cache_read_tokens"`
+	CacheWriteTokens    int64    `json:"cache_write_tokens"`
+	OutputTokens        int64    `json:"output_tokens"`
+	ReasoningTokens     int64    `json:"reasoning_tokens"`
+	Tokens              int64    `json:"tokens"`
+	CostUSD             float64  `json:"cost_usd"`
+	CostPerCall         float64  `json:"cost_per_call"`
+	CostPerPrompt       float64  `json:"cost_per_prompt"`
+	TokensPerPrompt     float64  `json:"tokens_per_prompt"`
+	CacheHitRate        float64  `json:"cache_hit_rate"`
+	OutputRatio         float64  `json:"output_ratio"`
+	PricingSources      []string `json:"pricing_sources"`
+	PricingConfidences  []string `json:"pricing_confidences"`
+	OfficialPricedCalls int      `json:"official_priced_calls"`
+	OverridePricedCalls int      `json:"override_priced_calls"`
+	FallbackPricedCalls int      `json:"fallback_priced_calls"`
+	FuzzyPricedCalls    int      `json:"fuzzy_priced_calls"`
+	SourceReportedCalls int      `json:"source_reported_calls"`
+	UnpricedCalls       int      `json:"unpriced_calls"`
+	UnknownPricingCalls int      `json:"unknown_pricing_calls"`
+	QualityScore        float64  `json:"quality_score"`
+	Reasons             []string `json:"reasons"`
+	Advice              []string `json:"advice"`
+	LastActivity        string   `json:"last_activity"`
 }
 
 // CacheDoctorRow summarizes cache behavior by source/model/project.
@@ -864,7 +881,18 @@ func (d *DB) GetCostIntelligence(from, to time.Time, source, model, project stri
 		COALESCE(SUM(u.input_tokens+u.cache_read_input_tokens+u.cache_creation_input_tokens+u.output_tokens),0),
 		COALESCE(SUM(u.cost_usd),0), COALESCE(SUM(u.cache_read_input_tokens),0),
 		COALESCE(SUM(u.input_tokens+u.cache_read_input_tokens+u.cache_creation_input_tokens),0),
-		COALESCE(SUM(u.output_tokens),0), MAX(u.timestamp)
+		COALESCE(SUM(u.input_tokens),0), COALESCE(SUM(u.cache_creation_input_tokens),0),
+		COALESCE(SUM(u.output_tokens),0), COALESCE(SUM(u.reasoning_output_tokens),0),
+		COALESCE(GROUP_CONCAT(DISTINCT COALESCE(NULLIF(u.pricing_source,''),'unknown')),'unknown'),
+		COALESCE(GROUP_CONCAT(DISTINCT COALESCE(NULLIF(u.pricing_confidence,''),'unknown')),'unknown'),
+		SUM(CASE WHEN COALESCE(NULLIF(u.pricing_confidence,''),'unknown')='official' THEN 1 ELSE 0 END),
+		SUM(CASE WHEN COALESCE(NULLIF(u.pricing_confidence,''),'unknown')='override' THEN 1 ELSE 0 END),
+		SUM(CASE WHEN COALESCE(NULLIF(u.pricing_confidence,''),'unknown')='fallback' THEN 1 ELSE 0 END),
+		SUM(CASE WHEN COALESCE(NULLIF(u.pricing_confidence,''),'unknown')='fuzzy' THEN 1 ELSE 0 END),
+		SUM(CASE WHEN COALESCE(NULLIF(u.pricing_confidence,''),'unknown')='source-reported' THEN 1 ELSE 0 END),
+		SUM(CASE WHEN COALESCE(NULLIF(u.pricing_confidence,''),'unknown')='unpriced' THEN 1 ELSE 0 END),
+		SUM(CASE WHEN COALESCE(NULLIF(u.pricing_confidence,''),'unknown')='unknown' THEN 1 ELSE 0 END),
+		MAX(u.timestamp)
 		FROM usage_records u LEFT JOIN sessions s ON u.source=s.source AND u.session_id=s.session_id
 		WHERE u.timestamp >= ? AND u.timestamp < ?`+filter+`
 		GROUP BY u.source,u.session_id ORDER BY COALESCE(SUM(u.cost_usd),0) DESC LIMIT ?`, args...)
@@ -875,15 +903,29 @@ func (d *DB) GetCostIntelligence(from, to time.Time, source, model, project stri
 	var out []CostInsightRow
 	for rows.Next() {
 		var r CostInsightRow
-		var cacheRead, totalInput, output int64
-		if err := rows.Scan(&r.Source, &r.SessionID, &r.Project, &r.GitBranch, &r.Models, &r.Calls, &r.Prompts, &r.Tokens, &r.CostUSD, &cacheRead, &totalInput, &output, &r.LastActivity); err != nil {
+		var pricingSources, pricingConfidences string
+		var totalInput int64
+		if err := rows.Scan(&r.Source, &r.SessionID, &r.Project, &r.GitBranch, &r.Models, &r.Calls, &r.Prompts,
+			&r.Tokens, &r.CostUSD, &r.CacheReadTokens, &totalInput, &r.InputTokens, &r.CacheWriteTokens,
+			&r.OutputTokens, &r.ReasoningTokens, &pricingSources, &pricingConfidences,
+			&r.OfficialPricedCalls, &r.OverridePricedCalls, &r.FallbackPricedCalls, &r.FuzzyPricedCalls,
+			&r.SourceReportedCalls, &r.UnpricedCalls, &r.UnknownPricingCalls, &r.LastActivity); err != nil {
 			return nil, err
 		}
-		if totalInput > 0 {
-			r.CacheHitRate = float64(cacheRead) / float64(totalInput)
-			r.OutputRatio = float64(output) / float64(totalInput)
+		r.PricingSources = splitDistinctCSV(pricingSources)
+		r.PricingConfidences = splitDistinctCSV(pricingConfidences)
+		if r.Calls > 0 {
+			r.CostPerCall = r.CostUSD / float64(r.Calls)
 		}
-		r.Reasons, r.Advice = explainCost(r, totalInput, output)
+		if r.Prompts > 0 {
+			r.CostPerPrompt = r.CostUSD / float64(r.Prompts)
+			r.TokensPerPrompt = float64(r.Tokens) / float64(r.Prompts)
+		}
+		if totalInput > 0 {
+			r.CacheHitRate = float64(r.CacheReadTokens) / float64(totalInput)
+			r.OutputRatio = float64(r.OutputTokens) / float64(totalInput)
+		}
+		r.Reasons, r.Advice = explainCost(r, totalInput)
 		r.QualityScore = sessionQualityScore(r)
 		out = append(out, r)
 	}
@@ -1300,8 +1342,28 @@ func (d *DB) RecordOfflineBundle(bundleID string, payload []byte, format string)
 	return err
 }
 
-func explainCost(r CostInsightRow, totalInput, output int64) ([]string, []string) {
+func explainCost(r CostInsightRow, totalInput int64) ([]string, []string) {
 	var reasons, advice []string
+	if r.UnpricedCalls > 0 {
+		reasons = append(reasons, "unpriced records in session")
+		advice = append(advice, "run pricing sync or add a local pricing override before treating cost totals as complete")
+	}
+	if r.SourceReportedCalls > 0 {
+		reasons = append(reasons, "source-reported costs preserved without a local pricing match")
+		advice = append(advice, "use provider reconciliation or a contract override to validate source-reported charges")
+	}
+	if r.FuzzyPricedCalls > 0 {
+		reasons = append(reasons, "fuzzy model pricing match used")
+		advice = append(advice, "configure an exact model alias or override for audit-grade reporting")
+	}
+	if r.FallbackPricedCalls > 0 {
+		reasons = append(reasons, "fallback pricing source used")
+		advice = append(advice, "confirm the provider rate card or add an enterprise contract override for production reporting")
+	}
+	if r.UnknownPricingCalls > 0 {
+		reasons = append(reasons, "pricing provenance missing")
+		advice = append(advice, "recalculate costs after pricing sync to backfill pricing source and confidence fields")
+	}
 	if r.Models > 1 {
 		reasons = append(reasons, "multiple models used in one session")
 		advice = append(advice, "review model switches; keep low-risk turns on smaller models when possible")
@@ -1314,9 +1376,17 @@ func explainCost(r CostInsightRow, totalInput, output int64) ([]string, []string
 		reasons = append(reasons, "high tokens per prompt")
 		advice = append(advice, "split broad tasks or reduce repository/context scope before starting the agent")
 	}
-	if output > 0 && totalInput > 0 && float64(output)/float64(totalInput) > 0.8 {
+	if r.CacheWriteTokens > r.CacheReadTokens*2 && r.CacheWriteTokens > 0 {
+		reasons = append(reasons, "cache writes exceed cache reads")
+		advice = append(advice, "check whether cwd, tool context, MCP servers, or compact/resume behavior is invalidating cache")
+	}
+	if r.OutputTokens > 0 && totalInput > 0 && float64(r.OutputTokens)/float64(totalInput) > 0.8 {
 		reasons = append(reasons, "high output/input ratio")
 		advice = append(advice, "check if generated output is overly verbose or repeated")
+	}
+	if r.ReasoningTokens > 0 {
+		reasons = append(reasons, "reasoning tokens present")
+		advice = append(advice, "track reasoning-heavy sessions separately from baseline coding-agent budgets")
 	}
 	if len(reasons) == 0 {
 		reasons = append(reasons, "normal cost profile for available local fields")
@@ -1339,10 +1409,37 @@ func sessionQualityScore(r CostInsightRow) float64 {
 	if r.CostUSD > 10 {
 		score -= 0.1
 	}
+	if r.UnpricedCalls > 0 || r.UnknownPricingCalls > 0 {
+		score -= 0.2
+	}
+	if r.FuzzyPricedCalls > 0 || r.SourceReportedCalls > 0 {
+		score -= 0.1
+	}
+	if r.FallbackPricedCalls > 0 {
+		score -= 0.05
+	}
 	if score < 0 {
 		score = 0
 	}
 	return math.Round(score*100) / 100
+}
+
+func splitDistinctCSV(value string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func insightEventKey(e InsightEvent) string {

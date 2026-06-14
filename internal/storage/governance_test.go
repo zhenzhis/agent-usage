@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+func hasString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRecalcCostsDetailedAnnotatesPricing(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
 	if err != nil {
@@ -36,6 +45,12 @@ func TestRecalcCostsDetailedAnnotatesPricing(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].CostUSD != 2000 {
 		t.Fatalf("unexpected cost intelligence: %+v", rows)
+	}
+	if rows[0].InputTokens != 1000 || rows[0].OutputTokens != 500 || rows[0].OfficialPricedCalls != 1 {
+		t.Fatalf("cost intelligence did not expose token/pricing breakdown: %+v", rows[0])
+	}
+	if !hasString(rows[0].PricingSources, "openai-official") || !hasString(rows[0].PricingConfidences, "official") {
+		t.Fatalf("cost intelligence did not expose pricing provenance: %+v", rows[0])
 	}
 	quality, err := db.GetDataQuality(time.Hour)
 	if err != nil {
@@ -104,6 +119,75 @@ func TestRecalcCostsDetailedPreservesSourceReportedAndMarksUnpriced(t *testing.T
 	}
 	if unpricedRecords != 1 || len(quality.UnpricedModels) != 1 || quality.UnpricedModels[0].Model != "unknown-frontier-model" {
 		t.Fatalf("data quality did not expose unpriced model: %+v", quality)
+	}
+}
+
+func TestCostIntelligenceExplainsPricingAndTokenDrivers(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ts := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	if err := db.UpsertSession(&SessionRecord{
+		Source: "codex", SessionID: "expensive", Project: "quant", GitBranch: "main", StartTime: ts, Prompts: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertUsageBatch([]*UsageRecord{
+		{
+			Source: "codex", SessionID: "expensive", Model: "gpt-5",
+			InputTokens: 60000, CacheReadInputTokens: 1000, CacheCreationInputTokens: 20000,
+			OutputTokens: 70000, ReasoningOutputTokens: 10000, CostUSD: 15, Timestamp: ts,
+			Project: "quant", GitBranch: "main", PricingSource: "litellm", PricingModel: "gpt-5", PricingConfidence: "fallback",
+		},
+		{
+			Source: "codex", SessionID: "expensive", Model: "future-model",
+			InputTokens: 1000, OutputTokens: 100, CostUSD: 0, Timestamp: ts.Add(time.Minute),
+			Project: "quant", GitBranch: "main", PricingConfidence: "unpriced", PricingNote: "no pricing rule matched",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.GetCostIntelligence(ts.Add(-time.Minute), ts.Add(time.Hour), "codex", "", "", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one insight row, got %+v", rows)
+	}
+	row := rows[0]
+	if row.InputTokens != 61000 || row.CacheReadTokens != 1000 || row.CacheWriteTokens != 20000 || row.OutputTokens != 70100 || row.ReasoningTokens != 10000 {
+		t.Fatalf("unexpected token breakdown: %+v", row)
+	}
+	if row.FallbackPricedCalls != 1 || row.UnpricedCalls != 1 {
+		t.Fatalf("unexpected pricing counters: %+v", row)
+	}
+	if !hasString(row.PricingSources, "litellm") || !hasString(row.PricingSources, "unknown") {
+		t.Fatalf("pricing sources missing expected provenance: %+v", row.PricingSources)
+	}
+	if !hasString(row.PricingConfidences, "fallback") || !hasString(row.PricingConfidences, "unpriced") {
+		t.Fatalf("pricing confidences missing expected states: %+v", row.PricingConfidences)
+	}
+	for _, reason := range []string{
+		"unpriced records in session",
+		"fallback pricing source used",
+		"multiple models used in one session",
+		"low cache hit rate with large context",
+		"high tokens per prompt",
+		"cache writes exceed cache reads",
+		"high output/input ratio",
+		"reasoning tokens present",
+	} {
+		if !hasString(row.Reasons, reason) {
+			t.Fatalf("missing reason %q in %+v", reason, row.Reasons)
+		}
+	}
+	if row.CostPerCall != 7.5 || row.CostPerPrompt != 15 || row.TokensPerPrompt != 152100 {
+		t.Fatalf("unexpected derived cost metrics: %+v", row)
+	}
+	if row.QualityScore >= 1 {
+		t.Fatalf("expected quality score penalty for low-confidence/high-cost row: %+v", row)
 	}
 }
 
