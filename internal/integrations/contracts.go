@@ -174,6 +174,8 @@ func ContractBundleFor(opts Options, runtime *storage.RuntimeStatus) ContractBun
 				PrimaryURI:       "/api/provider-profiles",
 				HTTPMethods:      []string{"GET"},
 				CLICommands:      []string{"agent-ledger provider profiles"},
+				MCPTools:         []string{"ledger.provider_profiles"},
+				MCPResources:     []string{"agent-ledger://integrations/provider-profiles"},
 				Revalidation:     "ETag + If-None-Match",
 				Privacy:          "static provider/runtime metadata, usage schema names, gateway route names, pricing strategy labels, and privacy notes only",
 				ReadOnlySafe:     true,

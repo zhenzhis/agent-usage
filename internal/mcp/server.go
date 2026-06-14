@@ -546,6 +546,7 @@ func tools() []map[string]interface{} {
 		}),
 		tool("ledger.adapter_contract", "Return the machine-readable adapter contract for privacy-safe ecosystem integrations.", map[string]interface{}{}),
 		tool("ledger.integrations", "Return the Agent Ledger integration capability catalog.", map[string]interface{}{}),
+		tool("ledger.provider_profiles", "Return the privacy-safe provider and runtime profile catalog for adapters, routers, relays, local runtimes, and edge models.", map[string]interface{}{}),
 		tool("ledger.get_policy", "Evaluate local advisory policy rules for a proposed agent action.", map[string]interface{}{
 			"workload_id": stringSchema(),
 			"run_id":      stringSchema(),
@@ -672,6 +673,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://schema/canonical-events", "Canonical Event Schema", "Metadata-only event contract for workload, run, model-call, tool-call, artifact, evaluation, and policy events.", "application/json"),
 		resource("agent-ledger://schema/canonical-event-examples", "Canonical Event Examples", "Privacy-safe templates for all supported canonical event types.", "application/json"),
 		resource("agent-ledger://integrations/catalog", "Integration Capability Catalog", "Privacy-safe catalog of implemented, experimental, and planned integration surfaces.", "application/json"),
+		resource("agent-ledger://integrations/provider-profiles", "Provider Profile Catalog", "Privacy-safe provider/runtime profile catalog for adapters, routers, relays, local runtimes, and edge models.", "application/json"),
 		resource("agent-ledger://integrations/adapter-contract", "Adapter Contract", "Machine-readable contract for writing privacy-safe Agent Ledger adapters.", "application/json"),
 		resource("agent-ledger://runtime/status", "Runtime Status", "Process-level observer/control-plane mode, read-only state, background task state, and write-operation status.", "application/json"),
 		resource("agent-ledger://config/status", "Config Status", "Privacy-safe deployment configuration status with risk checks and remediation hints.", "application/json"),
@@ -810,6 +812,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, error
 		return integrations.AdapterContractSpec(), nil
 	case "ledger.integrations":
 		return integrations.Registry(integrations.OptionsFromConfig(s.cfg)), nil
+	case "ledger.provider_profiles":
+		return integrations.ProviderProfiles(), nil
 	case "ledger.get_policy":
 		return s.toolGetPolicy(args)
 	case "ledger.policy_audit":
@@ -951,6 +955,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		}, nil
 	case "agent-ledger://integrations/catalog":
 		return integrations.Registry(integrations.OptionsFromConfig(s.cfg)), nil
+	case "agent-ledger://integrations/provider-profiles":
+		return integrations.ProviderProfiles(), nil
 	case "agent-ledger://integrations/adapter-contract":
 		return integrations.AdapterContractSpec(), nil
 	case "agent-ledger://runtime/status":
