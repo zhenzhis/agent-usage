@@ -249,12 +249,15 @@ func officialPriceRows() []storage.PricingAuditRow {
 	}, "anthropic-official", 3, 15, 0.30, 3.75)
 	add([]string{"claude-haiku-4.5", "claude-haiku-4-5"}, "anthropic-official", 1, 5, 0.10, 1.25)
 	add([]string{"claude-haiku-3.5", "claude-haiku-3-5"}, "anthropic-official", 0.80, 4, 0.08, 1)
-	add([]string{"gpt-5", "gpt-5-codex"}, "openai-official", 1.25, 10, 0.125, 0)
+	add([]string{"gpt-5"}, "openai-official", 1.25, 10, 0.125, 0)
+	add([]string{"gpt-5.3-codex", "gpt-5-3-codex", "gpt-5-codex"}, "openai-official", 1.75, 14, 0.175, 0)
 	add([]string{"gpt-5-mini"}, "openai-official", 0.25, 2, 0.025, 0)
 	add([]string{"gpt-5-nano"}, "openai-official", 0.05, 0.40, 0.005, 0)
 	add([]string{"gpt-5.5", "gpt-5-5"}, "openai-official", 5, 30, 0.50, 0)
-	add([]string{"gpt-5.4", "gpt-5-4"}, "openai-official", 2, 15, 0.20, 0)
-	add([]string{"gpt-5.4-mini", "gpt-5-4-mini"}, "openai-official", 0.40, 2, 0.04, 0)
+	add([]string{"gpt-5.4", "gpt-5-4"}, "openai-official", 2.50, 15, 0.25, 0)
+	add([]string{"gpt-5.4-mini", "gpt-5-4-mini"}, "openai-official", 0.75, 4.50, 0.075, 0)
+	add([]string{"gpt-5.4-nano", "gpt-5-4-nano"}, "openai-official", 0.12, 0.60, 0.012, 0)
+	add([]string{"gpt-5.4-pro", "gpt-5-4-pro"}, "openai-official", 20, 120, 0, 0)
 	return rows
 }
 

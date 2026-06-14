@@ -84,9 +84,13 @@ func TestOfficialSeedsCoverCurrentPrimaryModelsAndAliases(t *testing.T) {
 		readPerM   float64
 		writePerM  float64
 	}{
-		{model: "gpt-5.4", source: "openai-official", inputPerM: 2, outputPerM: 15, readPerM: 0.20},
-		{model: "gpt-5-4", source: "openai-official", inputPerM: 2, outputPerM: 15, readPerM: 0.20},
-		{model: "gpt-5.4-mini", source: "openai-official", inputPerM: 0.40, outputPerM: 2, readPerM: 0.04},
+		{model: "gpt-5.3-codex", source: "openai-official", inputPerM: 1.75, outputPerM: 14, readPerM: 0.175},
+		{model: "gpt-5-codex", source: "openai-official", inputPerM: 1.75, outputPerM: 14, readPerM: 0.175},
+		{model: "gpt-5.4", source: "openai-official", inputPerM: 2.50, outputPerM: 15, readPerM: 0.25},
+		{model: "gpt-5-4", source: "openai-official", inputPerM: 2.50, outputPerM: 15, readPerM: 0.25},
+		{model: "gpt-5.4-mini", source: "openai-official", inputPerM: 0.75, outputPerM: 4.50, readPerM: 0.075},
+		{model: "gpt-5.4-nano", source: "openai-official", inputPerM: 0.12, outputPerM: 0.60, readPerM: 0.012},
+		{model: "gpt-5.4-pro", source: "openai-official", inputPerM: 20, outputPerM: 120},
 		{model: "gpt-5.5", source: "openai-official", inputPerM: 5, outputPerM: 30, readPerM: 0.50},
 		{model: "claude-fable-5", source: "anthropic-official", inputPerM: 10, outputPerM: 50, readPerM: 1, writePerM: 12.5},
 		{model: "claude-mythos-5", source: "anthropic-official", inputPerM: 10, outputPerM: 50, readPerM: 1, writePerM: 12.5},
