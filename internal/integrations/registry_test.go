@@ -56,6 +56,8 @@ func TestRegistryReportsImplementedAndPlannedCapabilities(t *testing.T) {
 	assertCapabilityCommand(t, catalog, "protocol.runtime_status", "agent-ledger runtime")
 	assertCapabilityCommand(t, catalog, "protocol.config_status", "agent-ledger config status")
 	assertCapabilityCommand(t, catalog, "protocol.readiness", "agent-ledger readiness")
+	assertCapabilityDataClass(t, catalog, "protocol.readiness", "workload queue claimability counts")
+	assertCapabilityDataClass(t, catalog, "protocol.readiness", "workload lease pressure buckets")
 	assertCapabilityCommand(t, catalog, "protocol.admission_check", "agent-ledger admission check")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.contracts")
 	assertCapabilityTool(t, catalog, "protocol.mcp_stdio", "ledger.contracts_verify")
@@ -403,6 +405,19 @@ func assertCapabilityResource(t *testing.T, catalog Catalog, id, resource string
 		if cap.ID == id {
 			if !stringSliceHas(cap.Resources, resource) {
 				t.Fatalf("%s missing resource %q: %#v", id, resource, cap.Resources)
+			}
+			return
+		}
+	}
+	t.Fatalf("capability %s missing", id)
+}
+
+func assertCapabilityDataClass(t *testing.T, catalog Catalog, id, dataClass string) {
+	t.Helper()
+	for _, cap := range catalog.Capabilities {
+		if cap.ID == id {
+			if !stringSliceHas(cap.DataClasses, dataClass) {
+				t.Fatalf("%s missing data class %q: %#v", id, dataClass, cap.DataClasses)
 			}
 			return
 		}
