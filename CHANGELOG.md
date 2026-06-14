@@ -27,6 +27,7 @@
 - OpenAPI/contract coverage for workload close/link and agent run heartbeat write endpoints.
 - Explicit `405 Method Not Allowed` responses for dashboard, session, diagnostics, policy, and workload JSON read endpoints when called with non-GET methods.
 - Explicit `405 Method Not Allowed` responses for export, report, evidence bundle, offline bundle export, and repo badge download endpoints when called with non-GET methods.
+- Standardized `Allow` headers on method-not-allowed responses across control-plane, write, gateway, telemetry, workload, and mixed-method endpoints.
 - MCP resources `agent-ledger://workload/state` and `agent-ledger://workload/timeline` for privacy-safe single-workload monitor context.
 - OpenAPI/contract coverage for OpenTelemetry GenAI, OTLP HTTP traces, A2A task telemetry, provider usage envelopes, and optional provider gateway endpoints.
 - OpenAPI/contract coverage for dashboard, session ledger, operations, pricing, budget, quota, diagnostics, governance, reports, evidence bundle, offline bundle, and export endpoints.

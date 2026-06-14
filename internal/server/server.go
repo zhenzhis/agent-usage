@@ -542,11 +542,17 @@ func conflict(w http.ResponseWriter, err error) {
 
 func requireHTTPMethod(w http.ResponseWriter, r *http.Request, method string) bool {
 	if r.Method != method {
-		w.Header().Set("Allow", method)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		methodNotAllowed(w, method)
 		return false
 	}
 	return true
+}
+
+func methodNotAllowed(w http.ResponseWriter, methods ...string) {
+	if len(methods) > 0 {
+		w.Header().Set("Allow", strings.Join(methods, ", "))
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {

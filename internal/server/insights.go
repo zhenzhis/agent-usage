@@ -24,8 +24,7 @@ type reconciliationImportPayload struct {
 }
 
 func (s *Server) handlePricingStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	sources, err := s.db.GetPricingSources(s.options.Pricing.StaleAfter)
@@ -54,8 +53,7 @@ func (s *Server) handlePricingStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePricingSync(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "admin") {
@@ -74,8 +72,7 @@ func (s *Server) handlePricingSync(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePricingRecalculate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "admin") {
@@ -130,8 +127,7 @@ func (s *Server) handleDataQuality(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -435,8 +431,7 @@ func (s *Server) handleReconciliationStatus(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleRouterSimulation(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -470,8 +465,7 @@ func (s *Server) handleRouterSimulation(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handlePreflightEstimate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -492,8 +486,7 @@ func (s *Server) handlePreflightEstimate(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleChargeback(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -522,8 +515,7 @@ func (s *Server) handleChargeback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWrapped(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -554,8 +546,7 @@ func (s *Server) handleWrapped(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReconciliationImport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {

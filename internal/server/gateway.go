@@ -46,8 +46,7 @@ type gatewayLedgerContext struct {
 const defaultAnthropicVersion = "2023-06-01"
 
 func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	cfg := normalizedGatewayConfig(s.options.Gateway)
@@ -146,8 +145,7 @@ func (s *Server) handleOpenAIChatGateway(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleAnthropicMessagesGateway(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	cfg := normalizedAnthropicGatewayConfig(s.options.Gateway)
@@ -245,8 +243,7 @@ func (s *Server) handleAnthropicMessagesGateway(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleOpenAIResponsesGateway(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	cfg := normalizedGatewayConfig(s.options.Gateway)

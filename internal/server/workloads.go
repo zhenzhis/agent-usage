@@ -20,7 +20,7 @@ func (s *Server) handleWorkloads(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		s.handleWorkloadCreate(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		methodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
 }
 
@@ -111,8 +111,7 @@ func (s *Server) handleWorkloadCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadClose(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -139,8 +138,7 @@ func (s *Server) handleWorkloadClose(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadLink(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -174,8 +172,7 @@ func (s *Server) handleWorkloadLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadClaimNext(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -242,8 +239,7 @@ func (s *Server) handleWorkloadClaimNext(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleWorkloadQueue(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -271,8 +267,7 @@ func (s *Server) handleWorkloadQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadLeaseAcquire(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -311,8 +306,7 @@ func (s *Server) handleWorkloadLeaseAcquire(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleWorkloadLeaseRenew(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -343,8 +337,7 @@ func (s *Server) handleWorkloadLeaseRenew(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleWorkloadLeaseRelease(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -368,8 +361,7 @@ func (s *Server) handleWorkloadLeaseRelease(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleWorkloadLeases(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -386,8 +378,7 @@ func (s *Server) handleWorkloadLeases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -425,8 +416,7 @@ func (s *Server) handleAgentRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAgentRunHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -468,8 +458,7 @@ func (s *Server) handleAgentRunHeartbeat(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleAgentRunLiveness(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -505,8 +494,7 @@ func (s *Server) handleAgentRunLiveness(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleWorkloadDetail(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -532,8 +520,7 @@ func (s *Server) handleWorkloadDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadGraph(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -558,8 +545,7 @@ func (s *Server) handleWorkloadGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadTimeline(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -586,8 +572,7 @@ func (s *Server) handleWorkloadTimeline(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleWorkloadState(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -651,8 +636,7 @@ func (s *Server) handleWorkloadEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkloadEventsStream(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
@@ -833,16 +817,14 @@ func (s *Server) handleModelRegistry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCanonicalEventSchema(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	writeJSONWithETag(w, r, storage.CanonicalEventSchema(), storage.CanonicalEventSchemaFingerprint())
 }
 
 func (s *Server) handleCanonicalEventExamples(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	eventType := r.URL.Query().Get("type")
@@ -857,8 +839,7 @@ func (s *Server) handleCanonicalEventExamples(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleCanonicalEvents(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -896,8 +877,7 @@ func (s *Server) handleCanonicalEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCanonicalEventValidate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) {

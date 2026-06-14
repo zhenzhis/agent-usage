@@ -12,8 +12,7 @@ import (
 )
 
 func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	catalog := integrations.Registry(s.integrationOptions())
@@ -21,8 +20,7 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	manifest := integrations.Discovery(s.integrationOptions())
@@ -35,8 +33,7 @@ func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	opts := s.integrationOptions()
@@ -46,8 +43,7 @@ func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleContractVerification(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	opts := s.integrationOptions()
@@ -57,8 +53,7 @@ func (s *Server) handleContractVerification(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	opts := s.integrationOptions()
@@ -68,8 +63,7 @@ func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRuntimeStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	status := s.runtimeStatus()
@@ -82,8 +76,7 @@ func (s *Server) handleRuntimeStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConfigStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	status := s.configStatus()
@@ -96,8 +89,7 @@ func (s *Server) handleConfigStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	report := s.readinessReport()
@@ -105,8 +97,7 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdmissionCheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	decision := controlplane.EvaluateAdmission(
@@ -117,16 +108,14 @@ func (s *Server) handleAdmissionCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdapterSpec(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	writeJSONWithETag(w, r, integrations.AdapterContractSpec(), integrations.AdapterContractFingerprint())
 }
 
 func (s *Server) handleAdapterConformance(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) {

@@ -15,8 +15,7 @@ import (
 )
 
 func (s *Server) handleIngestionHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	data, err := s.db.GetIngestionHealth()
@@ -28,8 +27,7 @@ func (s *Server) handleIngestionHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {
@@ -53,8 +51,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRecalculateCosts(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "admin") {
@@ -84,8 +81,7 @@ func (s *Server) handleRecalculateCosts(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleRepairProjections(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "admin") {
@@ -339,8 +335,7 @@ func (s *Server) handleOfflineBundleExport(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleOfflineBundleImport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {

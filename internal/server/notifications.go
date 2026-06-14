@@ -9,8 +9,7 @@ import (
 )
 
 func (s *Server) handleWebhookNotification(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "operator") {

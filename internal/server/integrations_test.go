@@ -371,6 +371,41 @@ func TestReadJSONEndpointsRejectNonGET(t *testing.T) {
 	}
 }
 
+func TestControlPlaneEndpointsRejectNonGET(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{})
+	cases := []struct {
+		name    string
+		url     string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "integrations", url: "http://127.0.0.1/api/integrations", handler: srv.handleIntegrations},
+		{name: "discovery", url: "http://127.0.0.1/api/discovery", handler: srv.handleDiscovery},
+		{name: "contracts", url: "http://127.0.0.1/api/contracts", handler: srv.handleContracts},
+		{name: "contract-verification", url: "http://127.0.0.1/api/contracts/verify", handler: srv.handleContractVerification},
+		{name: "openapi", url: "http://127.0.0.1/api/openapi.json", handler: srv.handleOpenAPI},
+		{name: "runtime-status", url: "http://127.0.0.1/api/runtime/status", handler: srv.handleRuntimeStatus},
+		{name: "config-status", url: "http://127.0.0.1/api/config/status", handler: srv.handleConfigStatus},
+		{name: "readiness", url: "http://127.0.0.1/api/readiness", handler: srv.handleReadiness},
+		{name: "admission", url: "http://127.0.0.1/api/admission/check?surface=http&method=GET&path=/api/stats&role=viewer", handler: srv.handleAdmissionCheck},
+		{name: "adapter-spec", url: "http://127.0.0.1/api/integrations/adapter-spec", handler: srv.handleAdapterSpec},
+		{name: "event-schema", url: "http://127.0.0.1/api/event-schema", handler: srv.handleCanonicalEventSchema},
+		{name: "event-examples", url: "http://127.0.0.1/api/event-examples?type=model.call", handler: srv.handleCanonicalEventExamples},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			tc.handler(rr, httptest.NewRequest(http.MethodPost, tc.url, nil))
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("POST status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if rr.Header().Get("Allow") != http.MethodGet {
+				t.Fatalf("Allow header=%q", rr.Header().Get("Allow"))
+			}
+		})
+	}
+}
+
 func TestDownloadReportEndpointsRejectNonGET(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{})
@@ -393,6 +428,77 @@ func TestDownloadReportEndpointsRejectNonGET(t *testing.T) {
 				t.Fatalf("POST status=%d body=%s", rr.Code, rr.Body.String())
 			}
 			if rr.Header().Get("Allow") != http.MethodGet {
+				t.Fatalf("Allow header=%q", rr.Header().Get("Allow"))
+			}
+		})
+	}
+}
+
+func TestWriteAndMixedEndpointsRejectUnsupportedMethods(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{})
+	postOnly := []struct {
+		name    string
+		url     string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "adapter-conformance", url: "http://127.0.0.1/api/integrations/conformance", handler: srv.handleAdapterConformance},
+		{name: "pricing-sync", url: "http://127.0.0.1/api/pricing/sync", handler: srv.handlePricingSync},
+		{name: "pricing-recalculate", url: "http://127.0.0.1/api/pricing/recalculate", handler: srv.handlePricingRecalculate},
+		{name: "reconciliation-import", url: "http://127.0.0.1/api/reconciliation/import", handler: srv.handleReconciliationImport},
+		{name: "scan", url: "http://127.0.0.1/api/scan", handler: srv.handleScan},
+		{name: "recalculate-costs", url: "http://127.0.0.1/api/recalculate-costs", handler: srv.handleRecalculateCosts},
+		{name: "repair-projections", url: "http://127.0.0.1/api/projections/repair", handler: srv.handleRepairProjections},
+		{name: "offline-bundle-import", url: "http://127.0.0.1/api/offline-bundle/import", handler: srv.handleOfflineBundleImport},
+		{name: "webhook-notification", url: "http://127.0.0.1/api/notifications/webhook", handler: srv.handleWebhookNotification},
+		{name: "policy-evaluate", url: "http://127.0.0.1/api/policy/evaluate", handler: srv.handlePolicyEvaluate},
+		{name: "canonical-events", url: "http://127.0.0.1/api/events", handler: srv.handleCanonicalEvents},
+		{name: "canonical-event-validate", url: "http://127.0.0.1/api/events/validate", handler: srv.handleCanonicalEventValidate},
+		{name: "otel-genai", url: "http://127.0.0.1/api/otel/genai", handler: srv.handleOTelGenAI},
+		{name: "otlp-traces", url: "http://127.0.0.1/api/otlp/v1/traces", handler: srv.handleOTLPTraces},
+		{name: "provider-calls", url: "http://127.0.0.1/api/provider/calls", handler: srv.handleProviderCalls},
+		{name: "a2a-tasks", url: "http://127.0.0.1/api/a2a/tasks", handler: srv.handleA2ATasks},
+		{name: "openai-chat-gateway", url: "http://127.0.0.1/gateway/openai/v1/chat/completions", handler: srv.handleOpenAIChatGateway},
+		{name: "openai-responses-gateway", url: "http://127.0.0.1/gateway/openai/v1/responses", handler: srv.handleOpenAIResponsesGateway},
+		{name: "anthropic-gateway", url: "http://127.0.0.1/gateway/anthropic/v1/messages", handler: srv.handleAnthropicMessagesGateway},
+		{name: "workload-close", url: "http://127.0.0.1/api/workloads/close", handler: srv.handleWorkloadClose},
+		{name: "workload-link", url: "http://127.0.0.1/api/workloads/link", handler: srv.handleWorkloadLink},
+		{name: "workload-claim-next", url: "http://127.0.0.1/api/workloads/claim-next", handler: srv.handleWorkloadClaimNext},
+		{name: "workload-lease", url: "http://127.0.0.1/api/workloads/lease", handler: srv.handleWorkloadLeaseAcquire},
+		{name: "workload-lease-renew", url: "http://127.0.0.1/api/workloads/lease/renew", handler: srv.handleWorkloadLeaseRenew},
+		{name: "workload-lease-release", url: "http://127.0.0.1/api/workloads/lease/release", handler: srv.handleWorkloadLeaseRelease},
+		{name: "agent-runs", url: "http://127.0.0.1/api/agent-runs", handler: srv.handleAgentRuns},
+		{name: "agent-run-heartbeat", url: "http://127.0.0.1/api/agent-runs/heartbeat", handler: srv.handleAgentRunHeartbeat},
+	}
+	for _, tc := range postOnly {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			tc.handler(rr, httptest.NewRequest(http.MethodGet, tc.url, nil))
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("GET status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if rr.Header().Get("Allow") != http.MethodPost {
+				t.Fatalf("Allow header=%q", rr.Header().Get("Allow"))
+			}
+		})
+	}
+
+	mixed := []struct {
+		name    string
+		url     string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "workloads", url: "http://127.0.0.1/api/workloads", handler: srv.handleWorkloads},
+		{name: "policy-approvals", url: "http://127.0.0.1/api/policy/approvals", handler: srv.handlePolicyApprovals},
+	}
+	for _, tc := range mixed {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			tc.handler(rr, httptest.NewRequest(http.MethodPut, tc.url, nil))
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("PUT status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if rr.Header().Get("Allow") != "GET, POST" {
 				t.Fatalf("Allow header=%q", rr.Header().Get("Allow"))
 			}
 		})
