@@ -253,6 +253,8 @@ func ContractVerificationReportFor(opts Options, runtime *storage.RuntimeStatus)
 	addCheck("discovery.catalog_hash", discovery.CapabilityCatalogHash == catalogHash, "critical", "discovery catalog hash matches generated catalog", catalogHash, discovery.CapabilityCatalogHash)
 	addCheck("discovery.schema_hash", discovery.CanonicalSchemaHash == storage.CanonicalEventSchemaFingerprint(), "critical", "discovery canonical schema hash matches generated schema", storage.CanonicalEventSchemaFingerprint(), discovery.CanonicalSchemaHash)
 	addCheck("discovery.adapter_hash", discovery.AdapterSpecHash == AdapterContractFingerprint(), "critical", "discovery adapter hash matches generated adapter contract", AdapterContractFingerprint(), discovery.AdapterSpecHash)
+	examplesOK, examplesActual := contractCanonicalEventExamplesStatus()
+	addCheck("canonical.examples", examplesOK, "critical", "canonical event examples cover every event type and validate without warnings", "one valid metadata-only example per canonical event type", examplesActual)
 	adapterSchemaOK, adapterSchemaActual := contractAdapterSchemaStatus(adapter)
 	addCheck("adapter.schema_alignment", adapterSchemaOK, "critical", "adapter contract matches canonical schema version, hash, event types, and privacy keys", "adapter schema/version/event_types/forbidden_keys match canonical schema", adapterSchemaActual)
 	adapterKindsOK, adapterKindsActual := contractAdapterInputKindStatus(adapter)
@@ -362,6 +364,41 @@ func admissionCheckContractHash() string {
 		"entrypoints": []string{"/api/admission/check", "agent-ledger admission check", "ledger.admission_check", "agent-ledger://admission/check"},
 		"privacy":     "operation metadata, role requirements, read-only behavior, and remediation hints only",
 	})
+}
+
+func contractCanonicalEventExamplesStatus() (bool, string) {
+	eventTypes := storage.CanonicalEventTypes()
+	examples := storage.CanonicalEventExamples("")
+	seen := map[string]bool{}
+	invalid, duplicate := 0, 0
+	for _, example := range examples {
+		if seen[example.EventType] {
+			duplicate++
+		}
+		seen[example.EventType] = true
+		result, err := storage.ValidateCanonicalEvent(example.Event)
+		if err != nil || result.Status != "valid" || result.EventType != example.EventType {
+			invalid++
+		}
+	}
+	missing := 0
+	for _, info := range eventTypes {
+		if !seen[info.EventType] {
+			missing++
+			continue
+		}
+		filtered := storage.CanonicalEventExamples(info.EventType)
+		if len(filtered) != 1 || filtered[0].EventType != info.EventType {
+			invalid++
+		}
+	}
+	ok := len(eventTypes) > 0 && len(examples) == len(eventTypes) && missing == 0 && invalid == 0 && duplicate == 0
+	actual := "event_types=" + intString(len(eventTypes)) +
+		",examples=" + intString(len(examples)) +
+		",missing=" + intString(missing) +
+		",invalid=" + intString(invalid) +
+		",duplicates=" + intString(duplicate)
+	return ok, actual
 }
 
 func contractAdapterSchemaStatus(adapter AdapterContract) (bool, string) {

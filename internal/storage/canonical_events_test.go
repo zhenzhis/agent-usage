@@ -311,16 +311,27 @@ func TestCanonicalEventSchemaListsCoreTypes(t *testing.T) {
 
 func TestCanonicalEventExamplesValidate(t *testing.T) {
 	examples := CanonicalEventExamples("")
-	if len(examples) < 10 {
-		t.Fatalf("expected examples for core event types, got %d", len(examples))
+	eventTypes := CanonicalEventTypes()
+	if len(examples) != len(eventTypes) {
+		t.Fatalf("expected one example per event type, examples=%d event_types=%d", len(examples), len(eventTypes))
 	}
+	seen := map[string]bool{}
 	for _, example := range examples {
+		if seen[example.EventType] {
+			t.Fatalf("duplicate example for %s", example.EventType)
+		}
+		seen[example.EventType] = true
 		result, err := ValidateCanonicalEvent(example.Event)
 		if err != nil {
 			t.Fatalf("%s example failed validation: %v", example.EventType, err)
 		}
 		if result.Status != "valid" {
 			t.Fatalf("%s example should have full provenance: %#v", example.EventType, result)
+		}
+	}
+	for _, eventType := range eventTypes {
+		if !seen[eventType.EventType] {
+			t.Fatalf("missing example for %s", eventType.EventType)
 		}
 	}
 	filtered := CanonicalEventExamples("model.call")
