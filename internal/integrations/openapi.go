@@ -510,49 +510,61 @@ func OpenAPISpecFor(opts Options, runtime *storage.RuntimeStatus) map[string]int
 						"timestamp": stringSchema(),
 					},
 				},
-				"AgentRunHeartbeatResponse": looseObjectSchema("Recorded metadata-only agent run heartbeat."),
-				"AgentRunLivenessResponse":  looseObjectSchema("Active async agent run liveness rows with privacy filters applied by the server."),
-				"WorkloadDetail":            looseObjectSchema("Full workload ledger detail with privacy filters applied by the server."),
-				"WorkloadGraph":             looseObjectSchema("Compact workload dependency and activity graph."),
-				"WorkloadTimelineResponse":  looseObjectSchema("Chronological metadata-only workload audit timeline."),
-				"WorkloadState":             looseObjectSchema("Derived terminal-state snapshot for one async agent workload."),
-				"WorkloadEventFeed":         looseObjectSchema("Cursor-stable workload state feed."),
-				"DashboardStats":            dashboardStatsSchema(),
-				"DashboardConsistencyIssue": dashboardConsistencyIssueSchema(),
-				"CostByModel":               costByModelSchema(),
-				"TimeSeriesPoint":           timeSeriesPointSchema(),
-				"TokenTimeSeriesPoint":      tokenTimeSeriesPointSchema(),
-				"SessionInfo":               sessionInfoSchema(),
-				"DashboardBundle":           dashboardBundleSchema(),
-				"CostByModelRows":           costByModelRowsSchema(),
-				"CostTrendRows":             costTrendRowsSchema(),
-				"TokenTrendRows":            tokenTrendRowsSchema(),
-				"SessionPage":               sessionPageSchema(),
-				"SessionDetail":             looseObjectSchema("Scoped session detail with records and prompt counts."),
-				"SessionReplay":             looseObjectSchema("Per-call token and cost replay points for one session."),
-				"FleetAttributionReport":    looseObjectSchema("Heuristic sub-agent, parent/child, and parallel-run attribution report."),
-				"IngestionHealthRows":       looseObjectSchema("Collector health rows with path, scan, watermark, and error summaries."),
-				"OperationResult":           looseObjectSchema("Local operation acknowledgement."),
-				"ProjectionRepairResult":    looseObjectSchema("Canonical-to-usage projection repair result."),
-				"PricingSourceStatus":       pricingSourceStatusSchema(),
-				"PricingStatus":             pricingStatusSchema(),
-				"PricingAuditRows":          looseObjectSchema("Pricing audit rows for official, fallback, override, stale, fuzzy, and unpriced matches."),
-				"BudgetStatusResponse":      looseObjectSchema("Configured budget rules and current severity state."),
-				"QuotaStatus":               looseObjectSchema("Local estimated quota windows, reset calendar, burn-rate, and remaining usage."),
-				"UnpricedModel":             unpricedModelSchema(),
-				"QualitySource":             qualitySourceSchema(),
-				"ProvenanceQuality":         provenanceQualitySchema(),
-				"ProjectionQuality":         projectionQualitySchema(),
-				"DataQualityReport":         dataQualityReportSchema(),
-				"DoctorReport":              looseObjectSchema("One-click local diagnostic report. Privacy filters redact paths, projects, branches, and session ids."),
-				"ModelCallRows":             looseObjectSchema("Model call analytics grouped by source, model, project, and session."),
-				"ModelRegistryRows":         looseObjectSchema("Model pricing and provenance registry rows."),
-				"CostIntelligenceRows":      costIntelligenceRowsSchema(),
-				"CacheDoctorRows":           looseObjectSchema("Cache hit, cache write/read, and cache miss diagnostic rows."),
-				"InsightEventRows":          looseObjectSchema("Anomaly or watchdog insight event rows."),
-				"WebhookNotificationResult": looseObjectSchema("Redacted webhook delivery or dry-run result."),
-				"AuditLogRows":              looseObjectSchema("Local audit log rows with privacy filters applied by the server."),
-				"ReconciliationRows":        looseObjectSchema("Provider reconciliation import rows."),
+				"AgentRunHeartbeatResponse":        looseObjectSchema("Recorded metadata-only agent run heartbeat."),
+				"AgentRunLivenessResponse":         looseObjectSchema("Active async agent run liveness rows with privacy filters applied by the server."),
+				"WorkloadDetail":                   looseObjectSchema("Full workload ledger detail with privacy filters applied by the server."),
+				"WorkloadGraph":                    looseObjectSchema("Compact workload dependency and activity graph."),
+				"WorkloadTimelineResponse":         looseObjectSchema("Chronological metadata-only workload audit timeline."),
+				"WorkloadState":                    looseObjectSchema("Derived terminal-state snapshot for one async agent workload."),
+				"WorkloadEventFeed":                looseObjectSchema("Cursor-stable workload state feed."),
+				"DashboardStats":                   dashboardStatsSchema(),
+				"DashboardConsistencyIssue":        dashboardConsistencyIssueSchema(),
+				"CostByModel":                      costByModelSchema(),
+				"TimeSeriesPoint":                  timeSeriesPointSchema(),
+				"TokenTimeSeriesPoint":             tokenTimeSeriesPointSchema(),
+				"SessionInfo":                      sessionInfoSchema(),
+				"DashboardBundle":                  dashboardBundleSchema(),
+				"CostByModelRows":                  costByModelRowsSchema(),
+				"CostTrendRows":                    costTrendRowsSchema(),
+				"TokenTrendRows":                   tokenTrendRowsSchema(),
+				"SessionPage":                      sessionPageSchema(),
+				"SessionDetailRow":                 sessionDetailRowSchema(),
+				"SessionDetail":                    sessionDetailRowsSchema(),
+				"SessionReplayPoint":               sessionReplayPointSchema(),
+				"SessionReplay":                    sessionReplaySchema(),
+				"FleetAttributionReport":           looseObjectSchema("Heuristic sub-agent, parent/child, and parallel-run attribution report."),
+				"IngestionPathStatus":              ingestionPathStatusSchema(),
+				"IngestionHealth":                  ingestionHealthSchema(),
+				"IngestionHealthRows":              ingestionHealthRowsSchema(),
+				"OperationResult":                  looseObjectSchema("Local operation acknowledgement."),
+				"ProjectionRepairResult":           looseObjectSchema("Canonical-to-usage projection repair result."),
+				"PricingSourceStatus":              pricingSourceStatusSchema(),
+				"PricingStatus":                    pricingStatusSchema(),
+				"PricingAuditRows":                 looseObjectSchema("Pricing audit rows for official, fallback, override, stale, fuzzy, and unpriced matches."),
+				"BudgetStatus":                     budgetStatusSchema(),
+				"BudgetStatusResponse":             budgetStatusResponseSchema(),
+				"QuotaWindow":                      quotaWindowSchema(),
+				"QuotaStatus":                      quotaStatusSchema(),
+				"UnpricedModel":                    unpricedModelSchema(),
+				"QualitySource":                    qualitySourceSchema(),
+				"ProvenanceQuality":                provenanceQualitySchema(),
+				"ProjectionQuality":                projectionQualitySchema(),
+				"DataQualityReport":                dataQualityReportSchema(),
+				"DoctorCheck":                      doctorCheckSchema(),
+				"ControlIdempotencyOperationStats": controlIdempotencyOperationStatsSchema(),
+				"ControlIdempotencyStats":          controlIdempotencyStatsSchema(),
+				"WorkloadLeaseStats":               workloadLeaseStatsSchema(),
+				"DoctorReport":                     doctorReportSchema(),
+				"ModelCallRows":                    looseObjectSchema("Model call analytics grouped by source, model, project, and session."),
+				"ModelRegistryRows":                looseObjectSchema("Model pricing and provenance registry rows."),
+				"CostIntelligenceRows":             costIntelligenceRowsSchema(),
+				"CacheDoctorRow":                   cacheDoctorRowSchema(),
+				"CacheDoctorRows":                  cacheDoctorRowsSchema(),
+				"InsightEvent":                     insightEventSchema(),
+				"InsightEventRows":                 insightEventRowsSchema(),
+				"WebhookNotificationResult":        looseObjectSchema("Redacted webhook delivery or dry-run result."),
+				"AuditLogRows":                     looseObjectSchema("Local audit log rows with privacy filters applied by the server."),
+				"ReconciliationRows":               looseObjectSchema("Provider reconciliation import rows."),
 				"ReconciliationImportRequest": looseObjectSchema(
 					"Provider CSV/JSON statement or manual reconciliation summary. Payload hashes are persisted; secrets and prompt content are not accepted.",
 				),
@@ -2202,6 +2214,383 @@ func costIntelligenceRowsSchema() map[string]interface{} {
 				"last_activity":         stringSchema(),
 			},
 		},
+	}
+}
+
+func sessionDetailRowSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Per-model token and cost breakdown for one scoped session.",
+		"additionalProperties": true,
+		"required":             []string{"model", "calls", "input_tokens", "output_tokens", "cache_read", "cache_create", "cost_usd"},
+		"properties": map[string]interface{}{
+			"model":         stringSchema(),
+			"calls":         integerSchema(),
+			"input_tokens":  integerSchema(),
+			"output_tokens": integerSchema(),
+			"cache_read":    integerSchema(),
+			"cache_create":  integerSchema(),
+			"cost_usd":      numberSchema(),
+		},
+	}
+}
+
+func sessionDetailRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Per-model usage breakdown for one scoped source/session pair.",
+		"items":       refSchema("SessionDetailRow"),
+	}
+}
+
+func sessionReplayPointSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One chronological model-call replay point with cumulative token and cost counters.",
+		"additionalProperties": true,
+		"required": []string{
+			"timestamp", "source", "session_id", "model", "input_tokens", "output_tokens", "cache_read", "cache_create", "reasoning_output_tokens", "tokens", "cost_usd", "cumulative_tokens", "cumulative_cost_usd", "cumulative_calls", "pricing_source", "pricing_model", "pricing_confidence",
+		},
+		"properties": map[string]interface{}{
+			"timestamp":               stringSchema(),
+			"source":                  stringSchema(),
+			"session_id":              stringSchema(),
+			"model":                   stringSchema(),
+			"input_tokens":            integerSchema(),
+			"output_tokens":           integerSchema(),
+			"cache_read":              integerSchema(),
+			"cache_create":            integerSchema(),
+			"reasoning_output_tokens": integerSchema(),
+			"tokens":                  integerSchema(),
+			"cost_usd":                numberSchema(),
+			"cumulative_tokens":       integerSchema(),
+			"cumulative_cost_usd":     numberSchema(),
+			"cumulative_calls":        integerSchema(),
+			"pricing_source":          stringSchema(),
+			"pricing_model":           stringSchema(),
+			"pricing_confidence":      stringSchema(),
+		},
+	}
+}
+
+func sessionReplaySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Bounded, chronological per-call replay for one source/session. Prompt and response content are not included.",
+		"additionalProperties": true,
+		"required":             []string{"source", "session_id", "start_time", "end_time", "calls", "total_tokens", "total_cost_usd", "peak_tokens_per_call", "truncated", "points"},
+		"properties": map[string]interface{}{
+			"source":               stringSchema(),
+			"session_id":           stringSchema(),
+			"start_time":           stringSchema(),
+			"end_time":             stringSchema(),
+			"calls":                integerSchema(),
+			"total_tokens":         integerSchema(),
+			"total_cost_usd":       numberSchema(),
+			"peak_tokens_per_call": integerSchema(),
+			"truncated":            boolSchema(),
+			"points": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("SessionReplayPoint"),
+			},
+		},
+	}
+}
+
+func ingestionPathStatusSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Reachability and readability status for one configured collector path. Privacy filters may redact the path value in future responses.",
+		"additionalProperties": true,
+		"required":             []string{"path", "exists", "readable"},
+		"properties": map[string]interface{}{
+			"path":     stringSchema(),
+			"exists":   boolSchema(),
+			"readable": boolSchema(),
+			"error":    stringSchema(),
+		},
+	}
+}
+
+func ingestionHealthSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Latest collector health, path reachability, watermark, scan duration, inserted rows, skipped rows, and last error for one source.",
+		"additionalProperties": true,
+		"required":             []string{"source", "enabled", "paths", "path_status", "last_scan_at", "duration_ms", "watermark", "files_seen", "records_inserted", "prompts_inserted", "skipped_rows", "last_error"},
+		"properties": map[string]interface{}{
+			"source":           stringSchema(),
+			"enabled":          boolSchema(),
+			"paths":            stringArraySchema(),
+			"path_status":      map[string]interface{}{"type": "array", "items": refSchema("IngestionPathStatus")},
+			"last_scan_at":     stringSchema(),
+			"duration_ms":      integerSchema(),
+			"watermark":        stringSchema(),
+			"files_seen":       integerSchema(),
+			"records_inserted": integerSchema(),
+			"prompts_inserted": integerSchema(),
+			"skipped_rows":     integerSchema(),
+			"last_error":       stringSchema(),
+		},
+	}
+}
+
+func ingestionHealthRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Collector health rows with path, scan, watermark, duration, insert, skip, and error summaries.",
+		"items":       refSchema("IngestionHealth"),
+	}
+}
+
+func budgetStatusSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Current consumption against one configured budget rule.",
+		"additionalProperties": true,
+		"required":             []string{"name", "period", "scope", "match", "metric", "value", "limit", "ratio", "severity", "message", "period_key"},
+		"properties": map[string]interface{}{
+			"name":       stringSchema(),
+			"period":     stringSchema(),
+			"scope":      stringSchema(),
+			"match":      stringSchema(),
+			"metric":     stringSchema(),
+			"value":      numberSchema(),
+			"limit":      numberSchema(),
+			"ratio":      numberSchema(),
+			"severity":   stringSchema(),
+			"message":    stringSchema(),
+			"period_key": stringSchema(),
+		},
+	}
+}
+
+func budgetStatusResponseSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Budget feature state and evaluated local budget rules. Events are persisted locally only when enabled and severity is not ok.",
+		"additionalProperties": true,
+		"required":             []string{"enabled", "rules"},
+		"properties": map[string]interface{}{
+			"enabled": boolSchema(),
+			"rules": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("BudgetStatus"),
+			},
+		},
+	}
+}
+
+func quotaWindowSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Local estimated quota window. Subscription quota is an estimate and is not provider invoice billing.",
+		"additionalProperties": true,
+		"required": []string{
+			"name", "from", "to", "cost_usd", "tokens", "prompts", "cost_limit", "token_limit", "remaining_cost", "remaining_tokens", "burn_rate_per_hour", "projected_cost_usd", "projected_tokens", "reset_at", "time_to_limit_hours",
+		},
+		"properties": map[string]interface{}{
+			"name":                stringSchema(),
+			"from":                stringSchema(),
+			"to":                  stringSchema(),
+			"cost_usd":            numberSchema(),
+			"tokens":              integerSchema(),
+			"prompts":             integerSchema(),
+			"cost_limit":          numberSchema(),
+			"token_limit":         integerSchema(),
+			"remaining_cost":      numberSchema(),
+			"remaining_tokens":    integerSchema(),
+			"burn_rate_per_hour":  numberSchema(),
+			"projected_cost_usd":  numberSchema(),
+			"projected_tokens":    integerSchema(),
+			"reset_at":            stringSchema(),
+			"time_to_limit_hours": numberSchema(),
+		},
+	}
+}
+
+func quotaStatusSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Local estimated plan, reset calendar, burn-rate, and remaining quota windows. It does not claim to match provider billing exactly.",
+		"additionalProperties": true,
+		"required":             []string{"enabled", "plan", "reset_day", "windows", "method"},
+		"properties": map[string]interface{}{
+			"enabled":   boolSchema(),
+			"plan":      stringSchema(),
+			"reset_day": integerSchema(),
+			"windows": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("QuotaWindow"),
+			},
+			"method": stringSchema(),
+		},
+	}
+}
+
+func doctorCheckSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One diagnostic finding with a visible remediation action.",
+		"additionalProperties": true,
+		"required":             []string{"name", "status", "severity", "message", "action"},
+		"properties": map[string]interface{}{
+			"name":     stringSchema(),
+			"source":   stringSchema(),
+			"status":   stringSchema(),
+			"severity": stringSchema(),
+			"message":  stringSchema(),
+			"action":   stringSchema(),
+		},
+	}
+}
+
+func controlIdempotencyOperationStatsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Retry-safe control write counts for one operation. Raw idempotency keys and hashes are never exposed.",
+		"additionalProperties": true,
+		"required":             []string{"operation", "keys", "replays", "last_seen_at"},
+		"properties": map[string]interface{}{
+			"operation":    stringSchema(),
+			"keys":         integerSchema(),
+			"replays":      integerSchema(),
+			"last_seen_at": stringSchema(),
+		},
+	}
+}
+
+func controlIdempotencyStatsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Privacy-safe retry and replay statistics for idempotent control-plane writes.",
+		"additionalProperties": true,
+		"required":             []string{"total_keys", "replayed_keys", "replay_count", "last_seen_at", "operations"},
+		"properties": map[string]interface{}{
+			"total_keys":    integerSchema(),
+			"replayed_keys": integerSchema(),
+			"replay_count":  integerSchema(),
+			"last_seen_at":  stringSchema(),
+			"operations": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("ControlIdempotencyOperationStats"),
+			},
+		},
+	}
+}
+
+func workloadLeaseStatsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Privacy-safe workload lease counts without exposing lease tokens.",
+		"additionalProperties": true,
+		"required":             []string{"active", "expired", "released", "total", "next_expiry_at"},
+		"properties": map[string]interface{}{
+			"active":         integerSchema(),
+			"expired":        integerSchema(),
+			"released":       integerSchema(),
+			"total":          integerSchema(),
+			"next_expiry_at": stringSchema(),
+		},
+	}
+}
+
+func doctorReportSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "One-click local diagnostic report. Privacy filters redact paths, projects, branches, and session ids where supported.",
+		"additionalProperties": true,
+		"required":             []string{"generated_at", "from", "to", "stats", "ingestion", "quality", "projection", "pricing_sources", "checks", "summary"},
+		"properties": map[string]interface{}{
+			"generated_at": stringSchema(),
+			"from":         stringSchema(),
+			"to":           stringSchema(),
+			"stats":        refSchema("DashboardStats"),
+			"ingestion": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("IngestionHealth"),
+			},
+			"quality":    refSchema("DataQualityReport"),
+			"projection": refSchema("ProjectionQuality"),
+			"workload_states": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("WorkloadState"),
+			},
+			"pricing_sources": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("PricingSourceStatus"),
+			},
+			"idempotency": refSchema("ControlIdempotencyStats"),
+			"leases":      refSchema("WorkloadLeaseStats"),
+			"checks": map[string]interface{}{
+				"type":  "array",
+				"items": refSchema("DoctorCheck"),
+			},
+			"summary": stringSchema(),
+			"runtime": refSchema("RuntimeStatus"),
+		},
+	}
+}
+
+func cacheDoctorRowSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Cache hit, cache write/read, and estimated cache miss diagnostic row for one source/model/project group.",
+		"additionalProperties": true,
+		"required":             []string{"source", "model", "project", "calls", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "cost_usd", "cache_hit_rate", "estimated_lost_saving", "message"},
+		"properties": map[string]interface{}{
+			"source":                stringSchema(),
+			"model":                 stringSchema(),
+			"project":               stringSchema(),
+			"calls":                 integerSchema(),
+			"input_tokens":          integerSchema(),
+			"cache_read_tokens":     integerSchema(),
+			"cache_write_tokens":    integerSchema(),
+			"output_tokens":         integerSchema(),
+			"cost_usd":              numberSchema(),
+			"cache_hit_rate":        numberSchema(),
+			"estimated_lost_saving": numberSchema(),
+			"message":               stringSchema(),
+		},
+	}
+}
+
+func cacheDoctorRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Cache diagnostic rows grouped by source, model, and project.",
+		"items":       refSchema("CacheDoctorRow"),
+	}
+}
+
+func insightEventSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"description":          "Local anomaly, watchdog, or quality signal. Privacy filters may hash session_id and redact project metadata.",
+		"additionalProperties": true,
+		"required":             []string{"id", "kind", "severity", "source", "model", "project", "session_id", "metric", "value", "baseline", "message", "created_at"},
+		"properties": map[string]interface{}{
+			"id":         integerSchema(),
+			"kind":       stringSchema(),
+			"severity":   stringSchema(),
+			"source":     stringSchema(),
+			"model":      stringSchema(),
+			"project":    stringSchema(),
+			"session_id": stringSchema(),
+			"metric":     stringSchema(),
+			"value":      numberSchema(),
+			"baseline":   numberSchema(),
+			"message":    stringSchema(),
+			"created_at": stringSchema(),
+		},
+	}
+}
+
+func insightEventRowsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Anomaly or watchdog insight event rows.",
+		"items":       refSchema("InsightEvent"),
 	}
 }
 

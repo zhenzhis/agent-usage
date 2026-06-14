@@ -595,6 +595,119 @@ func TestOpenAPIDataQualitySchemaExposesTrustFields(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDiagnosticsSchemasExposeControlPlaneFields(t *testing.T) {
+	spec := OpenAPISpecFor(Options{}, nil)
+	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+
+	schema := func(name string) map[string]interface{} {
+		t.Helper()
+		raw, ok := schemas[name].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s schema missing: %#v", name, schemas[name])
+		}
+		return raw
+	}
+	props := func(name string) map[string]interface{} {
+		t.Helper()
+		raw := schema(name)
+		properties, ok := raw["properties"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s schema missing properties: %#v", name, raw)
+		}
+		return properties
+	}
+	expectFields := func(name string, fields ...string) map[string]interface{} {
+		t.Helper()
+		properties := props(name)
+		for _, field := range fields {
+			if properties[field] == nil {
+				t.Fatalf("%s schema missing field %q: %#v", name, field, properties)
+			}
+		}
+		return properties
+	}
+	expectArrayRef := func(name, ref string) {
+		t.Helper()
+		raw := schema(name)
+		if raw["type"] != "array" {
+			t.Fatalf("%s should be an array schema: %#v", name, raw)
+		}
+		items, ok := raw["items"].(map[string]interface{})
+		if !ok || items["$ref"] != ref {
+			t.Fatalf("%s items should reference %s: %#v", name, ref, raw["items"])
+		}
+	}
+	expectArrayPropertyRef := func(name, field, ref string) {
+		t.Helper()
+		properties := props(name)
+		arraySchema, ok := properties[field].(map[string]interface{})
+		if !ok || arraySchema["type"] != "array" {
+			t.Fatalf("%s.%s should be an array: %#v", name, field, properties[field])
+		}
+		items, ok := arraySchema["items"].(map[string]interface{})
+		if !ok || items["$ref"] != ref {
+			t.Fatalf("%s.%s items should reference %s: %#v", name, field, ref, arraySchema["items"])
+		}
+	}
+	expectType := func(name, field, kind string) {
+		t.Helper()
+		properties := props(name)
+		fieldSchema, ok := properties[field].(map[string]interface{})
+		if !ok || fieldSchema["type"] != kind {
+			t.Fatalf("%s.%s should be %s: %#v", name, field, kind, properties[field])
+		}
+	}
+
+	expectArrayRef("SessionDetail", "#/components/schemas/SessionDetailRow")
+	expectFields("SessionDetailRow", "model", "calls", "input_tokens", "output_tokens", "cache_read", "cache_create", "cost_usd")
+	expectType("SessionDetailRow", "calls", "integer")
+	expectType("SessionDetailRow", "cost_usd", "number")
+
+	expectFields("SessionReplay", "source", "session_id", "start_time", "end_time", "calls", "total_tokens", "total_cost_usd", "peak_tokens_per_call", "truncated", "points")
+	expectType("SessionReplay", "truncated", "boolean")
+	expectType("SessionReplay", "total_tokens", "integer")
+	expectType("SessionReplay", "total_cost_usd", "number")
+	expectArrayPropertyRef("SessionReplay", "points", "#/components/schemas/SessionReplayPoint")
+	expectFields("SessionReplayPoint", "timestamp", "source", "session_id", "model", "input_tokens", "output_tokens", "cache_read", "cache_create", "reasoning_output_tokens", "tokens", "cost_usd", "cumulative_tokens", "cumulative_cost_usd", "cumulative_calls", "pricing_source", "pricing_model", "pricing_confidence")
+
+	expectArrayRef("IngestionHealthRows", "#/components/schemas/IngestionHealth")
+	expectFields("IngestionHealth", "source", "enabled", "paths", "path_status", "last_scan_at", "duration_ms", "watermark", "files_seen", "records_inserted", "prompts_inserted", "skipped_rows", "last_error")
+	expectArrayPropertyRef("IngestionHealth", "path_status", "#/components/schemas/IngestionPathStatus")
+	expectFields("IngestionPathStatus", "path", "exists", "readable", "error")
+	expectType("IngestionPathStatus", "exists", "boolean")
+
+	expectFields("BudgetStatusResponse", "enabled", "rules")
+	expectType("BudgetStatusResponse", "enabled", "boolean")
+	expectArrayPropertyRef("BudgetStatusResponse", "rules", "#/components/schemas/BudgetStatus")
+	expectFields("BudgetStatus", "name", "period", "scope", "match", "metric", "value", "limit", "ratio", "severity", "message", "period_key")
+
+	expectFields("QuotaStatus", "enabled", "plan", "reset_day", "windows", "method")
+	expectArrayPropertyRef("QuotaStatus", "windows", "#/components/schemas/QuotaWindow")
+	expectFields("QuotaWindow", "name", "from", "to", "cost_usd", "tokens", "prompts", "cost_limit", "token_limit", "remaining_cost", "remaining_tokens", "burn_rate_per_hour", "projected_cost_usd", "projected_tokens", "reset_at", "time_to_limit_hours")
+	expectType("QuotaWindow", "burn_rate_per_hour", "number")
+
+	expectFields("DoctorReport", "generated_at", "from", "to", "stats", "ingestion", "quality", "projection", "pricing_sources", "checks", "summary", "runtime")
+	if props("DoctorReport")["stats"].(map[string]interface{})["$ref"] != "#/components/schemas/DashboardStats" {
+		t.Fatalf("DoctorReport.stats should reference DashboardStats: %#v", props("DoctorReport")["stats"])
+	}
+	expectArrayPropertyRef("DoctorReport", "ingestion", "#/components/schemas/IngestionHealth")
+	expectArrayPropertyRef("DoctorReport", "pricing_sources", "#/components/schemas/PricingSourceStatus")
+	expectArrayPropertyRef("DoctorReport", "checks", "#/components/schemas/DoctorCheck")
+	expectFields("DoctorCheck", "name", "source", "status", "severity", "message", "action")
+	expectFields("ControlIdempotencyStats", "total_keys", "replayed_keys", "replay_count", "last_seen_at", "operations")
+	expectArrayPropertyRef("ControlIdempotencyStats", "operations", "#/components/schemas/ControlIdempotencyOperationStats")
+	expectFields("WorkloadLeaseStats", "active", "expired", "released", "total", "next_expiry_at")
+
+	expectArrayRef("CacheDoctorRows", "#/components/schemas/CacheDoctorRow")
+	expectFields("CacheDoctorRow", "source", "model", "project", "calls", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "cost_usd", "cache_hit_rate", "estimated_lost_saving", "message")
+	expectType("CacheDoctorRow", "cache_hit_rate", "number")
+
+	expectArrayRef("InsightEventRows", "#/components/schemas/InsightEvent")
+	expectFields("InsightEvent", "id", "kind", "severity", "source", "model", "project", "session_id", "metric", "value", "baseline", "message", "created_at")
+	expectType("InsightEvent", "id", "integer")
+	expectType("InsightEvent", "value", "number")
+}
+
 func TestOpenAPIRequestBodyOperationsAdvertiseBodyLimits(t *testing.T) {
 	spec := OpenAPISpecFor(Options{}, nil)
 	paths := spec["paths"].(map[string]interface{})
