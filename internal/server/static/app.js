@@ -149,6 +149,21 @@ const I18N = {
     output: "Output",
     cacheRead: "Cache Read",
     cacheCreate: "Cache Write",
+    cacheHit: "Cache Hit",
+    cacheWrite: "Cache Write",
+    priceTrust: "Price Trust",
+    priceSources: "Price Sources",
+    costPerPrompt: "Cost / Prompt",
+    costPerCall: "Cost / Call",
+    tokensPerPrompt: "Tokens / Prompt",
+    reasoning: "Reasoning",
+    unpricedCalls: "Unpriced",
+    fallbackCalls: "Fallback",
+    fuzzyCalls: "Fuzzy",
+    sourceReportedCalls: "Source Reported",
+    unknownPricingCalls: "Unknown Pricing",
+    advice: "Advice",
+    score: "Score",
     gran_1m: "1m",
     gran_30m: "30m",
     gran_1h: "1h",
@@ -362,6 +377,21 @@ const I18N = {
     output: "输出",
     cacheRead: "缓存读",
     cacheCreate: "缓存写",
+    cacheHit: "缓存命中",
+    cacheWrite: "缓存写入",
+    priceTrust: "价格可信",
+    priceSources: "价格来源",
+    costPerPrompt: "每 Prompt 费用",
+    costPerCall: "每次调用费用",
+    tokensPerPrompt: "Tokens / Prompt",
+    reasoning: "推理 Tokens",
+    unpricedCalls: "未计价",
+    fallbackCalls: "Fallback",
+    fuzzyCalls: "模糊匹配",
+    sourceReportedCalls: "来源上报",
+    unknownPricingCalls: "价格未知",
+    advice: "建议",
+    score: "评分",
     gran_1m: "1 分钟",
     gran_30m: "30 分钟",
     gran_1h: "1 小时",
@@ -1115,13 +1145,113 @@ function renderCostIntelligence(rows) {
   const list = $("cost-intel-list");
   if (!list) return;
   const fragment = document.createDocumentFragment();
-  (rows || []).slice(0, 8).forEach((row) => {
-    const reason = (row.reasons || [])[0] || "-";
-    addOpsRow(fragment, `${row.source} · ${row.project || "-"}`, `${reason} · score ${(Number(row.quality_score || 0) * 100).toFixed(0)}%`, fmtCost(row.cost_usd || 0), row.quality_score < 0.7 ? "warning" : "ok");
+  const data = rows || [];
+  data.slice(0, 8).forEach((row) => {
+    fragment.appendChild(createCostInsightRow(row));
   });
   if (!rows || rows.length === 0) fragment.appendChild(createMessage(t("noData"), "ops-empty"));
-  setText("cost-intel-meta", `${(rows || []).length} sessions`);
+  const unpriced = data.reduce((sum, row) => sum + Number(row.unpriced_calls || 0) + Number(row.unknown_pricing_calls || 0), 0);
+  const lowTrust = data.filter((row) => costInsightSeverity(row) !== "ok").length;
+  setText("cost-intel-meta", `${data.length} sessions · ${lowTrust} ${t("issuesLabel")} · ${fmt(unpriced)} ${t("unpricedCalls")}`);
   list.replaceChildren(fragment);
+}
+
+function createCostInsightRow(row) {
+  const item = document.createElement("div");
+  item.className = `cost-insight-row severity-${costInsightSeverity(row)}`;
+
+  const header = document.createElement("div");
+  header.className = "cost-insight-header";
+  const main = document.createElement("div");
+  main.className = "ops-main";
+  const title = document.createElement("strong");
+  title.textContent = [row.source || "-", row.project || "-", row.git_branch || ""].filter(Boolean).join(" · ");
+  const detail = document.createElement("span");
+  const firstReason = (row.reasons || [])[0] || "-";
+  const session = row.session_id ? ` · ${String(row.session_id).slice(0, 12)}` : "";
+  detail.textContent = `${firstReason}${session}`;
+  main.append(title, detail);
+
+  const value = document.createElement("div");
+  value.className = "cost-insight-value";
+  const cost = document.createElement("strong");
+  cost.textContent = fmtCost(row.cost_usd || 0);
+  const score = document.createElement("span");
+  score.textContent = `${t("score")} ${(Number(row.quality_score || 0) * 100).toFixed(0)}%`;
+  value.append(cost, score);
+  header.append(main, value);
+  item.appendChild(header);
+
+  const metrics = document.createElement("div");
+  metrics.className = "cost-insight-metrics";
+  addInsightMetric(metrics, t("calls"), fmt(row.calls || 0));
+  addInsightMetric(metrics, t("prompts"), fmt(row.prompts || 0));
+  addInsightMetric(metrics, t("input"), fmt(row.input_tokens || 0));
+  addInsightMetric(metrics, t("output"), fmt(row.output_tokens || 0));
+  addInsightMetric(metrics, t("cacheRead"), fmt(row.cache_read_tokens || 0));
+  addInsightMetric(metrics, t("cacheWrite"), fmt(row.cache_write_tokens || 0));
+  addInsightMetric(metrics, t("cacheHit"), `${(Number(row.cache_hit_rate || 0) * 100).toFixed(0)}%`);
+  addInsightMetric(metrics, t("reasoning"), fmt(row.reasoning_tokens || 0));
+  addInsightMetric(metrics, t("costPerPrompt"), fmtCost(row.cost_per_prompt || 0));
+  addInsightMetric(metrics, t("costPerCall"), fmtCost(row.cost_per_call || 0));
+  addInsightMetric(metrics, t("tokensPerPrompt"), fmt(row.tokens_per_prompt || 0));
+  item.appendChild(metrics);
+
+  const provenance = document.createElement("div");
+  provenance.className = "cost-insight-provenance";
+  addInsightPill(provenance, `${t("priceTrust")}: ${listText(row.pricing_confidences)}`);
+  addInsightPill(provenance, `${t("priceSources")}: ${listText(row.pricing_sources)}`);
+  [
+    [t("unpricedCalls"), row.unpriced_calls],
+    [t("unknownPricingCalls"), row.unknown_pricing_calls],
+    [t("fallbackCalls"), row.fallback_priced_calls],
+    [t("fuzzyCalls"), row.fuzzy_priced_calls],
+    [t("sourceReportedCalls"), row.source_reported_calls],
+  ].forEach(([label, count]) => {
+    if (Number(count || 0) > 0) addInsightPill(provenance, `${label}: ${fmt(count)}`, "attention");
+  });
+  item.appendChild(provenance);
+
+  const reasons = document.createElement("div");
+  reasons.className = "cost-insight-reasons";
+  const reasonText = (row.reasons || []).slice(0, 3).join(" · ");
+  const adviceText = (row.advice || []).slice(0, 2).join(" · ");
+  reasons.textContent = adviceText ? `${reasonText} · ${t("advice")}: ${adviceText}` : reasonText || "-";
+  item.appendChild(reasons);
+
+  return item;
+}
+
+function addInsightMetric(parent, label, value) {
+  const metric = document.createElement("div");
+  metric.className = "cost-insight-metric";
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueEl = document.createElement("strong");
+  valueEl.textContent = value;
+  metric.append(labelEl, valueEl);
+  parent.appendChild(metric);
+}
+
+function addInsightPill(parent, text, tone = "") {
+  const pill = document.createElement("span");
+  pill.className = `cost-insight-pill${tone ? ` ${tone}` : ""}`;
+  pill.textContent = text;
+  parent.appendChild(pill);
+}
+
+function listText(values) {
+  const items = Array.isArray(values) ? values.filter(Boolean) : [];
+  return items.length ? items.join(", ") : "unknown";
+}
+
+function costInsightSeverity(row) {
+  const quality = Number(row.quality_score || 0);
+  const hardIssues = Number(row.unpriced_calls || 0) + Number(row.unknown_pricing_calls || 0);
+  if (hardIssues > 0 || quality < 0.55) return "critical";
+  const softIssues = Number(row.source_reported_calls || 0) + Number(row.fuzzy_priced_calls || 0) + Number(row.fallback_priced_calls || 0);
+  if (softIssues > 0 || quality < 0.8) return "warning";
+  return "ok";
 }
 
 function renderCacheDoctor(rows) {
