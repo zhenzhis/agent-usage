@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 
 	"github.com/zhenzhis/agent-ledger/internal/storage"
 )
@@ -285,6 +286,12 @@ func ContractVerificationReportFor(opts Options, runtime *storage.RuntimeStatus)
 	addCheck("openapi.adapter_hash", contractStringValue(meta["adapter_spec_hash"]) == AdapterContractFingerprint(), "critical", "OpenAPI adapter hash matches generated adapter contract", AdapterContractFingerprint(), contractStringValue(meta["adapter_spec_hash"]))
 
 	paths, _ := openAPI["paths"].(map[string]interface{})
+	authSchemeOK := openAPIAuthSchemeOK(openAPI)
+	addCheck("openapi.auth_scheme", authSchemeOK, "critical", "OpenAPI declares the local bearer authentication scheme", "AgentLedgerBearer type=http scheme=bearer", boolString(authSchemeOK))
+	authOK, authActual := contractOpenAPIOperationAuthStatus(paths)
+	addCheck("openapi.operation_auth", authOK, "critical", "OpenAPI operations declare bearer auth and 401 responses", "all operations include AgentLedgerBearer security and 401 response", authActual)
+	admissionOK, admissionActual := contractOpenAPIOperationAdmissionStatus(paths)
+	addCheck("openapi.operation_admission", admissionOK, "critical", "OpenAPI operations expose admission role, write-mode, and read-only metadata", "all operations include required_role, write_mode, available_in_read_only", admissionActual)
 	for _, path := range OpenAPIContractPaths() {
 		_, ok := paths[path]
 		addCheck("openapi.path."+path, ok, "warning", "OpenAPI exposes stable control-plane path", path, boolString(ok))
@@ -349,11 +356,106 @@ func openAPIPrivacy(meta map[string]interface{}) string {
 	return "prompt_content_stored=" + boolString(meta["prompt_content_stored"] == true) + ",usage_data_uploaded=" + boolString(meta["usage_data_uploaded"] == true)
 }
 
+func openAPIAuthSchemeOK(openAPI map[string]interface{}) bool {
+	components, ok := openAPI["components"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	schemes, ok := components["securitySchemes"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	scheme, ok := schemes["AgentLedgerBearer"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	return scheme["type"] == "http" && scheme["scheme"] == "bearer"
+}
+
+func contractOpenAPIOperationAuthStatus(paths map[string]interface{}) (bool, string) {
+	checked, missing := 0, 0
+	for _, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, method := range []string{"get", "post", "put", "patch", "delete"} {
+			operation, ok := pathItem[method].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			checked++
+			if !contractOpenAPIOperationHasBearerSecurity(operation) || !contractOpenAPIOperationHasResponse(operation, "401") {
+				missing++
+			}
+		}
+	}
+	return checked > 0 && missing == 0, "checked=" + intString(checked) + ",missing=" + intString(missing)
+}
+
+func contractOpenAPIOperationAdmissionStatus(paths map[string]interface{}) (bool, string) {
+	checked, missing := 0, 0
+	for _, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, method := range []string{"get", "post", "put", "patch", "delete"} {
+			operation, ok := pathItem[method].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			checked++
+			if !contractOpenAPIOperationHasAdmissionMetadata(operation) {
+				missing++
+			}
+		}
+	}
+	return checked > 0 && missing == 0, "checked=" + intString(checked) + ",missing=" + intString(missing)
+}
+
+func contractOpenAPIOperationHasBearerSecurity(operation map[string]interface{}) bool {
+	security, ok := operation["security"].([]map[string][]string)
+	if !ok {
+		return false
+	}
+	for _, requirement := range security {
+		if _, ok := requirement["AgentLedgerBearer"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func contractOpenAPIOperationHasResponse(operation map[string]interface{}, status string) bool {
+	responses, ok := operation["responses"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, ok = responses[status]
+	return ok
+}
+
+func contractOpenAPIOperationHasAdmissionMetadata(operation map[string]interface{}) bool {
+	meta, ok := operation["x-agent-ledger"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	role, roleOK := meta["required_role"].(string)
+	writeMode, writeModeOK := meta["write_mode"].(string)
+	_, readOnlyOK := meta["available_in_read_only"].(bool)
+	return roleOK && role != "" && writeModeOK && writeMode != "" && readOnlyOK
+}
+
 func contractStringValue(v interface{}) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
 	return ""
+}
+
+func intString(v int) string {
+	return strconv.Itoa(v)
 }
 
 func boolString(v bool) string {
