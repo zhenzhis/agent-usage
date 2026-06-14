@@ -3300,7 +3300,7 @@ func pricingStatusSchema() map[string]interface{} {
 			"unpriced_models": map[string]interface{}{
 				"type":        "array",
 				"description": "Models with usage records that could not be priced.",
-				"items":       looseObjectSchema("Unpriced model group with source, model, and record count."),
+				"items":       refSchema("UnpricedModel"),
 			},
 			"confidence_mix": map[string]interface{}{
 				"type":                 "object",
@@ -3444,7 +3444,7 @@ func dataQualityReportSchema() map[string]interface{} {
 			"issues": map[string]interface{}{
 				"type":        "array",
 				"description": "Anomaly, watchdog, or diagnostic issues. Privacy filters redact paths, projects, branches, and session ids where requested.",
-				"items":       looseObjectSchema("Insight event row."),
+				"items":       refSchema("InsightEvent"),
 			},
 		},
 	}

@@ -519,6 +519,14 @@ func TestOpenAPIPricingStatusSchemaExposesSourceFreshness(t *testing.T) {
 			t.Fatalf("PricingStatus schema missing field %q: %#v", field, statusProps)
 		}
 	}
+	unpricedModels, ok := statusProps["unpriced_models"].(map[string]interface{})
+	if !ok || unpricedModels["type"] != "array" {
+		t.Fatalf("PricingStatus unpriced_models should be an array: %#v", statusProps["unpriced_models"])
+	}
+	unpricedItems, ok := unpricedModels["items"].(map[string]interface{})
+	if !ok || unpricedItems["$ref"] != "#/components/schemas/UnpricedModel" {
+		t.Fatalf("PricingStatus unpriced_models should reference UnpricedModel: %#v", unpricedModels["items"])
+	}
 	sourceSchema, ok := schemas["PricingSourceStatus"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("PricingSourceStatus schema missing: %#v", schemas)
@@ -571,6 +579,22 @@ func TestOpenAPIDataQualitySchemaExposesTrustFields(t *testing.T) {
 	pricingItems, ok := pricingSources["items"].(map[string]interface{})
 	if !ok || pricingItems["$ref"] != "#/components/schemas/PricingSourceStatus" {
 		t.Fatalf("DataQualityReport pricing_sources should reference PricingSourceStatus: %#v", pricingSources["items"])
+	}
+	unpricedModels, ok := reportProps["unpriced_models"].(map[string]interface{})
+	if !ok || unpricedModels["type"] != "array" {
+		t.Fatalf("DataQualityReport unpriced_models should be an array: %#v", reportProps["unpriced_models"])
+	}
+	unpricedItems, ok := unpricedModels["items"].(map[string]interface{})
+	if !ok || unpricedItems["$ref"] != "#/components/schemas/UnpricedModel" {
+		t.Fatalf("DataQualityReport unpriced_models should reference UnpricedModel: %#v", unpricedModels["items"])
+	}
+	issues, ok := reportProps["issues"].(map[string]interface{})
+	if !ok || issues["type"] != "array" {
+		t.Fatalf("DataQualityReport issues should be an array: %#v", reportProps["issues"])
+	}
+	issueItems, ok := issues["items"].(map[string]interface{})
+	if !ok || issueItems["$ref"] != "#/components/schemas/InsightEvent" {
+		t.Fatalf("DataQualityReport issues should reference InsightEvent: %#v", issues["items"])
 	}
 	qualitySchema, ok := schemas["QualitySource"].(map[string]interface{})
 	if !ok {
