@@ -112,6 +112,9 @@ func (s *Server) handleRepairProjections(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, tzOffset, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -231,6 +234,9 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, _, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)
@@ -280,8 +286,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOfflineBundleExport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireLocalOrAuth(w, r) || !s.requireRole(w, r, "viewer") {

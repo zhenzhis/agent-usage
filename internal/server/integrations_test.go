@@ -371,6 +371,34 @@ func TestReadJSONEndpointsRejectNonGET(t *testing.T) {
 	}
 }
 
+func TestDownloadReportEndpointsRejectNonGET(t *testing.T) {
+	db := testServerDB(t)
+	srv := New(db, "", Options{})
+	cases := []struct {
+		name    string
+		url     string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "export", url: "http://127.0.0.1/api/export?from=2026-06-07&to=2026-06-08&type=sessions&format=json", handler: srv.handleExport},
+		{name: "report", url: "http://127.0.0.1/api/report?from=2026-06-07&to=2026-06-08", handler: srv.handleReport},
+		{name: "evidence-bundle", url: "http://127.0.0.1/api/evidence-bundle?from=2026-06-07&to=2026-06-08", handler: srv.handleEvidenceBundle},
+		{name: "offline-bundle-export", url: "http://127.0.0.1/api/offline-bundle/export?from=2026-06-07&to=2026-06-08", handler: srv.handleOfflineBundleExport},
+		{name: "repo-badge", url: "http://127.0.0.1/api/badge/repo.svg?from=2026-06-07&to=2026-06-08", handler: srv.handleRepoBadge},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			tc.handler(rr, httptest.NewRequest(http.MethodPost, tc.url, nil))
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("POST status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if rr.Header().Get("Allow") != http.MethodGet {
+				t.Fatalf("Allow header=%q", rr.Header().Get("Allow"))
+			}
+		})
+	}
+}
+
 func TestFinOpsDiagnosticsEndpointETags(t *testing.T) {
 	db := testServerDB(t)
 	srv := New(db, "", Options{})

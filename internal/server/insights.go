@@ -699,6 +699,9 @@ func firstNonEmpty(values ...string) string {
 }
 
 func (s *Server) handleEvidenceBundle(w http.ResponseWriter, r *http.Request) {
+	if !requireHTTPMethod(w, r, http.MethodGet) {
+		return
+	}
 	from, to, tzOffset, err := s.parseTimeRange(r)
 	if err != nil {
 		badRequest(w, err)

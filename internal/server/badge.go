@@ -10,8 +10,7 @@ import (
 )
 
 func (s *Server) handleRepoBadge(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireHTTPMethod(w, r, http.MethodGet) {
 		return
 	}
 	if !s.requireRole(w, r, "viewer") {
