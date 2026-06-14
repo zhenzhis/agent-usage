@@ -76,25 +76,30 @@ func (s *providerStreamState) ObserveData(raw []byte) {
 		return
 	}
 	eventType := strings.TrimSpace(stringValue(obj["type"]))
-	s.ID = firstNonEmpty(stringFromObject(obj, "id", "response_id", "request_id"), s.ID)
-	s.Model = firstNonEmpty(stringFromObject(obj, "model", "model_id"), s.Model)
+	s.Provider = firstNonEmpty(s.Provider, stringFromObject(obj, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName"))
+	s.ID = firstNonEmpty(stringFromObject(obj, "id", "response_id", "request_id", "run_id"), s.ID)
+	s.Model = firstNonEmpty(stringFromObject(obj, "model", "model_id", "modelID", "model_name", "modelName"), s.Model)
 	if _, ok := obj["choices"]; ok {
 		s.Provider = firstNonEmpty(s.Provider, "openai")
 		s.Schema = firstNonEmpty(s.Schema, "openai-chat-completions")
 	}
 	if rawResponse, ok := objectValue(obj["response"]); ok {
-		s.Provider = firstNonEmpty(s.Provider, "openai")
+		s.Provider = firstNonEmpty(s.Provider, stringFromObject(rawResponse, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName"), "openai")
 		s.Schema = firstNonEmpty(s.Schema, "openai-responses")
-		s.ID = firstNonEmpty(stringFromObject(rawResponse, "id", "response_id"), s.ID)
-		s.Model = firstNonEmpty(stringFromObject(rawResponse, "model", "model_id"), s.Model)
+		s.ID = firstNonEmpty(stringFromObject(rawResponse, "id", "response_id", "request_id", "run_id"), s.ID)
+		s.Model = firstNonEmpty(stringFromObject(rawResponse, "model", "model_id", "modelID", "model_name", "modelName"), s.Model)
 		s.MergeUsage(rawResponse["usage"])
+		s.MergeUsageSchema(rawResponse["usage_metadata"], "usage-metadata")
+		s.MergeUsageSchema(rawResponse["usageMetadata"], "usage-metadata")
 	}
 	if rawMessage, ok := objectValue(obj["message"]); ok {
-		s.Provider = firstNonEmpty(s.Provider, "anthropic")
+		s.Provider = firstNonEmpty(s.Provider, stringFromObject(rawMessage, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName"), "anthropic")
 		s.Schema = firstNonEmpty(s.Schema, "anthropic")
-		s.ID = firstNonEmpty(stringFromObject(rawMessage, "id", "response_id"), s.ID)
-		s.Model = firstNonEmpty(stringFromObject(rawMessage, "model", "model_id"), s.Model)
+		s.ID = firstNonEmpty(stringFromObject(rawMessage, "id", "response_id", "request_id", "run_id"), s.ID)
+		s.Model = firstNonEmpty(stringFromObject(rawMessage, "model", "model_id", "modelID", "model_name", "modelName"), s.Model)
 		s.MergeUsage(rawMessage["usage"])
+		s.MergeUsageSchema(rawMessage["usage_metadata"], "usage-metadata")
+		s.MergeUsageSchema(rawMessage["usageMetadata"], "usage-metadata")
 	}
 	if rawDelta, ok := objectValue(obj["delta"]); ok {
 		if strings.HasPrefix(eventType, "message_") {
@@ -102,18 +107,26 @@ func (s *providerStreamState) ObserveData(raw []byte) {
 			s.Schema = firstNonEmpty(s.Schema, "anthropic")
 		}
 		s.MergeUsage(rawDelta["usage"])
+		s.MergeUsageSchema(rawDelta["usage_metadata"], "usage-metadata")
+		s.MergeUsageSchema(rawDelta["usageMetadata"], "usage-metadata")
 	}
 	if strings.HasPrefix(eventType, "message_") {
 		s.Provider = firstNonEmpty(s.Provider, "anthropic")
 		s.Schema = firstNonEmpty(s.Schema, "anthropic")
 	}
 	s.MergeUsage(obj["usage"])
+	s.MergeUsageSchema(obj["usage_metadata"], "usage-metadata")
+	s.MergeUsageSchema(obj["usageMetadata"], "usage-metadata")
 }
 
-func (s *providerStreamState) MergeUsage(value interface{}) {
+func (s *providerStreamState) MergeUsage(value interface{}) bool {
+	return s.MergeUsageSchema(value, "")
+}
+
+func (s *providerStreamState) MergeUsageSchema(value interface{}, schema string) bool {
 	usage, ok := objectValue(value)
 	if !ok {
-		return
+		return false
 	}
 	if s.Usage == nil {
 		s.Usage = map[string]interface{}{}
@@ -123,6 +136,10 @@ func (s *providerStreamState) MergeUsage(value interface{}) {
 			s.Usage[key] = item
 		}
 	}
+	if schema != "" {
+		s.Schema = firstNonEmpty(s.Schema, schema)
+	}
+	return true
 }
 
 func objectValue(value interface{}) (map[string]interface{}, bool) {

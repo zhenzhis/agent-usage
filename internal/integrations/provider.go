@@ -188,7 +188,7 @@ func decodeProviderEntry(raw json.RawMessage) (ProviderCall, error) {
 			metadata = typed
 		}
 	}
-	provider := firstNonNilString(obj, "provider", "system", "gen_ai.provider.name")
+	provider := firstNonNilString(obj, "provider", "system", "gen_ai.provider.name", "provider_name", "providerName")
 	usage, schema := providerUsage(obj)
 	if schema == "" {
 		return ProviderCall{}, fmt.Errorf("provider usage object is required")
@@ -198,9 +198,9 @@ func decodeProviderEntry(raw json.RawMessage) (ProviderCall, error) {
 		metadata["finish_reason"] = finish
 	}
 	return ProviderCall{
-		ID:        firstNonNilString(obj, "id", "response_id", "completion_id", "request_id"),
+		ID:        firstNonNilString(obj, "id", "response_id", "completion_id", "request_id", "run_id"),
 		Provider:  provider,
-		Model:     firstNonNilString(obj, "model", "model_id", "modelID"),
+		Model:     firstNonNilString(obj, "model", "model_id", "modelID", "model_name", "modelName"),
 		Project:   firstNonEmpty(metadataString(metadata, "agent_ledger.project", "project"), firstNonNilString(obj, "project")),
 		SessionID: firstNonEmpty(metadataString(metadata, "agent_ledger.session_id", "session_id"), firstNonNilString(obj, "session_id")),
 		Timestamp: providerTimestamp(obj),
@@ -210,28 +210,67 @@ func decodeProviderEntry(raw json.RawMessage) (ProviderCall, error) {
 }
 
 func providerUsage(obj map[string]interface{}) (ProviderUsage, string) {
-	usageRaw, ok := obj["usage"]
+	usage, schemaHint, ok := providerUsageObject(obj)
 	if !ok {
 		return ProviderUsage{}, ""
 	}
-	usage, ok := usageRaw.(map[string]interface{})
-	if !ok {
-		return ProviderUsage{}, ""
-	}
-	inputTotal := intFromMap(usage, "input_tokens", "prompt_tokens")
+	inputTotal := intFromMap(usage,
+		"input_tokens",
+		"prompt_tokens",
+		"promptTokenCount",
+		"inputTokenCount",
+		"totalInputTokens",
+		"total_input_tokens",
+	)
 	cacheRead := nestedInt(usage, "input_tokens_details", "cached_tokens") +
 		nestedInt(usage, "prompt_tokens_details", "cached_tokens") +
-		intFromMap(usage, "cache_read_input_tokens", "cache_read_tokens")
-	cacheWrite := intFromMap(usage, "cache_creation_input_tokens", "cache_write_input_tokens", "cache_write_tokens")
-	output := intFromMap(usage, "output_tokens", "completion_tokens")
+		intFromMap(usage,
+			"cache_read_input_tokens",
+			"cache_read_tokens",
+			"cacheReadInputTokens",
+			"cacheReadTokens",
+			"cachedContentTokenCount",
+			"cached_content_token_count",
+		)
+	cacheWrite := intFromMap(usage,
+		"cache_creation_input_tokens",
+		"cache_write_input_tokens",
+		"cache_write_tokens",
+		"cacheCreationInputTokens",
+		"cacheWriteInputTokens",
+		"cacheWriteTokens",
+	)
+	output := intFromMap(usage,
+		"output_tokens",
+		"completion_tokens",
+		"completionTokenCount",
+		"candidatesTokenCount",
+		"outputTokenCount",
+		"totalOutputTokens",
+		"total_output_tokens",
+	)
+	if output == 0 {
+		totalTokens := intFromMap(usage, "total_tokens", "totalTokens", "totalTokenCount")
+		if totalTokens > inputTotal {
+			output = totalTokens - inputTotal
+		}
+	}
 	reasoning := nestedInt(usage, "output_tokens_details", "reasoning_tokens") +
 		nestedInt(usage, "completion_tokens_details", "reasoning_tokens") +
-		intFromMap(usage, "reasoning_output_tokens")
+		intFromMap(usage,
+			"reasoning_output_tokens",
+			"reasoningOutputTokens",
+			"reasoningTokenCount",
+			"thoughtsTokenCount",
+		)
 	nonCachedInput := inputTotal - cacheRead - cacheWrite
 	if nonCachedInput < 0 {
 		nonCachedInput = 0
 	}
-	schema := "generic"
+	schema := firstNonEmpty(schemaHint, "generic")
+	if hasAnyKey(usage, "promptTokenCount", "inputTokenCount", "totalInputTokens", "usageMetadata", "usage_metadata") {
+		schema = "usage-metadata"
+	}
 	if _, ok := usage["prompt_tokens"]; ok {
 		schema = "openai-chat-completions"
 	}
@@ -247,8 +286,36 @@ func providerUsage(obj map[string]interface{}) (ProviderUsage, string) {
 		CacheCreationInputTokens: cacheWrite,
 		OutputTokens:             output,
 		ReasoningOutputTokens:    reasoning,
-		CostUSD:                  floatFromMap(usage, "cost_usd", "total_cost", "cost"),
+		CostUSD:                  floatFromMap(usage, "cost_usd", "costUSD", "costUsd", "total_cost", "totalCost", "cost"),
 	}, schema
+}
+
+func providerUsageObject(obj map[string]interface{}) (map[string]interface{}, string, bool) {
+	for _, candidate := range []struct {
+		key    string
+		schema string
+	}{
+		{"usage", "generic"},
+		{"usage_metadata", "usage-metadata"},
+		{"usageMetadata", "usage-metadata"},
+	} {
+		if usage, ok := objectValue(obj[candidate.key]); ok {
+			return usage, candidate.schema, true
+		}
+	}
+	if response, ok := objectValue(obj["response"]); ok {
+		return providerUsageObject(response)
+	}
+	return nil, "", false
+}
+
+func hasAnyKey(obj map[string]interface{}, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := obj[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func providerTimestamp(obj map[string]interface{}) time.Time {

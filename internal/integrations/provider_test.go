@@ -96,3 +96,71 @@ func TestConvertProviderArrayChatAndAnthropicUsage(t *testing.T) {
 		t.Fatalf("unexpected anthropic payload: %#v", payload)
 	}
 }
+
+func TestConvertProviderUsageMetadataEnvelope(t *testing.T) {
+	raw := []byte(`{
+		"id":"relay_call_1",
+		"providerName":"relay-compatible",
+		"modelName":"gemini-2.5-pro",
+		"usage_metadata":{"promptTokenCount":80,"cachedContentTokenCount":20,"candidatesTokenCount":12,"thoughtsTokenCount":3},
+		"metadata":{"agent_ledger.goal":"relay usage metadata"}
+	}`)
+	calls, err := DecodeProviderCalls(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	events, err := ConvertProviderCalls(calls)
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(findCanonical(events, "model.call").Payload, &payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if payload["provider"] != "relay-compatible" || payload["model"] != "gemini-2.5-pro" || payload["provider_usage_schema"] != "usage-metadata" {
+		t.Fatalf("unexpected usage metadata identity: %#v", payload)
+	}
+	if payload["input_tokens"].(float64) != 60 || payload["cache_read_input_tokens"].(float64) != 20 || payload["output_tokens"].(float64) != 12 || payload["reasoning_output_tokens"].(float64) != 3 {
+		t.Fatalf("unexpected usage metadata payload: %#v", payload)
+	}
+}
+
+func TestDecodeGenericUsageMetadataStream(t *testing.T) {
+	raw := []byte(`event: model
+data: {"id":"relay_stream_fixture_001","provider":"relay-compatible","model":"gemini-2.5-pro"}
+
+event: usage
+data: {"id":"relay_stream_fixture_001","provider":"relay-compatible","model":"gemini-2.5-pro","usageMetadata":{"promptTokenCount":120,"cachedContentTokenCount":30,"candidatesTokenCount":42,"thoughtsTokenCount":6}}
+
+data: [DONE]
+`)
+	calls, err := DecodeProviderStream(raw)
+	if err != nil {
+		t.Fatalf("decode stream: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls=%d", len(calls))
+	}
+	call := calls[0]
+	if call.Provider != "relay-compatible" || call.Model != "gemini-2.5-pro" {
+		t.Fatalf("unexpected stream identity: %#v", call)
+	}
+	if call.Usage.InputTokens != 90 || call.Usage.CacheReadInputTokens != 30 || call.Usage.OutputTokens != 42 || call.Usage.ReasoningOutputTokens != 6 {
+		t.Fatalf("unexpected stream usage: %#v", call.Usage)
+	}
+	events, err := ConvertProviderCalls(calls)
+	if err != nil {
+		t.Fatalf("convert stream: %v", err)
+	}
+	modelEvent := findCanonical(events, "model.call")
+	var payload map[string]interface{}
+	if err := json.Unmarshal(modelEvent.Payload, &payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if payload["provider_usage_schema"] != "usage-metadata" || payload["input_tokens"].(float64) != 90 || payload["cache_read_input_tokens"].(float64) != 30 {
+		t.Fatalf("unexpected usage metadata payload: %#v", payload)
+	}
+	if containsAny(string(modelEvent.Payload), "delta", "content", "prompt") {
+		t.Fatalf("provider stream content leaked: %s", string(modelEvent.Payload))
+	}
+}

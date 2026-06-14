@@ -106,6 +106,7 @@ func TestAdapterFixtureFilesPassStrictConformance(t *testing.T) {
 		{"provider-stream", "provider-openai-chat-stream.sse"},
 		{"provider-stream", "provider-openai-responses-stream.sse"},
 		{"provider-stream", "provider-anthropic-message-stream.sse"},
+		{"provider-stream", "provider-generic-usage-metadata-stream.sse"},
 		{"otel", "otel-genai-span.json"},
 		{"otel", "otlp-resource-spans.json"},
 		{"a2a", "a2a-task.json"},

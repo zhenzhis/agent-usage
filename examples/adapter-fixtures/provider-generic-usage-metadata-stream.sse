@@ -1,0 +1,7 @@
+event: model
+data: {"id":"relay_stream_fixture_001","provider":"relay-compatible","model":"gemini-2.5-pro"}
+
+event: usage
+data: {"id":"relay_stream_fixture_001","provider":"relay-compatible","model":"gemini-2.5-pro","usageMetadata":{"promptTokenCount":120,"cachedContentTokenCount":30,"candidatesTokenCount":42,"thoughtsTokenCount":6}}
+
+data: [DONE]

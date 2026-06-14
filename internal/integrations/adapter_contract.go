@@ -81,7 +81,7 @@ func AdapterContractSpec() AdapterContract {
 			},
 			{
 				Kind:            "provider",
-				Description:     "Provider usage envelopes from OpenAI-compatible, Anthropic-compatible, LiteLLM, gateway, or billing-export sources.",
+				Description:     "Provider usage envelopes from OpenAI-compatible, Anthropic-compatible, LiteLLM, usage_metadata/usageMetadata relay, gateway, or billing-export sources.",
 				ConformanceKind: "provider",
 				ConvertCommand:  "agent-ledger provider convert --file response.json",
 				IngestCommand:   "agent-ledger provider ingest --file response.json",
@@ -91,7 +91,7 @@ func AdapterContractSpec() AdapterContract {
 			},
 			{
 				Kind:            "provider-stream",
-				Description:     "Provider SSE usage transcripts from OpenAI-compatible Chat Completions, OpenAI Responses, or Anthropic Messages streaming responses.",
+				Description:     "Provider SSE usage transcripts from OpenAI-compatible Chat Completions, OpenAI Responses, Anthropic Messages, or generic usageMetadata relay streaming responses.",
 				ConformanceKind: "provider-stream",
 				ConvertCommand:  "agent-ledger adapter conformance --kind provider-stream --file stream.sse",
 				Endpoint:        "POST /api/integrations/conformance?kind=provider-stream",
