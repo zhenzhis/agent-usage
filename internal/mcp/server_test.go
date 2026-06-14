@@ -177,7 +177,7 @@ func TestMCPResourcesAndPrompts(t *testing.T) {
 		t.Fatalf("resource subscriptions should be advertised: %#v", resourceCaps)
 	}
 	resources := out[1]["result"].(map[string]interface{})["resources"].([]interface{})
-	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://config/status") || !hasResource(resources, "agent-ledger://readiness") || !hasResource(resources, "agent-ledger://admission/check") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/queue") || !hasResource(resources, "agent-ledger://workloads/leases") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
+	if !hasResource(resources, "agent-ledger://discovery/manifest") || !hasResource(resources, "agent-ledger://contracts/bundle") || !hasResource(resources, "agent-ledger://contracts/verification") || !hasResource(resources, "agent-ledger://contracts/openapi") || !hasResource(resources, "agent-ledger://schema/canonical-events") || !hasResource(resources, "agent-ledger://schema/canonical-event-examples") || !hasResource(resources, "agent-ledger://integrations/adapter-contract") || !hasResource(resources, "agent-ledger://runtime/status") || !hasResource(resources, "agent-ledger://config/status") || !hasResource(resources, "agent-ledger://readiness") || !hasResource(resources, "agent-ledger://admission/check") || !hasResource(resources, "agent-ledger://budget/current") || !hasResource(resources, "agent-ledger://workloads/queue") || !hasResource(resources, "agent-ledger://workloads/leases") || !hasResource(resources, "agent-ledger://workloads/feed") || !hasResource(resources, "agent-ledger://agent-runs/liveness") || !hasResource(resources, "agent-ledger://policy/approvals") || !hasResource(resources, "agent-ledger://policy/approval-routes") {
 		t.Fatalf("expected core resources, got %#v", resources)
 	}
 	resourceText := resourceTextPayload(t, out[2])
@@ -334,6 +334,57 @@ func TestMCPWorkloadLeasesResourceIsPrivacySafe(t *testing.T) {
 	row := rows[0].(map[string]interface{})
 	if row["lease_id"] != lease.LeaseID || row["status"] == "" || row["ttl_seconds"] == nil {
 		t.Fatalf("unexpected lease resource row: %#v", row)
+	}
+}
+
+func TestMCPRunLivenessResourceIsPrivacySafeAndCursorStable(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.DefaultConfig()
+	srv := New(db, cfg)
+	workloadID, err := db.CreateWorkload("private liveness goal", "codex", "private-project", "private/repo", "private-branch", "", "infra", 0)
+	if err != nil {
+		t.Fatalf("create workload: %v", err)
+	}
+	runID, err := db.StartAgentRun(workloadID, "codex", "private-agent", "codex --token secret", "C:/Users/zhang/private")
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := db.RecordAgentRunHeartbeat("evt-liveness-resource", runID, "working", "testing", "private status message", 0.5, nil, time.Now().UTC().Add(-20*time.Minute), 1); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+
+	uri := "agent-ledger://agent-runs/liveness?max_age=10m&stale_only=1&source=codex&project=private-project&limit=10"
+	out := serveLines(t, srv, `{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"`+uri+`"}}`)
+	text := resourceTextPayload(t, out[0])
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("decode liveness resource: %v\n%s", err, text)
+	}
+	rows := payload["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("unexpected liveness rows: %#v", payload)
+	}
+	raw := []byte(text)
+	for _, forbidden := range []string{workloadID, runID, "private liveness goal", "private-project", "private/repo", "private-branch", "private status message", "C:/Users/zhang/private", "secret"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("liveness resource leaked %q: %s", forbidden, text)
+		}
+	}
+	row := rows[0].(map[string]interface{})
+	if row["source"] != "codex" || row["status"] == "" || row["stale"] != true {
+		t.Fatalf("unexpected liveness row: %#v", row)
+	}
+	firstCursor, err := srv.resourceCursor(uri)
+	if err != nil {
+		t.Fatalf("first liveness cursor: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	secondCursor, err := srv.resourceCursor(uri)
+	if err != nil {
+		t.Fatalf("second liveness cursor: %v", err)
+	}
+	if firstCursor != secondCursor {
+		t.Fatalf("liveness cursor changed without semantic change: first=%s second=%s", firstCursor, secondCursor)
 	}
 }
 

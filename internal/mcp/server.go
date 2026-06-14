@@ -647,6 +647,7 @@ func resources() []map[string]interface{} {
 		resource("agent-ledger://workloads/queue", "Workload Queue", "Read-only workload queue claimability and lease pressure stats; supports source/project/repo/team/owner/status/q query parameters.", "application/json"),
 		resource("agent-ledger://workloads/leases", "Workload Leases", "Privacy-safe read-only workload lease rows for router context; supports include_inactive and limit query parameters.", "application/json"),
 		resource("agent-ledger://workloads/feed", "Workload Event Feed", "Cursor-stable metadata-only workload state feed for local monitors and agent routers; supports from/to/source/model/project/phase/severity/limit/stale_after query parameters.", "application/json"),
+		resource("agent-ledger://agent-runs/liveness", "Agent Run Liveness", "Privacy-safe active run liveness rows for async agent monitors; supports max_age, stale_only, source, project, and limit query parameters.", "application/json"),
 		resource("agent-ledger://policies/status", "Policy Status", "Local policy configuration summary without prompt or secret content.", "application/json"),
 		resource("agent-ledger://policy/approvals", "Policy Approvals", "Local policy approval queue; supports status, limit, and privacy query parameters.", "application/json"),
 		resource("agent-ledger://policy/approval-routes", "Policy Approval Routes", "Pending local approval route rollups; supports due_within, limit, and privacy query parameters.", "application/json"),
@@ -929,6 +930,8 @@ func (s *Server) resourcePayload(uri string) (interface{}, error) {
 		return s.resourceWorkloadLeases(values)
 	case "agent-ledger://workloads/feed":
 		return s.resourceWorkloadFeed(values)
+	case "agent-ledger://agent-runs/liveness":
+		return s.resourceRunLiveness(values)
 	case "agent-ledger://policies/status":
 		return map[string]interface{}{
 			"enabled":                s.cfg.Policies.Enabled,
@@ -1070,6 +1073,48 @@ func privacySafeLeaseRows(rows []storage.WorkloadLease) []map[string]interface{}
 	return out
 }
 
+func (s *Server) resourceRunLiveness(values url.Values) (map[string]interface{}, error) {
+	maxAge, err := queryDuration(values, "max_age", 10*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	staleOnly := queryBool(values, "stale_only")
+	limit := boundedQueryInt(values, "limit", 50, 1, 500)
+	rows, err := s.db.GetAgentRunLiveness(maxAge, staleOnly, limit, values.Get("source"), values.Get("project"))
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"max_age":           maxAge.String(),
+		"stale_only":        staleOnly,
+		"limit":             limit,
+		"source_filter":     strings.TrimSpace(values.Get("source")) != "",
+		"project_filter":    strings.TrimSpace(values.Get("project")) != "",
+		"rows":              privacySafeRunLivenessRows(rows),
+		"privacy_redaction": "run_id, workload_id, goal, project, repo, git_branch, and status_message omitted",
+	}, nil
+}
+
+func privacySafeRunLivenessRows(rows []storage.AgentRunLivenessRow) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, map[string]interface{}{
+			"source":            row.Source,
+			"agent_name":        row.AgentName,
+			"status":            row.Status,
+			"phase":             row.Phase,
+			"progress":          row.Progress,
+			"started_at":        row.StartedAt,
+			"last_heartbeat_at": row.LastHeartbeatAt,
+			"last_activity":     row.LastActivity,
+			"heartbeat_count":   row.HeartbeatCount,
+			"age_seconds":       row.AgeSeconds,
+			"stale":             row.Stale,
+		})
+	}
+	return out
+}
+
 func (s *Server) resourceApprovalRoutes(values url.Values) (*storage.ApprovalRouteSummary, error) {
 	dueWithin, err := boundedDuration(firstNonEmpty(values.Get("due_within"), values.Get("approval_due_within")), "due_within", 24*time.Hour, 30*24*time.Hour)
 	if err != nil {
@@ -1193,6 +1238,7 @@ func stripVolatileResourceFields(value interface{}) {
 	switch v := value.(type) {
 	case map[string]interface{}:
 		delete(v, "generated_at")
+		delete(v, "age_seconds")
 		for _, child := range v {
 			stripVolatileResourceFields(child)
 		}
