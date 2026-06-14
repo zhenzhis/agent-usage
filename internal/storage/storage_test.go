@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -25,6 +26,30 @@ func TestOpenAndClose(t *testing.T) {
 	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestCloseReleasesSQLiteFilesForTempDirCleanup(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for i := 0; i < 10; i++ {
+		if err := db.InsertUsage(&UsageRecord{
+			Source: "test", SessionID: "s", Model: "m", InputTokens: int64(i + 1), OutputTokens: 1, Timestamp: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("InsertUsage: %v", err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("RemoveAll after Close: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("temp dir still exists after RemoveAll: %v", err)
 	}
 }
 

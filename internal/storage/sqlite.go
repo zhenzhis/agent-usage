@@ -250,14 +250,25 @@ func Open(path string) (*DB, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := migrate(db); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 	return &DB{db: db}, nil
 }
 
 // Close closes the underlying database connection.
-func (d *DB) Close() error { return d.db.Close() }
+func (d *DB) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, checkpointErr := d.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	closeErr := d.db.Close()
+	if closeErr != nil {
+		return closeErr
+	}
+	return checkpointErr
+}
 
 func migrate(db *sql.DB) error {
 	_, err := db.Exec(`

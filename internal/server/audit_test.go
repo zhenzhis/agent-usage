@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/zhenzhis/agent-ledger/internal/config"
@@ -12,11 +11,7 @@ import (
 )
 
 func TestAuditLogAPIFiltersAndRedacts(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := testServerDB(t)
 	if err := db.AppendAuditLog("local", "operator", "pricing.sync", "openai", map[string]string{"project": "private"}); err != nil {
 		t.Fatal(err)
 	}

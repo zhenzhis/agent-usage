@@ -72,7 +72,7 @@ func (c *OpenCodeCollector) processDB(dbPath string) error {
 	}
 
 	// Open opencode db read-only
-	srcDB, err := sql.Open("sqlite", dbPath+"?mode=ro&_pragma=journal_mode(wal)&_pragma=busy_timeout(3000)")
+	srcDB, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro&_pragma=busy_timeout(3000)")
 	if err != nil {
 		return fmt.Errorf("open opencode db: %w", err)
 	}

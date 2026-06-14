@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -489,10 +490,33 @@ func TestRepairProjectionAPI(t *testing.T) {
 
 func testServerDB(t *testing.T) *storage.DB {
 	t.Helper()
-	db, err := storage.Open(filepath.Join(t.TempDir(), "agent-ledger.db"))
+	dir, err := os.MkdirTemp("", "agent-ledger-server-test-*")
 	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	db, err := storage.Open(filepath.Join(dir, "agent-ledger.db"))
+	if err != nil {
+		_ = os.RemoveAll(dir)
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Close test DB: %v", err)
+		}
+		removeTestDirWithRetry(t, dir)
+	})
 	return db
+}
+
+func removeTestDirWithRetry(t *testing.T, dir string) {
+	t.Helper()
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		err = os.RemoveAll(dir)
+		if err == nil {
+			return
+		}
+		time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+	}
+	t.Errorf("RemoveAll test DB dir after retries: %v", err)
 }
