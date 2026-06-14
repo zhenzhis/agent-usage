@@ -95,37 +95,68 @@ func TestRunAdapterConformanceCanonicalWarnings(t *testing.T) {
 }
 
 func TestAdapterFixtureFilesPassStrictConformance(t *testing.T) {
-	fixtures := []struct {
-		kind string
-		file string
-	}{
-		{"canonical", "canonical-workload.json"},
-		{"provider", "provider-openai-response.json"},
-		{"provider", "provider-openai-chat-completion.json"},
-		{"provider", "provider-anthropic-message.json"},
-		{"provider-stream", "provider-openai-chat-stream.sse"},
-		{"provider-stream", "provider-openai-responses-stream.sse"},
-		{"provider-stream", "provider-anthropic-message-stream.sse"},
-		{"provider-stream", "provider-generic-usage-metadata-stream.sse"},
-		{"otel", "otel-genai-span.json"},
-		{"otel", "otel-openinference-span.json"},
-		{"otel", "otlp-resource-spans.json"},
-		{"a2a", "a2a-task.json"},
-		{"a2a", "a2a-delegated-task.json"},
+	matrix := AdapterConformanceMatrixSpec()
+	profileIDs := map[string]bool{}
+	profileFixtures := map[string]map[string]bool{}
+	for _, profile := range ProviderProfiles().Profiles {
+		profileIDs[profile.ID] = true
+		profileFixtures[profile.ID] = map[string]bool{}
+		for _, path := range profile.ConformanceFixtures {
+			profileFixtures[profile.ID][path] = true
+		}
 	}
-	for _, fixture := range fixtures {
-		t.Run(fixture.file, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "adapter-fixtures", fixture.file))
-			if err != nil {
-				t.Fatalf("read fixture: %v", err)
-			}
-			report, err := RunAdapterConformanceWithOptions(AdapterConformanceOptions{Kind: fixture.kind, Strict: true}, raw)
-			if err != nil {
-				t.Fatalf("conformance: %v", err)
-			}
-			if !report.OK || report.Status != "pass" || report.FailedEvents != 0 || report.WarningEvents != 0 {
-				t.Fatalf("fixture failed strict conformance: %#v", report)
-			}
-		})
+
+	seenPaths := map[string]bool{}
+	checked := 0
+	for _, kind := range matrix.Kinds {
+		kind := kind
+		if kind.ConformanceKind == "" {
+			t.Fatalf("matrix kind missing conformance kind: %+v", kind)
+		}
+		for _, fixture := range kind.Fixtures {
+			fixture := fixture
+			checked++
+			t.Run(fixture.Path, func(t *testing.T) {
+				if seenPaths[fixture.Path] {
+					t.Fatalf("duplicate fixture path in conformance matrix: %s", fixture.Path)
+				}
+				seenPaths[fixture.Path] = true
+				expectedCommand := "agent-ledger adapter conformance --kind " + kind.ConformanceKind + " --strict --file " + fixture.Path
+				if fixture.Command != expectedCommand {
+					t.Fatalf("fixture command drifted: got %q want %q", fixture.Command, expectedCommand)
+				}
+				for _, profileID := range fixture.ProviderProfileIDs {
+					if !profileIDs[profileID] {
+						t.Fatalf("fixture references unknown provider profile %q", profileID)
+					}
+					if !profileFixtures[profileID][fixture.Path] {
+						t.Fatalf("provider profile %q does not reciprocally list fixture %s", profileID, fixture.Path)
+					}
+				}
+				raw, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(fixture.Path)))
+				if err != nil {
+					t.Fatalf("read fixture: %v", err)
+				}
+				report, err := RunAdapterConformanceWithOptions(AdapterConformanceOptions{Kind: kind.ConformanceKind, Strict: true}, raw)
+				if err != nil {
+					t.Fatalf("conformance: %v", err)
+				}
+				if report.InputKind != kind.ConformanceKind || !report.OK || report.Status != "pass" || report.FailedEvents != 0 || report.WarningEvents != 0 {
+					t.Fatalf("fixture failed strict conformance: %#v", report)
+				}
+				reportTypes := map[string]bool{}
+				for _, result := range report.Results {
+					reportTypes[result.EventType] = true
+				}
+				for _, expectedType := range fixture.ExpectedEventTypes {
+					if !reportTypes[expectedType] {
+						t.Fatalf("fixture did not produce expected event type %q: report=%#v", expectedType, report)
+					}
+				}
+			})
+		}
+	}
+	if checked != matrix.Summary.Fixtures || checked != matrix.Summary.StrictFixtures {
+		t.Fatalf("matrix summary drifted from fixtures: checked=%d summary=%+v", checked, matrix.Summary)
 	}
 }

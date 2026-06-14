@@ -98,8 +98,8 @@ func AdapterConformanceMatrixSpec() AdapterConformanceMatrix {
 			matrixFixture("otel", "examples/adapter-fixtures/otlp-resource-spans.json", "json", "OTLP resourceSpans trace batch", []string{"model.call", "context.ref"}, nil),
 		}),
 		matrixKind(spec, "a2a", []string{"json"}, []string{"workload.started", "workload.linked", "agent.run.started", "agent.run.heartbeat", "agent.run.finished", "context.ref", "artifact.created", "evaluation.recorded", "policy.decision"}, []AdapterConformanceFixture{
-			matrixFixture("a2a", "examples/adapter-fixtures/a2a-task.json", "json", "single A2A task snapshot", []string{"workload.started", "agent.run.started", "agent.run.heartbeat"}, nil),
-			matrixFixture("a2a", "examples/adapter-fixtures/a2a-delegated-task.json", "json", "delegated A2A task with lineage and evidence references", []string{"workload.started", "workload.linked", "context.ref", "artifact.created", "evaluation.recorded"}, nil),
+			matrixFixture("a2a", "examples/adapter-fixtures/a2a-task.json", "json", "single A2A task snapshot", []string{"workload.started", "agent.run.started", "context.ref", "artifact.created", "agent.run.finished", "workload.closed", "evaluation.recorded"}, nil),
+			matrixFixture("a2a", "examples/adapter-fixtures/a2a-delegated-task.json", "json", "delegated A2A task with lineage and evidence references", []string{"workload.started", "agent.run.started", "workload.linked", "context.ref"}, nil),
 		}),
 	}
 	matrix := AdapterConformanceMatrix{

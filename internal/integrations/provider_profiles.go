@@ -100,7 +100,7 @@ func ProviderProfiles() ProviderProfileCatalog {
 			PricingStrategy:       "local override for relay contract price, then LiteLLM fallback; source-reported cost is retained as evidence but not authoritative for recalculation",
 			ReconciliationSupport: "manual or relay statement import with hashed invoice/bill references",
 			PrivacyNotes:          []string{"relay-specific headers are not persisted", "provider account and organization ids must be hashed before persistence", "model aliases should preserve the relay prefix for attribution"},
-			ConformanceFixtures:   []string{"examples/adapter-fixtures/provider-generic-usage-metadata-stream.sse"},
+			ConformanceFixtures:   []string{"examples/adapter-fixtures/provider-openai-chat-completion.json", "examples/adapter-fixtures/provider-openai-chat-stream.sse", "examples/adapter-fixtures/provider-generic-usage-metadata-stream.sse"},
 			Limitations:           []string{"relay model pricing may differ from official provider list; configure local overrides for exact billing"},
 		},
 		{
@@ -116,7 +116,7 @@ func ProviderProfiles() ProviderProfileCatalog {
 			PricingStrategy:       "LiteLLM model price table fallback plus local override for proxy-specific pricing",
 			ReconciliationSupport: "proxy statement summary import when available",
 			PrivacyNotes:          []string{"request/response wrappers are whitelisted", "raw proxy headers and secrets are ignored", "usageMetadata relay events are mapped to non-overlapping token fields"},
-			ConformanceFixtures:   []string{"examples/adapter-fixtures/provider-generic-usage-metadata-stream.sse"},
+			ConformanceFixtures:   []string{"examples/adapter-fixtures/provider-openai-chat-completion.json", "examples/adapter-fixtures/provider-openai-chat-stream.sse", "examples/adapter-fixtures/provider-generic-usage-metadata-stream.sse"},
 		},
 		{
 			ID:                    "google-gemini",
