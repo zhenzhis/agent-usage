@@ -926,6 +926,12 @@ func migrate(db *sql.DB) error {
 				CREATE INDEX IF NOT EXISTS idx_workloads_claim_queue ON workloads(status, source, team, project, created_at, updated_at);
 			`,
 		},
+		{
+			"016_workload_claim_filter_indexes", `
+				CREATE INDEX IF NOT EXISTS idx_workloads_claim_repo ON workloads(status, repo, created_at, updated_at);
+				CREATE INDEX IF NOT EXISTS idx_workloads_claim_owner ON workloads(status, owner, created_at, updated_at);
+			`,
+		},
 	}
 	for _, m := range migrations {
 		var done string

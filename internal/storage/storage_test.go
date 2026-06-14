@@ -28,6 +28,16 @@ func TestOpenAndClose(t *testing.T) {
 	}
 }
 
+func TestWorkloadClaimFilterIndexesExist(t *testing.T) {
+	db := tempDB(t)
+	for _, name := range []string{"idx_workloads_claim_queue", "idx_workloads_claim_repo", "idx_workloads_claim_owner"} {
+		var got string
+		if err := db.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&got); err != nil {
+			t.Fatalf("index %s missing: %v", name, err)
+		}
+	}
+}
+
 func TestFileState(t *testing.T) {
 	db := tempDB(t)
 
