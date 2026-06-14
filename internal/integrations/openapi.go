@@ -1717,7 +1717,7 @@ func ecosystemIngestOperation(summary, description, requestSchema, responseSchem
 func otlpTracesOperation() map[string]interface{} {
 	op := ecosystemIngestOperation(
 		"Ingest OTLP traces",
-		"Optional local OTLP HTTP JSON/protobuf trace receiver. Disabled by default and restricted to localhost or authenticated operators.",
+		"Optional local OTLP HTTP JSON/protobuf trace receiver. Disabled by default and restricted to localhost or authenticated operators. Responses include per-request backpressure headers for body size, span count, event count, and receiver limits.",
 		"OTLPTraceRequest",
 		"EcosystemIngestResponse",
 		true,
@@ -1731,9 +1731,24 @@ func otlpTracesOperation() map[string]interface{} {
 			"application/protobuf":   map[string]interface{}{"schema": stringSchema()},
 		},
 	}
-	post["responses"].(map[string]interface{})["404"] = jsonResponse("Error")
-	post["responses"].(map[string]interface{})["413"] = jsonResponse("Error")
+	responses := post["responses"].(map[string]interface{})
+	responses["200"].(map[string]interface{})["headers"] = otlpBackpressureHeaders()
+	responses["400"].(map[string]interface{})["headers"] = otlpBackpressureHeaders()
+	responses["404"] = jsonResponse("Error")
+	responses["413"] = jsonResponse("Error")
+	responses["413"].(map[string]interface{})["headers"] = otlpBackpressureHeaders()
 	return op
+}
+
+func otlpBackpressureHeaders() map[string]interface{} {
+	return map[string]interface{}{
+		"X-Agent-Ledger-OTLP-Backpressure":   headerSchema("accepted, body_limit_exceeded, span_limit_exceeded, decode_error, body_read_error, or ingest_error."),
+		"X-Agent-Ledger-OTLP-Body-Bytes":     headerSchema("Request bytes read before acceptance or rejection."),
+		"X-Agent-Ledger-OTLP-Max-Body-Bytes": headerSchema("Configured OTLP receiver body byte limit used for this request."),
+		"X-Agent-Ledger-OTLP-Spans":          headerSchema("Decoded span count for this request when decoding succeeded."),
+		"X-Agent-Ledger-OTLP-Max-Spans":      headerSchema("Configured OTLP receiver span-count limit used for this request."),
+		"X-Agent-Ledger-OTLP-Events":         headerSchema("Canonical events produced from the accepted request."),
+	}
 }
 
 func gatewayOperation(summary, description string) map[string]interface{} {
@@ -2922,13 +2937,14 @@ func ecosystemIngestResponseSchema() map[string]interface{} {
 		"additionalProperties": true,
 		"required":             []string{"ok", "events", "results"},
 		"properties": map[string]interface{}{
-			"ok":      boolSchema(),
-			"spans":   integerSchema(),
-			"calls":   integerSchema(),
-			"tasks":   integerSchema(),
-			"events":  integerSchema(),
-			"warning": stringSchema(),
-			"results": refArraySchema("CanonicalEventResult"),
+			"ok":           boolSchema(),
+			"spans":        integerSchema(),
+			"calls":        integerSchema(),
+			"tasks":        integerSchema(),
+			"events":       integerSchema(),
+			"warning":      stringSchema(),
+			"backpressure": looseObjectSchema("Per-request receiver pressure metrics for OTLP HTTP ingest: status, body bytes, max body bytes, spans seen, max spans, and events produced."),
+			"results":      refArraySchema("CanonicalEventResult"),
 		},
 	}
 }

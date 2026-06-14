@@ -69,6 +69,27 @@ func TestOTLPReceiverRejectsOversizedBody(t *testing.T) {
 	if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
 		t.Fatalf("expected JSON error content type, got %q", got)
 	}
+	if rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure") != "body_limit_exceeded" {
+		t.Fatalf("expected body limit backpressure header, got %q", rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure"))
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	backpressure := body["backpressure"].(map[string]interface{})
+	if backpressure["status"] != "body_limit_exceeded" || int(backpressure["max_body_bytes"].(float64)) != 32 {
+		t.Fatalf("unexpected body limit backpressure payload: %#v", backpressure)
+	}
+	events, err := db.GetAuditLog(10)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	for _, event := range events {
+		if event.Action == "otlp.receiver.backpressure" && event.Target == "body_limit_exceeded" {
+			return
+		}
+	}
+	t.Fatalf("missing body limit backpressure audit event: %+v", events)
 }
 
 func TestOTLPReceiverIngestsJSONSpans(t *testing.T) {
@@ -89,6 +110,20 @@ func TestOTLPReceiverIngestsJSONSpans(t *testing.T) {
 	}
 	if int(body["spans"].(float64)) != 1 || int(body["events"].(float64)) != 2 {
 		t.Fatalf("unexpected receiver body: %#v", body)
+	}
+	if rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure") != "accepted" ||
+		rr.Header().Get("X-Agent-Ledger-OTLP-Spans") != "1" ||
+		rr.Header().Get("X-Agent-Ledger-OTLP-Events") != "2" ||
+		rr.Header().Get("X-Agent-Ledger-OTLP-Max-Spans") != "10" {
+		t.Fatalf("unexpected OTLP backpressure headers: status=%q spans=%q events=%q max_spans=%q",
+			rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure"),
+			rr.Header().Get("X-Agent-Ledger-OTLP-Spans"),
+			rr.Header().Get("X-Agent-Ledger-OTLP-Events"),
+			rr.Header().Get("X-Agent-Ledger-OTLP-Max-Spans"))
+	}
+	backpressure := body["backpressure"].(map[string]interface{})
+	if backpressure["status"] != "accepted" || int(backpressure["spans_seen"].(float64)) != 1 || int(backpressure["events_produced"].(float64)) != 2 {
+		t.Fatalf("unexpected accepted backpressure payload: %#v", backpressure)
 	}
 	events, err := db.GetAuditLog(10)
 	if err != nil {
@@ -114,6 +149,32 @@ func TestOTLPReceiverRejectsOversizedSpanBatch(t *testing.T) {
 	if rr.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d body=%s", rr.Code, rr.Body.String())
 	}
+	if rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure") != "span_limit_exceeded" ||
+		rr.Header().Get("X-Agent-Ledger-OTLP-Spans") != "2" ||
+		rr.Header().Get("X-Agent-Ledger-OTLP-Max-Spans") != "1" {
+		t.Fatalf("unexpected span limit backpressure headers: status=%q spans=%q max_spans=%q",
+			rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure"),
+			rr.Header().Get("X-Agent-Ledger-OTLP-Spans"),
+			rr.Header().Get("X-Agent-Ledger-OTLP-Max-Spans"))
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	backpressure := body["backpressure"].(map[string]interface{})
+	if backpressure["status"] != "span_limit_exceeded" || int(backpressure["spans_seen"].(float64)) != 2 {
+		t.Fatalf("unexpected span limit backpressure payload: %#v", backpressure)
+	}
+	events, err := db.GetAuditLog(10)
+	if err != nil {
+		t.Fatalf("GetAuditLog: %v", err)
+	}
+	for _, event := range events {
+		if event.Action == "otlp.receiver.backpressure" && event.Target == "span_limit_exceeded" {
+			return
+		}
+	}
+	t.Fatalf("missing span limit backpressure audit event: %+v", events)
 }
 
 func TestOTLPReceiverIngestsProtobufSpans(t *testing.T) {
@@ -134,6 +195,14 @@ func TestOTLPReceiverIngestsProtobufSpans(t *testing.T) {
 	}
 	if int(body["spans"].(float64)) != 1 || int(body["events"].(float64)) != 2 {
 		t.Fatalf("unexpected protobuf receiver body: %#v", body)
+	}
+	if rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure") != "accepted" ||
+		rr.Header().Get("X-Agent-Ledger-OTLP-Spans") != "1" ||
+		rr.Header().Get("X-Agent-Ledger-OTLP-Events") != "2" {
+		t.Fatalf("unexpected protobuf backpressure headers: status=%q spans=%q events=%q",
+			rr.Header().Get("X-Agent-Ledger-OTLP-Backpressure"),
+			rr.Header().Get("X-Agent-Ledger-OTLP-Spans"),
+			rr.Header().Get("X-Agent-Ledger-OTLP-Events"))
 	}
 	events, err := db.GetAuditLog(10)
 	if err != nil {

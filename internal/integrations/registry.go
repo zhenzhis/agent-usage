@@ -384,7 +384,7 @@ func Registry(opts Options) Catalog {
 			Endpoints:      []string{"POST /api/otel/genai"},
 			Commands:       []string{"agent-ledger otel convert --file spans.json", "agent-ledger otel ingest --file spans.json"},
 			Limitations:    []string{"local JSON mapper, not a full OTLP collector", "prompt and completion message attributes are intentionally not persisted"},
-			NextMilestones: []string{"expand framework-specific semantic convention fixtures", "add collector backpressure metrics"},
+			NextMilestones: []string{"expand framework-specific semantic convention fixtures"},
 		},
 		{
 			ID:             "protocol.a2a",
@@ -460,8 +460,8 @@ func Registry(opts Options) Catalog {
 			Privacy:        "metadata-only span projection; prompt/message attributes are intentionally not persisted",
 			EventTypes:     []string{"model.call", "context.ref"},
 			Endpoints:      []string{"POST /v1/traces", "POST /api/otlp/v1/traces"},
-			Limitations:    []string{"gRPC collector receiver is not yet accepted", "disabled by default and restricted to localhost or authenticated operators"},
-			NextMilestones: []string{"OTLP gRPC conformance", "backpressure metrics", "collector distribution smoke tests"},
+			Limitations:    []string{"gRPC collector receiver is not yet accepted", "disabled by default and restricted to localhost or authenticated operators", "HTTP receiver rejects over-limit bodies or span batches explicitly and exposes per-request backpressure headers/body fields/audit metadata"},
+			NextMilestones: []string{"OTLP gRPC conformance", "collector distribution smoke tests"},
 		},
 	}
 	capabilities = append(capabilities, collectorCapabilities(opts.Sources)...)
